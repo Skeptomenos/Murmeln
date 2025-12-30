@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  An open-source alternative to Whisper Transcription and similar apps.<br>
+  An open-source alternative to Wispr and similar apps.<br>
   Hold <kbd>Fn</kbd> to record, release to transcribe and auto-paste. Simple.
 </p>
 
@@ -43,12 +43,24 @@ Murmeln is for you. It's the **BYOAPI** (Bring Your Own API) dictation tool.
 
 ### 1. Install
 
+**Download the latest release:**
+
+👉 [**Download Murmeln v1.0.0**](https://github.com/Skeptomenos/Murmeln/releases/latest)
+
+1. Download `Murmeln-v1.0.0.zip`
+2. Unzip and drag `Murmeln.app` to `/Applications`
+3. Right-click → **Open** (required for unsigned apps)
+
+<details>
+<summary><strong>Build from source</strong></summary>
+
 ```bash
 git clone https://github.com/Skeptomenos/Murmeln.git
 cd Murmeln
 xcodebuild -scheme Murmeln -configuration Release -derivedDataPath build build
 cp -r build/Build/Products/Release/Murmeln.app /Applications/
 ```
+</details>
 
 ### 2. Configure
 
