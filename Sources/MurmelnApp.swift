@@ -19,28 +19,12 @@ struct MenuBarIcon: View {
     @ObservedObject private var appState = AppState.shared
     
     var body: some View {
-        Image(systemName: iconName)
-            .symbolVariant(appState.isRecording ? .fill : .none)
-            .foregroundStyle(iconColor)
-    }
-    
-    private var iconName: String {
         if appState.isRecording {
-            return "mic"
+            Image(systemName: "mic.fill")
         } else if appState.isProcessing {
-            return "sparkles"
+            Image(systemName: "sparkles")
         } else {
-            return "mic"
-        }
-    }
-    
-    private var iconColor: Color {
-        if appState.isRecording {
-            return .red
-        } else if appState.isProcessing {
-            return .blue
-        } else {
-            return .primary
+            Image(systemName: "mic")
         }
     }
 }
