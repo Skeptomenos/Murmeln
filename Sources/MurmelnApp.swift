@@ -19,14 +19,18 @@ struct MenuBarIcon: View {
     @ObservedObject private var appState = AppState.shared
     
     var body: some View {
-        if appState.isRecording {
-            Image("MenuBarIcon")
-                .foregroundColor(.red)
-        } else if appState.isProcessing {
-            Image(systemName: "sparkles")
-                .foregroundColor(.blue)
+        if let _ = NSImage(named: "MenuBarIcon") {
+            if appState.isRecording {
+                Image("MenuBarIcon")
+                    .foregroundColor(.red)
+            } else if appState.isProcessing {
+                Image(systemName: "sparkles")
+                    .foregroundColor(.blue)
+            } else {
+                Image("MenuBarIcon")
+            }
         } else {
-            Image("MenuBarIcon")
+            Image(systemName: appState.isRecording ? "mic.fill" : (appState.isProcessing ? "sparkles" : "mic"))
         }
     }
 }
