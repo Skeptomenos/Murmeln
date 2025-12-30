@@ -4,27 +4,22 @@ import AppKit
 @main
 struct MurmelnApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+    @StateObject private var appState = AppState.shared
     
     var body: some Scene {
-        MenuBarExtra {
+        MenuBarExtra("Murmeln", systemImage: iconName) {
             MenuContent()
-        } label: {
-            MenuBarIcon()
         }
         .menuBarExtraStyle(.menu)
     }
-}
-
-struct MenuBarIcon: View {
-    @ObservedObject private var appState = AppState.shared
     
-    var body: some View {
+    private var iconName: String {
         if appState.isRecording {
-            Image(systemName: "mic.fill")
+            return "mic.fill"
         } else if appState.isProcessing {
-            Image(systemName: "sparkles")
+            return "sparkles"
         } else {
-            Image(systemName: "mic")
+            return "mic"
         }
     }
 }
