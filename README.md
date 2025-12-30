@@ -86,9 +86,9 @@ Required for auto-paste functionality. macOS will prompt on first use.
 
 ### Menu Bar Icons
 
-- 🎤 `mic` - Ready
-- 🎤 `mic.fill` - Recording
-- ✨ `sparkles` - Processing
+- 🐭 **Mole Icon** - Ready
+- 🔴 **Red Mole** - Recording
+- ✨ **Sparkles** - Processing
 
 ## Architecture
 

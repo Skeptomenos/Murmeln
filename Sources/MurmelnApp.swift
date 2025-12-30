@@ -21,8 +21,10 @@ struct MenuBarIcon: View {
     var body: some View {
         if appState.isRecording {
             Image("MenuBarIcon")
+                .foregroundColor(.red)
         } else if appState.isProcessing {
             Image(systemName: "sparkles")
+                .foregroundColor(.blue)
         } else {
             Image("MenuBarIcon")
         }
