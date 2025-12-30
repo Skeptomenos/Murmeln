@@ -20,44 +20,45 @@ struct MoleIcon: View {
     var state: AppState.RecordingState
     
     var body: some View {
-        Canvas { context, size in
-            let width = size.width
-            let height = size.height
+        GeometryReader { geo in
+            let w = geo.size.width
+            let h = geo.size.height
             
-            var path = Path()
-            path.move(to: CGPoint(x: width * 0.1, y: height * 0.9))
-            path.addCurve(
-                to: CGPoint(x: width * 0.9, y: height * 0.9),
-                control1: CGPoint(x: width * 0.1, y: height * 0.1),
-                control2: CGPoint(x: width * 0.9, y: height * 0.1)
-            )
-            path.closeSubpath()
-            
-            context.fill(path, with: .color(fillColor))
-            
-            let noseRect = CGRect(x: width * 0.75, y: height * 0.38, width: width * 0.15, height: width * 0.15)
-            context.fill(Path(ellipseIn: noseRect), with: .color(state == .recording ? .red : .pink))
-            
-            let eyeRect = CGRect(x: width * 0.62, y: height * 0.32, width: width * 0.08, height: width * 0.08)
-            context.fill(Path(ellipseIn: eyeRect), with: .color(.primary.opacity(0.8)))
-            
-            var whiskers = Path()
-            whiskers.move(to: CGPoint(x: width * 0.85, y: height * 0.5))
-            whiskers.addLine(to: CGPoint(x: width * 0.98, y: height * 0.45))
-            whiskers.move(to: CGPoint(x: width * 0.85, y: height * 0.55))
-            whiskers.addLine(to: CGPoint(x: width * 0.98, y: height * 0.55))
-            context.stroke(whiskers, with: .color(.primary.opacity(0.5)), lineWidth: 1)
-            
-            if state == .processing {
-                var sparkle = Path()
-                let center = CGPoint(x: width * 0.2, y: height * 0.3)
-                let size = width * 0.15
-                sparkle.move(to: CGPoint(x: center.x, y: center.y - size))
-                sparkle.addQuadCurve(to: CGPoint(x: center.x + size, y: center.y), control: CGPoint(x: center.x + size * 0.2, y: center.y - size * 0.2))
-                sparkle.addQuadCurve(to: CGPoint(x: center.x, y: center.y + size), control: CGPoint(x: center.x + size * 0.2, y: center.y + size * 0.2))
-                sparkle.addQuadCurve(to: CGPoint(x: center.x - size, y: center.y), control: CGPoint(x: center.x - size * 0.2, y: center.y + size * 0.2))
-                sparkle.addQuadCurve(to: CGPoint(x: center.x, y: center.y - size), control: CGPoint(x: center.x - size * 0.2, y: center.y - size * 0.2))
-                context.fill(sparkle, with: .color(.blue))
+            ZStack {
+                Circle()
+                    .fill(fillColor)
+                    .scaleEffect(x: 1.2, y: 1.0)
+                    .offset(y: h * 0.2)
+                    .mask(
+                        Rectangle()
+                            .frame(width: w, height: h)
+                            .offset(y: h * 0.1)
+                    )
+                
+                Circle()
+                    .fill(state == .recording ? Color.red : Color.pink)
+                    .frame(width: w * 0.2, height: w * 0.2)
+                    .position(x: w * 0.85, y: h * 0.55)
+                
+                Circle()
+                    .fill(Color.primary.opacity(0.8))
+                    .frame(width: w * 0.1, height: w * 0.1)
+                    .position(x: w * 0.65, y: h * 0.4)
+                
+                Path { path in
+                    path.move(to: CGPoint(x: w * 0.85, y: h * 0.6))
+                    path.addLine(to: CGPoint(x: w * 1.0, y: h * 0.55))
+                    path.move(to: CGPoint(x: w * 0.85, y: h * 0.65))
+                    path.addLine(to: CGPoint(x: w * 1.0, y: h * 0.7))
+                }
+                .stroke(Color.primary.opacity(0.5), lineWidth: 1)
+                
+                if state == .processing {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 8))
+                        .foregroundStyle(.blue)
+                        .position(x: w * 0.2, y: h * 0.3)
+                }
             }
         }
         .aspectRatio(1, contentMode: .fit)
