@@ -16,13 +16,19 @@ final class PasteService: Sendable {
     }
     
     private func simulatePasteViaAppleScript() {
+        var error: NSDictionary?
         let script = NSAppleScript(source: """
             tell application "System Events"
                 keystroke "v" using command down
             end tell
         """)
-        var error: NSDictionary?
+        
         script?.executeAndReturnError(&error)
+        
+        if let error = error {
+            print("AppleScript Paste Error: \(error)")
+            self.simulatePasteViaCGEvent()
+        }
     }
     
     private func simulatePasteViaCGEvent() {
