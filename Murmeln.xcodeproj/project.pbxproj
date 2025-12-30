@@ -22,6 +22,7 @@
 		APP013 /* OverlayWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC013 /* OverlayWindow.swift */; };
 		APP014 /* HotkeyService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC014 /* HotkeyService.swift */; };
 		APP015 /* SettingsWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC015 /* SettingsWindowController.swift */; };
+		RES001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F2B02ABB2F0409FC00DD12FC /* Assets.xcassets */; };
 		PKG001 /* KeyboardShortcuts in Frameworks */ = {isa = PBXBuildFile; productRef = PKG002 /* KeyboardShortcuts */; };
 /* End PBXBuildFile section */
 
@@ -55,6 +56,17 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXResourcesBuildPhase section */
+		RES100 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				RES001 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
 
 /* Begin PBXGroup section */
 		GRP001 /* Sources */ = {
@@ -129,6 +141,7 @@
 			buildPhases = (
 				SRC100 /* Sources */,
 				FRM001 /* Frameworks */,
+				RES100 /* Resources */,
 			);
 			buildRules = (
 			);
