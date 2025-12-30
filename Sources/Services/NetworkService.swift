@@ -53,8 +53,8 @@ final class NetworkService: Sendable {
         var body = Data()
         
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
-        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"recording.wav\"\r\n".data(using: .utf8)!)
-        body.append("Content-Type: audio/wav\r\n\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"recording.m4a\"\r\n".data(using: .utf8)!)
+        body.append("Content-Type: audio/m4a\r\n\r\n".data(using: .utf8)!)
         body.append(audioData)
         body.append("\r\n".data(using: .utf8)!)
         
@@ -92,8 +92,8 @@ final class NetworkService: Sendable {
         var body = Data()
         
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
-        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"recording.wav\"\r\n".data(using: .utf8)!)
-        body.append("Content-Type: audio/wav\r\n\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"recording.m4a\"\r\n".data(using: .utf8)!)
+        body.append("Content-Type: audio/m4a\r\n\r\n".data(using: .utf8)!)
         body.append(audioData)
         body.append("\r\n".data(using: .utf8)!)
         body.append("--\(boundary)--\r\n".data(using: .utf8)!)
@@ -133,7 +133,7 @@ final class NetworkService: Sendable {
                         "type": "input_audio",
                         "input_audio": [
                             "data": base64Audio,
-                            "format": "wav"
+                            "format": "aac"
                         ]
                     ]
                 ]]
@@ -173,7 +173,7 @@ final class NetworkService: Sendable {
                     "parts": [
                         [
                             "inline_data": [
-                                "mime_type": "audio/wav",
+                                "mime_type": "audio/m4a",
                                 "data": base64Audio
                             ]
                         ],

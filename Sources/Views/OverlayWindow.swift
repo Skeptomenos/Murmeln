@@ -44,8 +44,8 @@ class OverlayWindowController: NSObject, ObservableObject {
         let contentView = OverlayContentView(controller: self)
         let hostingView = NSHostingView(rootView: contentView)
         
-        let windowWidth: CGFloat = 120
-        let windowHeight: CGFloat = 40
+        let windowWidth: CGFloat = 60
+        let windowHeight: CGFloat = 28
         
         guard let screen = NSScreen.main else { return }
         let screenFrame = screen.frame
@@ -81,29 +81,27 @@ struct OverlayContentView: View {
     @ObservedObject var controller: OverlayWindowController
     
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
             stateIcon
             
             if controller.state == .listening {
                 AudioBarsView(audioLevel: controller.audioLevel)
             } else if controller.state == .processing {
                 ProgressView()
-                    .scaleEffect(0.6)
-                    .frame(width: 20, height: 20)
+                    .scaleEffect(0.5)
+                    .frame(width: 16, height: 16)
             }
-            
-            stateText
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
         .background(backgroundGradient)
         .clipShape(Capsule())
-        .shadow(color: .black.opacity(0.3), radius: 10, x: 0, y: 4)
+        .shadow(color: .black.opacity(0.2), radius: 6, x: 0, y: 2)
     }
     
     private var stateIcon: some View {
         Image(systemName: iconName)
-            .font(.system(size: 14, weight: .semibold))
+            .font(.system(size: 12, weight: .semibold))
             .foregroundStyle(iconColor)
             .symbolEffect(.pulse, isActive: controller.state == .listening)
     }
@@ -124,30 +122,8 @@ struct OverlayContentView: View {
         }
     }
     
-    private var stateText: some View {
-        Text(stateLabel)
-            .font(.system(size: 12, weight: .medium))
-            .foregroundStyle(.primary)
-    }
-    
-    private var stateLabel: String {
-        switch controller.state {
-        case .idle: return "Ready"
-        case .listening: return "Listening"
-        case .processing: return "Processing"
-        }
-    }
-    
     private var backgroundGradient: some ShapeStyle {
         .ultraThinMaterial
-    }
-    
-    private var borderColor: Color {
-        switch controller.state {
-        case .idle: return .white.opacity(0.2)
-        case .listening: return .red.opacity(0.4)
-        case .processing: return .blue.opacity(0.4)
-        }
     }
 }
 
