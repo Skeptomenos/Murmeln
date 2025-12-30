@@ -7,25 +7,26 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		APP001 /* MurmelnApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC001; };
-		APP002 /* AppSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC002; };
-		APP003 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC003; };
-		APP004 /* Shortcuts.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC004; };
-		APP005 /* AudioService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC005; };
-		APP006 /* NetworkService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC006; };
-		APP007 /* PasteService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC007; };
-		APP008 /* PermissionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC008; };
-		APP009 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC009; };
-		APP010 /* VisualizerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC010; };
-		APP011 /* Provider.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC011; };
-		APP012 /* ModelDiscoveryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC012; };
-		APP013 /* OverlayWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC013; };
-		APP014 /* HotkeyService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC014; };
-		APP015 /* SettingsWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC015; };
-		PKG001 /* KeyboardShortcuts in Frameworks */ = {isa = PBXBuildFile; productRef = PKG002; };
+		APP001 /* MurmelnApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC001 /* MurmelnApp.swift */; };
+		APP002 /* AppSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC002 /* AppSettings.swift */; };
+		APP003 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC003 /* AppState.swift */; };
+		APP004 /* Shortcuts.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC004 /* Shortcuts.swift */; };
+		APP005 /* AudioService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC005 /* AudioService.swift */; };
+		APP006 /* NetworkService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC006 /* NetworkService.swift */; };
+		APP007 /* PasteService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC007 /* PasteService.swift */; };
+		APP008 /* PermissionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC008 /* PermissionService.swift */; };
+		APP009 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC009 /* SettingsView.swift */; };
+		APP010 /* VisualizerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC010 /* VisualizerView.swift */; };
+		APP011 /* Provider.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC011 /* Provider.swift */; };
+		APP012 /* ModelDiscoveryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC012 /* ModelDiscoveryService.swift */; };
+		APP013 /* OverlayWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC013 /* OverlayWindow.swift */; };
+		APP014 /* HotkeyService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC014 /* HotkeyService.swift */; };
+		APP015 /* SettingsWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC015 /* SettingsWindowController.swift */; };
+		PKG001 /* KeyboardShortcuts in Frameworks */ = {isa = PBXBuildFile; productRef = PKG002 /* KeyboardShortcuts */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		F2B02ABB2F0409FC00DD12FC /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		PROD01 /* Murmeln.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Murmeln.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		SRC001 /* MurmelnApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MurmelnApp.swift; sourceTree = "<group>"; };
 		SRC002 /* AppSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettings.swift; sourceTree = "<group>"; };
@@ -56,14 +57,6 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		ROOT01 = {
-			isa = PBXGroup;
-			children = (
-				GRP001 /* Sources */,
-				GRP005 /* Products */,
-			);
-			sourceTree = "<group>";
-		};
 		GRP001 /* Sources */ = {
 			isa = PBXGroup;
 			children = (
@@ -118,12 +111,21 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
+		ROOT01 = {
+			isa = PBXGroup;
+			children = (
+				F2B02ABB2F0409FC00DD12FC /* Assets.xcassets */,
+				GRP001 /* Sources */,
+				GRP005 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
 		TGT001 /* Murmeln */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = CFG003;
+			buildConfigurationList = CFG003 /* Build configuration list for PBXNativeTarget "Murmeln" */;
 			buildPhases = (
 				SRC100 /* Sources */,
 				FRM001 /* Frameworks */,
@@ -155,7 +157,7 @@
 					};
 				};
 			};
-			buildConfigurationList = CFG001;
+			buildConfigurationList = CFG001 /* Build configuration list for PBXProject "Murmeln" */;
 			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;

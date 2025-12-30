@@ -27,16 +27,19 @@ final class AppState: ObservableObject {
             }
             
             do {
+                print("📝 Starting recording...")
                 isRecording = true
                 lastError = nil
                 overlay.show()
                 
                 let levelStream = try await audioRecorder.startRecording()
+                print("✅ Recording started")
                 for await level in levelStream {
                     audioLevel = level
                     overlay.updateAudioLevel(level)
                 }
             } catch {
+                print("❌ Recording failed: \(error.localizedDescription)")
                 lastError = error.localizedDescription
                 isRecording = false
                 overlay.hide()
@@ -51,16 +54,19 @@ final class AppState: ObservableObject {
         recordingTask = nil
         
         Task {
+            print("⏹️ Stopping recording...")
             let audioURL = await audioRecorder.stopRecording()
             isRecording = false
             audioLevel = 0
             
             guard let url = audioURL else {
+                print("❌ No audio file URL returned")
                 overlay.hide()
                 return
             }
             
             let fileSize = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) ?? 0
+            print("📁 Audio file size: \(fileSize) bytes")
             if fileSize == 0 {
                 lastError = "No audio recorded"
                 overlay.hide()
@@ -71,10 +77,14 @@ final class AppState: ObservableObject {
             overlay.setProcessing()
             
             do {
+                print("🚀 Starting transcription...")
                 let text = try await transcribeAndRefine(url: url)
+                print("✅ Transcription result: '\(text)'")
+                print("📋 Pasting text...")
                 PasteService.shared.paste(text: text)
                 lastError = nil
             } catch {
+                print("❌ Transcription/Refinement failed: \(error.localizedDescription)")
                 lastError = error.localizedDescription
             }
             
