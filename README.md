@@ -1,124 +1,142 @@
-# Murmeln
+<p align="center">
+  <img src="icon/app-icon.png" alt="Murmeln" width="128" height="128">
+</p>
 
-A lightweight macOS menu bar app for push-to-talk dictation. Hold the **Fn key** to record, release to transcribe and auto-paste into any application.
+<h1 align="center">Murmeln</h1>
+
+<p align="center">
+  <strong>Push-to-talk dictation for macOS — Bring Your Own API Key</strong>
+</p>
+
+<p align="center">
+  An open-source alternative to Whisper Transcription and similar apps.<br>
+  Hold <kbd>Fn</kbd> to record, release to transcribe and auto-paste. Simple.
+</p>
+
+---
+
+## Why Murmeln?
+
+Love the idea of voice dictation apps but want to:
+- **Use your own API keys** instead of paying subscription fees?
+- **Choose your provider** — OpenAI, Groq, Gemini, or self-hosted?
+- **Keep it simple** — no account, no cloud sync, just dictation?
+
+Murmeln is for you. It's the **BYOAPI** (Bring Your Own API) dictation tool.
+
+---
 
 ## Features
 
-- **Push-to-Talk**: Hold Fn key to record, release to process
-- **Multiple Transcription Providers**:
-  - OpenAI Whisper
-  - Groq Whisper (fast, free tier available)
-  - GPT-4o Audio (native audio understanding)
-  - Gemini 2.0 Flash (native audio understanding)
-  - Local Whisper (self-hosted)
-- **LLM Refinement**: Optional post-processing to clean up transcriptions
-- **Auto-Paste**: Automatically pastes transcribed text into the focused application
-- **Visual Feedback**: Floating overlay shows recording/processing status
-- **Menu Bar Integration**: Lives quietly in your menu bar
+| Feature | Description |
+|---------|-------------|
+| **Push-to-Talk** | Hold Fn key to record, release to process |
+| **Multiple Providers** | OpenAI Whisper, Groq, GPT-4o Audio, Gemini 2.0 Flash, Local Whisper |
+| **Smart Refinement** | LLM cleans up filler words, fixes grammar |
+| **Auto-Paste** | Transcribed text is pasted directly into your focused app |
+| **Visual Feedback** | Floating overlay shows recording/processing status |
+| **Menu Bar App** | Lives quietly in your menu bar |
 
-## Requirements
+---
 
-- macOS 14.0 (Sonoma) or later
-- API key for your chosen transcription provider (except Local Whisper)
+## Quick Start
 
-## Installation
-
-### From Source
+### 1. Install
 
 ```bash
 git clone https://github.com/Skeptomenos/Murmeln.git
 cd Murmeln
-xcodebuild -scheme Murmeln -configuration Release build
+xcodebuild -scheme Murmeln -configuration Release -derivedDataPath build build
+cp -r build/Build/Products/Release/Murmeln.app /Applications/
 ```
 
-The built app will be in `~/Library/Developer/Xcode/DerivedData/Murmeln-*/Build/Products/Release/Murmeln.app`
+### 2. Configure
 
-Copy it to `/Applications` and launch.
+1. Launch Murmeln (appears in menu bar)
+2. Click the mic icon → **Settings...**
+3. Add your API key for your preferred provider
 
-## Configuration
+### 3. Use
 
-1. Click the microphone icon in the menu bar
-2. Select **Settings...**
-3. Configure your transcription provider and API key
-4. Optionally configure LLM refinement for cleaner output
+1. Focus any text field
+2. **Hold Fn** → speak → **release Fn**
+3. Text appears automatically
 
-### Transcription Providers
+---
 
-| Provider | Speed | Cost | Notes |
-|----------|-------|------|-------|
-| OpenAI Whisper | Fast | $0.006/min | Most reliable |
-| Groq Whisper | Very Fast | Free tier | Great for testing |
-| GPT-4o Audio | Fast | Higher | Native audio, can refine in one call |
-| Gemini 2.0 Flash | Fast | Free tier | Native audio, can refine in one call |
-| Local Whisper | Varies | Free | Requires local server at `localhost:8080` |
+## Providers
 
-### LLM Refinement
+| Provider | Speed | Cost | One-Call Refinement |
+|----------|-------|------|---------------------|
+| **Gemini 2.0 Flash** | Fast | Free tier | ✅ Yes |
+| **Groq Whisper** | Very Fast | Free tier | ❌ No |
+| **OpenAI Whisper** | Fast | $0.006/min | ❌ No |
+| **GPT-4o Audio** | Fast | Higher | ✅ Yes |
+| **Local Whisper** | Varies | Free | ❌ No |
 
-When enabled, transcriptions are post-processed by an LLM to:
-- Remove filler words ("um", "uh", "like")
-- Fix grammar and punctuation
-- Structure text more clearly
+> **Tip:** Gemini 2.0 Flash is recommended — fast, free tier, and handles transcription + refinement in one API call.
 
-Native audio models (GPT-4o Audio, Gemini 2.0 Flash) can do transcription and refinement in a single API call.
+---
 
 ## Permissions
 
-Murmeln requires the following permissions:
+Murmeln needs three permissions to work:
 
-### Microphone Access
-Required for audio recording. macOS will prompt on first use.
+| Permission | Why | How to Grant |
+|------------|-----|--------------|
+| **Microphone** | Record your voice | Prompt on first use |
+| **Accessibility** | Global Fn key hotkey | System Settings → Privacy & Security → Accessibility |
+| **Automation** | Auto-paste text | Prompt on first use |
 
-### Accessibility Access
-Required for the Fn key hotkey to work globally. Grant in:
-**System Settings → Privacy & Security → Accessibility**
-
-### Automation (System Events)
-Required for auto-paste functionality. macOS will prompt on first use.
-
-## Usage
-
-1. Launch Murmeln (appears in menu bar as a microphone icon)
-2. Focus the application where you want text inserted
-3. **Hold Fn key** to start recording
-4. Speak your text
-5. **Release Fn key** to stop and process
-6. Text is automatically pasted
-
-### Menu Bar Icons
-
-- 🎤 **Microphone** - Ready
-- 🔴 **Red Microphone** - Recording
-- ✨ **Sparkles** - Processing
-
-## Architecture
-
-Built with Swift 6 and strict concurrency:
-- SwiftUI for UI
-- Actor-based audio recording for thread safety
-- Async/await throughout (no Combine)
-- AppleScript for reliable paste simulation
+---
 
 ## Troubleshooting
 
-### "Murmeln would like to access the microphone"
-Click **OK** to grant. Required for recording.
+<details>
+<summary><strong>Fn key not working</strong></summary>
 
-### Fn key not working
 1. Open **System Settings → Privacy & Security → Accessibility**
-2. Find Murmeln and enable it
-3. You may need to remove and re-add the app
+2. Find Murmeln and toggle it **off** then **on**
+3. Restart Murmeln
+</details>
 
-### Text not pasting
-1. When prompted, allow Murmeln to control System Events
-2. Ensure the target application accepts keyboard input
+<details>
+<summary><strong>Text not pasting</strong></summary>
 
-### Microphone permission keeps asking
-This happens with ad-hoc signed builds. For persistent permission, the app needs proper code signing.
+1. Allow Murmeln to control System Events when prompted
+2. Make sure the target app has an active text field
+</details>
+
+<details>
+<summary><strong>Microphone permission keeps asking</strong></summary>
+
+This happens with unsigned builds. For persistent permission, the app needs code signing with a Developer ID.
+</details>
+
+---
+
+## Requirements
+
+- macOS 14.0 (Sonoma) or later
+- API key for your chosen provider (except Local Whisper)
+
+---
+
+## Tech Stack
+
+- **Swift 6** with strict concurrency
+- **SwiftUI** for the UI
+- **Actor-based** audio recording
+- **Async/await** throughout
+
+---
 
 ## License
 
-MIT
+MIT — Use it, fork it, improve it.
 
-## Credits
+---
 
-Built with ❤️ for fast, frictionless dictation.
+<p align="center">
+  Built with ❤️ for fast, frictionless dictation.
+</p>
