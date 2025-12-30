@@ -10,6 +10,7 @@ struct MurmelnApp: App {
             MenuContent()
         } label: {
             MoleIcon(state: AppState.shared.currentState)
+                .frame(width: 18, height: 18)
         }
         .menuBarExtraStyle(.menu)
     }
