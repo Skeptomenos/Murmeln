@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import CoreGraphics
 
 enum OverlayState {
     case idle
@@ -23,6 +24,7 @@ class OverlayWindowController: NSObject, ObservableObject {
         if window == nil {
             createWindow()
         }
+        positionWindowOnActiveScreen()
         state = .listening
         window?.orderFrontRegardless()
     }
@@ -44,21 +46,8 @@ class OverlayWindowController: NSObject, ObservableObject {
         let contentView = OverlayContentView(controller: self)
         let hostingView = NSHostingView(rootView: contentView)
         
-        let windowWidth: CGFloat = 60
-        let windowHeight: CGFloat = 28
-        
-        guard let screen = NSScreen.main else { return }
-        let screenFrame = screen.frame
-        let visibleFrame = screen.visibleFrame
-        
-        let notchAreaHeight = screenFrame.height - visibleFrame.height - (screenFrame.height - visibleFrame.maxY)
-        let yPosition = screenFrame.height - notchAreaHeight - windowHeight - 8
-        let xPosition = (screenFrame.width - windowWidth) / 2
-        
-        let windowFrame = NSRect(x: xPosition, y: yPosition, width: windowWidth, height: windowHeight)
-        
         let window = NSWindow(
-            contentRect: windowFrame,
+            contentRect: NSRect(x: 0, y: 0, width: 60, height: 28),
             styleMask: [.borderless],
             backing: .buffered,
             defer: false
@@ -74,6 +63,88 @@ class OverlayWindowController: NSObject, ObservableObject {
         window.contentView = hostingView
         
         self.window = window
+    }
+    
+    private func positionWindowOnActiveScreen() {
+        guard let window = self.window else { return }
+        
+        let screen = getActiveScreen()
+        let screenFrame = screen.frame
+        let visibleFrame = screen.visibleFrame
+        
+        let windowWidth: CGFloat = 60
+        let windowHeight: CGFloat = 28
+        
+        let yPosition = visibleFrame.maxY - windowHeight - 4
+        let xPosition = screenFrame.origin.x + (screenFrame.width - windowWidth) / 2
+        
+        window.setFrame(NSRect(x: xPosition, y: yPosition, width: windowWidth, height: windowHeight), display: true)
+    }
+    
+    private func getActiveScreen() -> NSScreen {
+        if let screen = getScreenOfFrontmostWindow() {
+            return screen
+        }
+        
+        if let builtIn = getBuiltInScreen() {
+            return builtIn
+        }
+        
+        return NSScreen.main ?? NSScreen.screens.first ?? NSScreen()
+    }
+    
+    private func getScreenOfFrontmostWindow() -> NSScreen? {
+        guard let frontmostApp = NSWorkspace.shared.frontmostApplication else { return nil }
+        let pid = frontmostApp.processIdentifier
+        
+        guard let windowList = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else {
+            return nil
+        }
+        
+        let primaryScreenHeight = NSScreen.screens.first?.frame.height ?? 0
+        
+        for windowInfo in windowList {
+            guard let windowPID = windowInfo[kCGWindowOwnerPID as String] as? pid_t,
+                  windowPID == pid,
+                  let bounds = windowInfo[kCGWindowBounds as String] as? [String: Any],
+                  let x = bounds["X"] as? CGFloat,
+                  let y = bounds["Y"] as? CGFloat,
+                  let width = bounds["Width"] as? CGFloat,
+                  let height = bounds["Height"] as? CGFloat,
+                  let layer = windowInfo[kCGWindowLayer as String] as? Int,
+                  layer == 0 else {
+                continue
+            }
+            
+            let windowRect = CGRect(x: x, y: y, width: width, height: height)
+            
+            let windowCenter = NSPoint(x: windowRect.midX, y: windowRect.midY)
+            
+            for screen in NSScreen.screens {
+                let flippedFrame = NSRect(
+                    x: screen.frame.origin.x,
+                    y: primaryScreenHeight - screen.frame.origin.y - screen.frame.height,
+                    width: screen.frame.width,
+                    height: screen.frame.height
+                )
+                if flippedFrame.contains(windowCenter) {
+                    return screen
+                }
+            }
+        }
+        
+        return nil
+    }
+    
+    private func getBuiltInScreen() -> NSScreen? {
+        for screen in NSScreen.screens {
+            if let screenNumber = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID {
+                if CGDisplayIsBuiltin(screenNumber) != 0 {
+                    return screen
+                }
+            }
+        }
+        return nil
     }
 }
 
