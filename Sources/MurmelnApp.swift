@@ -19,7 +19,13 @@ struct MenuBarIcon: View {
     @ObservedObject private var appState = AppState.shared
     
     var body: some View {
-        Image(systemName: appState.isRecording ? "mic.fill" : (appState.isProcessing ? "sparkles" : "mic"))
+        if appState.isRecording {
+            Image("MenuBarIcon")
+        } else if appState.isProcessing {
+            Image(systemName: "sparkles")
+        } else {
+            Image("MenuBarIcon")
+        }
     }
 }
 
