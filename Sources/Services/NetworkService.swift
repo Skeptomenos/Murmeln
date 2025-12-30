@@ -53,8 +53,8 @@ final class NetworkService: Sendable {
         var body = Data()
         
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
-        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"recording.m4a\"\r\n".data(using: .utf8)!)
-        body.append("Content-Type: audio/m4a\r\n\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"recording.wav\"\r\n".data(using: .utf8)!)
+        body.append("Content-Type: audio/wav\r\n\r\n".data(using: .utf8)!)
         body.append(audioData)
         body.append("\r\n".data(using: .utf8)!)
         
@@ -92,8 +92,8 @@ final class NetworkService: Sendable {
         var body = Data()
         
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
-        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"recording.m4a\"\r\n".data(using: .utf8)!)
-        body.append("Content-Type: audio/m4a\r\n\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"recording.wav\"\r\n".data(using: .utf8)!)
+        body.append("Content-Type: audio/wav\r\n\r\n".data(using: .utf8)!)
         body.append(audioData)
         body.append("\r\n".data(using: .utf8)!)
         body.append("--\(boundary)--\r\n".data(using: .utf8)!)
@@ -133,7 +133,7 @@ final class NetworkService: Sendable {
                         "type": "input_audio",
                         "input_audio": [
                             "data": base64Audio,
-                            "format": "aac"
+                            "format": "wav"
                         ]
                     ]
                 ]]
@@ -167,18 +167,23 @@ final class NetworkService: Sendable {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         
         let body: [String: Any] = [
+            "systemInstruction": [
+                "parts": [
+                    ["text": systemPrompt]
+                ]
+            ],
             "contents": [
                 [
                     "role": "user",
                     "parts": [
                         [
                             "inline_data": [
-                                "mime_type": "audio/m4a",
+                                "mime_type": "audio/wav",
                                 "data": base64Audio
                             ]
                         ],
                         [
-                            "text": systemPrompt
+                            "text": "Transcribe and refine this audio."
                         ]
                     ]
                 ]

@@ -38,16 +38,9 @@ actor AudioRecorder {
         )!
         
         let fileURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("recording_\(UUID().uuidString).m4a")
+            .appendingPathComponent("recording_\(UUID().uuidString).wav")
         
-        let settings: [String: Any] = [
-            AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
-            AVSampleRateKey: 16000,
-            AVNumberOfChannelsKey: 1,
-            AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue
-        ]
-        
-        let file = try AVAudioFile(forWriting: fileURL, settings: settings, commonFormat: .pcmFormatFloat32, interleaved: false)
+        let file = try AVAudioFile(forWriting: fileURL, settings: recordingFormat.settings)
         
         self.audioEngine = engine
         self.audioFile = file
