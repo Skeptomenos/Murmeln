@@ -86,8 +86,8 @@ Required for auto-paste functionality. macOS will prompt on first use.
 
 ### Menu Bar Icons
 
-- 🐭 **Mole Icon** - Ready
-- 🔴 **Red Mole** - Recording
+- 🎤 **Microphone** - Ready
+- 🔴 **Red Microphone** - Recording
 - ✨ **Sparkles** - Processing
 
 ## Architecture
