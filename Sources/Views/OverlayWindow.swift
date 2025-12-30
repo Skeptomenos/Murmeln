@@ -98,10 +98,6 @@ struct OverlayContentView: View {
         .padding(.vertical, 10)
         .background(backgroundGradient)
         .clipShape(Capsule())
-        .overlay(
-            Capsule()
-                .strokeBorder(borderColor, lineWidth: 1)
-        )
         .shadow(color: .black.opacity(0.3), radius: 10, x: 0, y: 4)
     }
     
