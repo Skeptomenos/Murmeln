@@ -100,6 +100,11 @@ struct MenuContent: View {
         }
         .keyboardShortcut(",", modifiers: .command)
         
+        Button("Restart") {
+            restartApp()
+        }
+        .keyboardShortcut("r", modifiers: .command)
+        
         Button("Quit") {
             NSApplication.shared.terminate(nil)
         }
@@ -109,6 +114,15 @@ struct MenuContent: View {
     private func copyToClipboard(_ text: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
+    }
+    
+    private func restartApp() {
+        let url = Bundle.main.bundleURL
+        let task = Process()
+        task.launchPath = "/usr/bin/open"
+        task.arguments = [url.path]
+        try? task.run()
+        NSApplication.shared.terminate(nil)
     }
 }
 

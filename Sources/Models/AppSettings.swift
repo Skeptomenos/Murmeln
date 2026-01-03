@@ -1,48 +1,56 @@
 import SwiftUI
 
-enum PromptPreset: String, CaseIterable, Identifiable {
-    case casual = "Casual"
-    case structured = "Structured"
-    case llmPrompt = "LLM Prompt"
-    case verbatim = "Verbatim"
-    case custom = "Custom"
+struct PromptPreset: Codable, Identifiable, Hashable {
+    let id: UUID
+    var name: String
+    var description: String
+    var icon: String
+    var prompt: String
+    var isBuiltIn: Bool
     
-    var id: String { rawValue }
-    
-    var description: String {
-        switch self {
-        case .casual: return "WhatsApp, Chat, natural conversation"
-        case .structured: return "Notes, lists, documentation"
-        case .llmPrompt: return "AI prompts with markdown formatting"
-        case .verbatim: return "Minimal changes, preserve exact wording"
-        case .custom: return "Your own prompt"
-        }
+    init(id: UUID = UUID(), name: String, description: String, icon: String, prompt: String, isBuiltIn: Bool = false) {
+        self.id = id
+        self.name = name
+        self.description = description
+        self.icon = icon
+        self.prompt = prompt
+        self.isBuiltIn = isBuiltIn
     }
     
-    var icon: String {
-        switch self {
-        case .casual: return "bubble.left"
-        case .structured: return "list.bullet"
-        case .llmPrompt: return "cpu"
-        case .verbatim: return "text.quote"
-        case .custom: return "pencil"
-        }
-    }
-    
-    var prompt: String {
-        switch self {
-        case .casual:
-            return "Fix grammar and filler words. Keep it conversational and natural. Output only the cleaned text."
-        case .structured:
-            return "Clean up this dictation. Fix grammar and punctuation. Format lists as bullet points or numbered lists. Keep the speaker's meaning. Output only the result."
-        case .llmPrompt:
-            return "Structure this as a clear AI prompt. Use markdown (headers, lists, code blocks) where appropriate. Be precise and unambiguous. Output only the result."
-        case .verbatim:
-            return "Remove filler words (um, uh, like, you know). Fix punctuation only. Do not change wording. Output only the result."
-        case .custom:
-            return ""
-        }
-    }
+    static let builtInPresets: [PromptPreset] = [
+        PromptPreset(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
+            name: "Casual",
+            description: "WhatsApp, Chat, natural conversation",
+            icon: "bubble.left",
+            prompt: "Fix grammar, filler words, punctuation. Keep it natural. Do NOT add content. Output ONLY the cleaned text, nothing else.",
+            isBuiltIn: true
+        ),
+        PromptPreset(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000002")!,
+            name: "Structured",
+            description: "Notes, lists, documentation",
+            icon: "list.bullet",
+            prompt: "Fix grammar and punctuation. Format spoken lists as bullet points. Do NOT add content, examples, or explanations. Output ONLY the cleaned text.",
+            isBuiltIn: true
+        ),
+        PromptPreset(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000003")!,
+            name: "Markdown",
+            description: "Structured notes with headers and lists",
+            icon: "text.alignleft",
+            prompt: "Clean up this dictation. Fix grammar and punctuation. Use markdown headers (##) only if the speaker explicitly introduces a new topic. Use bullet points only for items the speaker lists sequentially. PRESERVE the speaker's exact vocabulary; do NOT rephrase, do NOT summarize, and do NOT add content. NEVER add placeholders, templates, examples, or structural elements not explicitly spoken. Output ONLY the cleaned text, nothing else.",
+            isBuiltIn: true
+        ),
+        PromptPreset(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000004")!,
+            name: "Verbatim",
+            description: "Minimal changes, preserve exact wording",
+            icon: "text.quote",
+            prompt: "Remove filler words (um, uh, like). Fix punctuation. Do NOT change any wording. Output ONLY the result.",
+            isBuiltIn: true
+        )
+    ]
 }
 
 @MainActor
@@ -57,33 +65,84 @@ final class AppSettings: ObservableObject {
     @AppStorage("refinementBaseURL") var refinementBaseURL = "https://api.openai.com/v1"
     @AppStorage("refinementModel") var refinementModel = "gpt-4o-mini"
     
-    @AppStorage("promptPreset") var promptPresetRaw = PromptPreset.casual.rawValue
-    @AppStorage("customPrompt") var customPrompt = "You are a transcription refiner. Clean up the following speech-to-text input. Remove filler words, fix grammar, and structure it as clear, professional text or a concise command. Output ONLY the refined text."
-    
+    @AppStorage("selectedPresetId") private var selectedPresetIdRaw = "00000000-0000-0000-0000-000000000001"
     @AppStorage("highQualityAudio") var highQualityAudio = false
     
-    var promptPreset: PromptPreset {
-        get { PromptPreset(rawValue: promptPresetRaw) ?? .casual }
-        set {
-            promptPresetRaw = newValue.rawValue
+    @Published var customPresets: [PromptPreset] = []
+    @Published var presetOverrides: [UUID: String] = [:]
+    
+    var allPresets: [PromptPreset] {
+        PromptPreset.builtInPresets + customPresets
+    }
+    
+    var selectedPresetId: UUID {
+        get { UUID(uuidString: selectedPresetIdRaw) ?? PromptPreset.builtInPresets[0].id }
+        set { 
+            selectedPresetIdRaw = newValue.uuidString
             objectWillChange.send()
+        }
+    }
+    
+    var selectedPreset: PromptPreset? {
+        get { allPresets.first { $0.id == selectedPresetId } }
+        set {
+            if let preset = newValue {
+                selectedPresetId = preset.id
+            }
         }
     }
     
     var systemPrompt: String {
         get {
-            if promptPreset == .custom {
-                return customPrompt
+            if let override = presetOverrides[selectedPresetId] {
+                return override
             }
-            return promptPreset.prompt
+            return selectedPreset?.prompt ?? PromptPreset.builtInPresets[0].prompt
         }
         set {
-            customPrompt = newValue
-            if promptPreset != .custom {
-                promptPreset = .custom
-            }
+            presetOverrides[selectedPresetId] = newValue
+            savePresetOverrides()
             objectWillChange.send()
         }
+    }
+    
+    func promptForPreset(_ preset: PromptPreset) -> String {
+        presetOverrides[preset.id] ?? preset.prompt
+    }
+    
+    func updatePromptForPreset(_ preset: PromptPreset, prompt: String) {
+        presetOverrides[preset.id] = prompt
+        savePresetOverrides()
+        objectWillChange.send()
+    }
+    
+    func resetPresetToDefault(_ preset: PromptPreset) {
+        presetOverrides.removeValue(forKey: preset.id)
+        savePresetOverrides()
+        objectWillChange.send()
+    }
+    
+    func isPresetModified(_ preset: PromptPreset) -> Bool {
+        presetOverrides[preset.id] != nil
+    }
+    
+    func addCustomPreset(name: String, description: String, icon: String, prompt: String) {
+        let preset = PromptPreset(name: name, description: description, icon: icon, prompt: prompt, isBuiltIn: false)
+        customPresets.append(preset)
+        saveCustomPresets()
+        selectedPresetId = preset.id
+    }
+    
+    func deleteCustomPreset(_ preset: PromptPreset) {
+        guard !preset.isBuiltIn else { return }
+        customPresets.removeAll { $0.id == preset.id }
+        presetOverrides.removeValue(forKey: preset.id)
+        saveCustomPresets()
+        savePresetOverrides()
+        if selectedPresetId == preset.id {
+            selectedPresetId = PromptPreset.builtInPresets[0].id
+        }
+        objectWillChange.send()
     }
     
     var transcriptionAPIKey: String {
@@ -128,5 +187,38 @@ final class AppSettings: ObservableObject {
         objectWillChange.send()
     }
     
-    private init() {}
+    private func saveCustomPresets() {
+        if let data = try? JSONEncoder().encode(customPresets) {
+            UserDefaults.standard.set(data, forKey: "customPresets")
+        }
+    }
+    
+    private func loadCustomPresets() {
+        if let data = UserDefaults.standard.data(forKey: "customPresets"),
+           let presets = try? JSONDecoder().decode([PromptPreset].self, from: data) {
+            customPresets = presets
+        }
+    }
+    
+    private func savePresetOverrides() {
+        let stringKeyedDict = Dictionary(uniqueKeysWithValues: presetOverrides.map { ($0.key.uuidString, $0.value) })
+        if let data = try? JSONEncoder().encode(stringKeyedDict) {
+            UserDefaults.standard.set(data, forKey: "presetOverrides")
+        }
+    }
+    
+    private func loadPresetOverrides() {
+        if let data = UserDefaults.standard.data(forKey: "presetOverrides"),
+           let stringKeyedDict = try? JSONDecoder().decode([String: String].self, from: data) {
+            presetOverrides = Dictionary(uniqueKeysWithValues: stringKeyedDict.compactMap { key, value in
+                guard let uuid = UUID(uuidString: key) else { return nil }
+                return (uuid, value)
+            })
+        }
+    }
+    
+    private init() {
+        loadCustomPresets()
+        loadPresetOverrides()
+    }
 }

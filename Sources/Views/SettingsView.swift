@@ -28,12 +28,12 @@ struct SettingsView: View {
     var body: some View {
         HSplitView {
             sidebar
-                .frame(width: 160)
+                .frame(width: 180)
             
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(width: 600, height: 450)
+        .frame(width: 650, height: 500)
     }
     
     private var sidebar: some View {
@@ -322,96 +322,152 @@ struct SettingsView: View {
         .onAppear { loadRefinementModels() }
     }
     
+    @State private var showingAddPreset = false
+    @State private var newPresetName = ""
+    @State private var newPresetDescription = ""
+    @State private var editingPrompt = ""
+    
     private var promptContent: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Prompt Preset")
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Text("Prompt Presets")
                     .font(.title2.weight(.semibold))
-                Text("Choose how your dictation should be refined")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                Spacer()
+                Button {
+                    showingAddPreset = true
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .buttonStyle(.borderless)
+                .help("Add custom preset")
             }
             
-            VStack(spacing: 8) {
-                ForEach(PromptPreset.allCases) { preset in
-                    Button {
-                        settings.promptPreset = preset
-                    } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: preset.icon)
-                                .frame(width: 24)
-                                .foregroundColor(settings.promptPreset == preset ? .accentColor : .secondary)
-                            
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(preset.rawValue)
-                                    .font(.body.weight(.medium))
-                                    .foregroundColor(.primary)
-                                Text(preset.description)
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Preset")
+                        .font(.caption.weight(.medium))
+                    
+                    Picker("", selection: Binding(
+                        get: { settings.selectedPreset },
+                        set: { if let p = $0 { settings.selectedPreset = p } }
+                    )) {
+                        ForEach(settings.allPresets) { preset in
+                            HStack {
+                                Image(systemName: preset.icon)
+                                Text(preset.name)
+                                if settings.isPresetModified(preset) {
+                                    Text("•").foregroundColor(.orange)
+                                }
                             }
-                            
-                            Spacer()
-                            
-                            if settings.promptPreset == preset {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundColor(.accentColor)
-                            }
+                            .tag(preset as PromptPreset?)
                         }
-                        .padding(10)
-                        .background(settings.promptPreset == preset ? Color.accentColor.opacity(0.1) : Color(nsColor: .controlBackgroundColor))
-                        .cornerRadius(8)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 8)
-                                .stroke(settings.promptPreset == preset ? Color.accentColor : Color.clear, lineWidth: 1)
-                        )
                     }
-                    .buttonStyle(.plain)
+                    .labelsHidden()
+                    .frame(maxWidth: 200)
                 }
+                
+                if let preset = settings.selectedPreset, !preset.isBuiltIn {
+                    Button {
+                        settings.deleteCustomPreset(preset)
+                    } label: {
+                        Image(systemName: "trash")
+                            .foregroundColor(.red)
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Delete preset")
+                }
+            }
+            
+            if let preset = settings.selectedPreset {
+                Text(preset.description)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
             }
             
             Divider()
             
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Text(settings.promptPreset == .custom ? "Custom Prompt" : "Active Prompt")
+                    Text("Prompt")
                         .font(.caption.weight(.medium))
                     
                     Spacer()
                     
-                    if settings.promptPreset != .custom {
-                        Text("Read-only")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Color.secondary.opacity(0.2))
-                            .cornerRadius(4)
+                    if let preset = settings.selectedPreset, settings.isPresetModified(preset) {
+                        Button("Reset") {
+                            settings.resetPresetToDefault(preset)
+                        }
+                        .font(.caption)
+                        .buttonStyle(.borderless)
                     }
                 }
                 
-                if settings.promptPreset == .custom {
-                    TextEditor(text: $settings.customPrompt)
-                        .font(.system(.body, design: .monospaced))
-                        .frame(minHeight: 100)
-                        .padding(8)
-                        .background(Color(nsColor: .controlBackgroundColor))
-                        .cornerRadius(8)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 8)
-                                .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
-                        )
-                } else {
-                    Text(settings.systemPrompt)
-                        .font(.system(.caption, design: .monospaced))
-                        .foregroundColor(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(10)
-                        .background(Color(nsColor: .controlBackgroundColor).opacity(0.5))
-                        .cornerRadius(8)
-                }
+                TextEditor(text: Binding(
+                    get: { settings.systemPrompt },
+                    set: { settings.systemPrompt = $0 }
+                ))
+                .font(.system(.body, design: .monospaced))
+                .frame(minHeight: 120)
+                .padding(8)
+                .background(Color(nsColor: .controlBackgroundColor))
+                .cornerRadius(8)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
+                )
             }
         }
+        .sheet(isPresented: $showingAddPreset) {
+            addPresetSheet
+        }
+    }
+    
+    private var addPresetSheet: some View {
+        VStack(spacing: 16) {
+            Text("New Preset")
+                .font(.headline)
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Name")
+                    .font(.caption.weight(.medium))
+                TextField("My Preset", text: $newPresetName)
+                    .textFieldStyle(.roundedBorder)
+            }
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Description")
+                    .font(.caption.weight(.medium))
+                TextField("Short description", text: $newPresetDescription)
+                    .textFieldStyle(.roundedBorder)
+            }
+            
+            HStack {
+                Button("Cancel") {
+                    showingAddPreset = false
+                    newPresetName = ""
+                    newPresetDescription = ""
+                }
+                .keyboardShortcut(.escape)
+                
+                Spacer()
+                
+                Button("Add") {
+                    settings.addCustomPreset(
+                        name: newPresetName,
+                        description: newPresetDescription,
+                        icon: "star",
+                        prompt: "Fix grammar and punctuation. Output only the cleaned text."
+                    )
+                    showingAddPreset = false
+                    newPresetName = ""
+                    newPresetDescription = ""
+                }
+                .keyboardShortcut(.return)
+                .disabled(newPresetName.isEmpty)
+            }
+        }
+        .padding(20)
+        .frame(width: 300)
     }
     
     private var recordingContent: some View {

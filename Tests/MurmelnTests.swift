@@ -960,54 +960,68 @@ struct AudioQualityTests {
 @Suite("PromptPreset Tests")
 struct PromptPresetTests {
     
-    @Test("All presets have unique raw values")
-    func uniqueRawValues() {
-        let rawValues = PromptPreset.allCases.map { $0.rawValue }
-        let uniqueValues = Set(rawValues)
-        #expect(rawValues.count == uniqueValues.count)
+    @Test("Built-in presets have unique IDs")
+    func uniqueIds() {
+        let ids = PromptPreset.builtInPresets.map { $0.id }
+        let uniqueIds = Set(ids)
+        #expect(ids.count == uniqueIds.count)
     }
     
-    @Test("All presets have descriptions")
+    @Test("All built-in presets have descriptions")
     func presetsHaveDescriptions() {
-        for preset in PromptPreset.allCases {
+        for preset in PromptPreset.builtInPresets {
             #expect(!preset.description.isEmpty)
         }
     }
     
-    @Test("All presets have icons")
+    @Test("All built-in presets have icons")
     func presetsHaveIcons() {
-        for preset in PromptPreset.allCases {
+        for preset in PromptPreset.builtInPresets {
             #expect(!preset.icon.isEmpty)
         }
     }
     
-    @Test("Non-custom presets have prompts")
-    func nonCustomPresetsHavePrompts() {
-        for preset in PromptPreset.allCases where preset != .custom {
+    @Test("All built-in presets have prompts")
+    func presetsHavePrompts() {
+        for preset in PromptPreset.builtInPresets {
             #expect(!preset.prompt.isEmpty)
         }
     }
     
-    @Test("Custom preset has empty prompt")
-    func customPresetEmptyPrompt() {
-        #expect(PromptPreset.custom.prompt.isEmpty)
+    @Test("Built-in presets are marked as built-in")
+    func builtInFlag() {
+        for preset in PromptPreset.builtInPresets {
+            #expect(preset.isBuiltIn == true)
+        }
     }
     
     @Test("Casual preset is conversational")
     func casualPresetContent() {
-        let prompt = PromptPreset.casual.prompt.lowercased()
-        #expect(prompt.contains("conversational") || prompt.contains("natural"))
+        let casual = PromptPreset.builtInPresets.first { $0.name == "Casual" }
+        #expect(casual != nil)
+        #expect(casual!.prompt.lowercased().contains("natural"))
     }
     
-    @Test("LLM preset mentions markdown")
-    func llmPresetContent() {
-        let prompt = PromptPreset.llmPrompt.prompt.lowercased()
-        #expect(prompt.contains("markdown"))
+    @Test("Markdown preset mentions markdown")
+    func markdownPresetContent() {
+        let markdown = PromptPreset.builtInPresets.first { $0.name == "Markdown" }
+        #expect(markdown != nil)
+        #expect(markdown!.prompt.lowercased().contains("markdown"))
     }
     
-    @Test("Verbatim preset is restrictive")
-    func verbatimPresetContent() {
-        let prompt = PromptPreset.verbatim.prompt.lowercased()
-        #expect(prompt.contains("do not change") || prompt.contains("only"))
+    @Test("Custom preset creation")
+    func customPresetCreation() {
+        let custom = PromptPreset(name: "Test", description: "Test desc", icon: "star", prompt: "Test prompt")
+        #expect(custom.isBuiltIn == false)
+        #expect(custom.name == "Test")
+    }
+    
+    @Test("PromptPreset is Codable")
+    func presetCodable() throws {
+        let preset = PromptPreset(name: "Test", description: "Desc", icon: "star", prompt: "Prompt")
+        let encoded = try JSONEncoder().encode(preset)
+        let decoded = try JSONDecoder().decode(PromptPreset.self, from: encoded)
+        #expect(decoded.name == preset.name)
+        #expect(decoded.prompt == preset.prompt)
     }
 }

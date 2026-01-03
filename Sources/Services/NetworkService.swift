@@ -138,7 +138,7 @@ final class NetworkService: Sendable {
                     ]
                 ]]
             ],
-            "temperature": 0.3
+            "temperature": 0.0
         ]
         
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
@@ -189,7 +189,7 @@ final class NetworkService: Sendable {
                 ]
             ],
             "generationConfig": [
-                "temperature": 0.3
+                "temperature": 0.0
             ]
         ]
         
@@ -240,7 +240,7 @@ final class NetworkService: Sendable {
                 ["role": "system", "content": systemPrompt],
                 ["role": "user", "content": text]
             ],
-            "temperature": 0.3
+            "temperature": 0.0
         ]
         
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
@@ -270,7 +270,7 @@ final class NetworkService: Sendable {
                 ["role": "user", "parts": [["text": "\(systemPrompt)\n\n\(text)"]]]
             ],
             "generationConfig": [
-                "temperature": 0.3
+                "temperature": 0.0
             ]
         ]
         

@@ -33,10 +33,10 @@ Murmeln is for you. It's the **BYOAPI** (Bring Your Own API) dictation tool.
 | **Push-to-Talk** | Hold Fn key to record, release to process |
 | **Lock Recording** | Double-tap Right Option for hands-free recording |
 | **Multiple Providers** | OpenAI Whisper, Groq, GPT-4o Audio, Gemini 2.0 Flash, Local Whisper |
-| **Prompt Presets** | Casual, Structured, LLM Prompt, Verbatim, or Custom |
+| **Prompt Presets** | Casual, Structured, LLM Prompt, Verbatim, or Custom (editable) |
 | **Auto-Paste** | Transcribed text is pasted directly into your focused app |
 | **Visual Feedback** | Minimal line indicator under notch shows status |
-| **History** | Access recent transcriptions from menu bar |
+| **History** | Side-by-side Original/Refined view, copy as Markdown |
 | **Optimized Audio** | 16kHz recording for faster processing |
 | **Menu Bar App** | Lives quietly in your menu bar |
 
@@ -108,9 +108,11 @@ Choose how your dictation is refined:
 |--------|----------|----------|
 | **Casual** | WhatsApp, Chat | Natural, conversational cleanup |
 | **Structured** | Notes, Lists | Formats bullet points, numbered lists |
-| **LLM Prompt** | AI Prompts | Markdown formatting, precise structure |
+| **LLM Prompt** | AI Prompts | Markdown headers, preserves intent |
 | **Verbatim** | Exact wording | Only removes filler words |
-| **Custom** | Your needs | Write your own prompt |
+| **Custom** | Your needs | Create your own presets |
+
+> **New:** All presets are now editable. Create custom presets with the + button.
 
 ---
 
