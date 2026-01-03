@@ -10,7 +10,7 @@
 
 <p align="center">
   An open-source alternative to Wispr and similar apps.<br>
-  Hold <kbd>Fn</kbd> to record, release to transcribe and auto-paste. Simple.
+  Hold <kbd>Fn</kbd> to record, or double-tap <kbd>Right Option</kbd> for hands-free mode.
 </p>
 
 ---
@@ -31,10 +31,11 @@ Murmeln is for you. It's the **BYOAPI** (Bring Your Own API) dictation tool.
 | Feature | Description |
 |---------|-------------|
 | **Push-to-Talk** | Hold Fn key to record, release to process |
+| **Lock Recording** | Double-tap Right Option for hands-free recording |
 | **Multiple Providers** | OpenAI Whisper, Groq, GPT-4o Audio, Gemini 2.0 Flash, Local Whisper |
 | **Smart Refinement** | LLM cleans up filler words, fixes grammar |
 | **Auto-Paste** | Transcribed text is pasted directly into your focused app |
-| **Visual Feedback** | Floating overlay shows recording/processing status |
+| **Visual Feedback** | Minimal line indicator under notch shows status |
 | **Menu Bar App** | Lives quietly in your menu bar |
 
 ---
@@ -70,9 +71,16 @@ cp -r build/Build/Products/Release/Murmeln.app /Applications/
 
 ### 3. Use
 
+**Push-to-Talk Mode:**
 1. Focus any text field
-2. **Hold Fn** → speak → **release Fn**
+2. **Hold Fn** (>400ms) → speak → **release Fn**
 3. Text appears automatically
+
+**Lock Recording Mode:**
+1. Focus any text field
+2. **Double-tap Right Option** → speak hands-free
+3. **Tap Right Option** again to stop
+4. Text appears automatically
 
 ---
 

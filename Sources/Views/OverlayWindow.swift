@@ -2,9 +2,11 @@ import SwiftUI
 import AppKit
 import CoreGraphics
 
-enum OverlayState {
+enum OverlayState: Equatable {
     case idle
+    case waiting
     case listening
+    case locked
     case processing
 }
 
@@ -20,13 +22,17 @@ class OverlayWindowController: NSObject, ObservableObject {
         super.init()
     }
     
-    func show() {
+    func showAlways() {
         if window == nil {
             createWindow()
         }
         positionWindowOnActiveScreen()
-        state = .listening
         window?.orderFrontRegardless()
+    }
+    
+    func show() {
+        showAlways()
+        state = .listening
     }
     
     func updateAudioLevel(_ level: Float) {
@@ -39,15 +45,14 @@ class OverlayWindowController: NSObject, ObservableObject {
     
     func hide() {
         state = .idle
-        window?.orderOut(nil)
     }
     
     private func createWindow() {
-        let contentView = OverlayContentView(controller: self)
+        let contentView = MinimalLineIndicator(controller: self)
         let hostingView = NSHostingView(rootView: contentView)
         
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 60, height: 28),
+            contentRect: NSRect(x: 0, y: 0, width: 50, height: 10),
             styleMask: [.borderless],
             backing: .buffered,
             defer: false
@@ -55,10 +60,10 @@ class OverlayWindowController: NSObject, ObservableObject {
         
         window.isOpaque = false
         window.backgroundColor = .clear
-        window.level = .floating
-        window.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
+        window.level = .screenSaver
+        window.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
         window.isMovableByWindowBackground = false
-        window.hasShadow = true
+        window.hasShadow = false
         window.ignoresMouseEvents = true
         window.contentView = hostingView
         
@@ -72,10 +77,10 @@ class OverlayWindowController: NSObject, ObservableObject {
         let screenFrame = screen.frame
         let visibleFrame = screen.visibleFrame
         
-        let windowWidth: CGFloat = 60
-        let windowHeight: CGFloat = 28
+        let windowWidth: CGFloat = 50
+        let windowHeight: CGFloat = 10
         
-        let yPosition = visibleFrame.maxY - windowHeight - 4
+        let yPosition = visibleFrame.maxY - windowHeight - 2
         let xPosition = screenFrame.origin.x + (screenFrame.width - windowWidth) / 2
         
         window.setFrame(NSRect(x: xPosition, y: yPosition, width: windowWidth, height: windowHeight), display: true)
@@ -148,53 +153,93 @@ class OverlayWindowController: NSObject, ObservableObject {
     }
 }
 
-struct OverlayContentView: View {
+struct MinimalLineIndicator: View {
     @ObservedObject var controller: OverlayWindowController
+    @State private var shimmerOffset: CGFloat = -1
+    
+    private let baseWidth: CGFloat = 40
+    private let maxExpansion: CGFloat = 8
     
     var body: some View {
-        HStack(spacing: 6) {
-            stateIcon
-            
-            if controller.state == .listening {
-                AudioBarsView(audioLevel: controller.audioLevel)
-            } else if controller.state == .processing {
-                ProgressView()
-                    .scaleEffect(0.5)
-                    .frame(width: 16, height: 16)
+        ZStack {
+            if controller.state == .processing {
+                processingIndicator
+            } else {
+                audioIndicator
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(backgroundGradient)
-        .clipShape(Capsule())
-        .shadow(color: .black.opacity(0.2), radius: 6, x: 0, y: 2)
+        .frame(width: baseWidth + maxExpansion, height: 4)
     }
     
-    private var stateIcon: some View {
-        Image(systemName: iconName)
-            .font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(iconColor)
-            .symbolEffect(.pulse, isActive: controller.state == .listening)
+    private var audioIndicator: some View {
+        Capsule()
+            .fill(lineColor)
+            .frame(width: currentWidth, height: 2.5)
+            .opacity(lineOpacity)
+            .animation(.easeOut(duration: 0.08), value: controller.audioLevel)
+            .animation(.easeInOut(duration: 0.25), value: controller.state)
     }
     
-    private var iconName: String {
+    private var processingIndicator: some View {
+        Capsule()
+            .fill(
+                LinearGradient(
+                    colors: [
+                        .white.opacity(0.3),
+                        .white.opacity(0.7),
+                        .white.opacity(0.3)
+                    ],
+                    startPoint: UnitPoint(x: shimmerOffset, y: 0.5),
+                    endPoint: UnitPoint(x: shimmerOffset + 0.4, y: 0.5)
+                )
+            )
+            .frame(width: baseWidth, height: 2.5)
+            .onAppear {
+                withAnimation(.linear(duration: 1.2).repeatForever(autoreverses: false)) {
+                    shimmerOffset = 1.4
+                }
+            }
+            .onDisappear {
+                shimmerOffset = -1
+            }
+    }
+    
+    private var currentWidth: CGFloat {
         switch controller.state {
-        case .idle: return "mic"
-        case .listening: return "mic.fill"
-        case .processing: return "sparkles"
+        case .idle:
+            return baseWidth * 0.5
+        case .waiting:
+            return baseWidth * 0.7
+        case .listening, .locked:
+            let expansion = CGFloat(min(1.0, controller.audioLevel * 4)) * maxExpansion
+            return baseWidth + expansion
+        case .processing:
+            return baseWidth
         }
     }
     
-    private var iconColor: Color {
+    private var lineColor: Color {
         switch controller.state {
-        case .idle: return .secondary
-        case .listening: return .red
-        case .processing: return .blue
+        case .idle, .waiting, .listening:
+            return .white
+        case .locked:
+            return .orange
+        case .processing:
+            return .white
         }
     }
     
-    private var backgroundGradient: some ShapeStyle {
-        .ultraThinMaterial
+    private var lineOpacity: Double {
+        switch controller.state {
+        case .idle:
+            return 0.15
+        case .waiting:
+            return 0.4
+        case .listening, .locked:
+            return 0.85
+        case .processing:
+            return 0.7
+        }
     }
 }
 

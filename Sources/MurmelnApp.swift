@@ -38,16 +38,20 @@ extension AppState {
 
 struct MenuContent: View {
     @ObservedObject private var appState = AppState.shared
+    @ObservedObject private var overlay = OverlayWindowController.shared
     
     var body: some View {
-        if appState.isRecording {
+        if overlay.state == .locked {
+            Text("Recording (Locked) - Tap Fn to stop")
+                .foregroundColor(.orange)
+        } else if appState.isRecording {
             Text("Recording...")
                 .foregroundColor(.red)
         } else if appState.isProcessing {
             Text("Processing...")
                 .foregroundColor(.blue)
         } else {
-            Text("Ready (Hold Fn to record)")
+            Text("Ready (Hold Fn or double-tap to lock)")
                 .foregroundColor(.secondary)
         }
         
@@ -82,14 +86,36 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         
-        HotkeyService.shared.onKeyDown = {
+        let hotkey = HotkeyService.shared
+        let overlay = OverlayWindowController.shared
+        
+        overlay.showAlways()
+        
+        hotkey.onHoldStarted = {
+            overlay.state = .waiting
+        }
+        
+        hotkey.onHoldCancelled = {
+            overlay.state = .idle
+        }
+        
+        hotkey.onKeyDown = {
+            overlay.state = .listening
             AppState.shared.startRecording()
         }
         
-        HotkeyService.shared.onKeyUp = {
+        hotkey.onKeyUp = {
             AppState.shared.stopAndProcess()
         }
         
-        HotkeyService.shared.start()
+        hotkey.onLockEngaged = {
+            overlay.state = .locked
+        }
+        
+        hotkey.onLockDisengaged = {
+            overlay.state = .idle
+        }
+        
+        hotkey.start()
     }
 }

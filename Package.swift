@@ -18,13 +18,10 @@ let package = Package(
             dependencies: [
                 "KeyboardShortcuts"
             ],
-            path: "Sources",
-            resources: [
-                .process("Assets.xcassets")
-            ]
+            path: "Sources"
         ),
         .testTarget(
-            name: "mrmlTests",
+            name: "MurmelnTests",
             dependencies: ["mrml"],
             path: "Tests"
         )
