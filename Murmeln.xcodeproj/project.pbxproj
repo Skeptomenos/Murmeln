@@ -22,6 +22,9 @@
 		APP013 /* OverlayWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC013 /* OverlayWindow.swift */; };
 		APP014 /* HotkeyService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC014 /* HotkeyService.swift */; };
 		APP015 /* SettingsWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC015 /* SettingsWindowController.swift */; };
+		APP016 /* HistoryEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC016 /* HistoryEntry.swift */; };
+		APP017 /* HistoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC017 /* HistoryStore.swift */; };
+		APP018 /* HistoryWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC018 /* HistoryWindow.swift */; };
 		RES001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F2B02ABB2F0409FC00DD12FC /* Assets.xcassets */; };
 		PKG001 /* KeyboardShortcuts in Frameworks */ = {isa = PBXBuildFile; productRef = PKG002 /* KeyboardShortcuts */; };
 /* End PBXBuildFile section */
@@ -44,6 +47,9 @@
 		SRC013 /* OverlayWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverlayWindow.swift; sourceTree = "<group>"; };
 		SRC014 /* HotkeyService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotkeyService.swift; sourceTree = "<group>"; };
 		SRC015 /* SettingsWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsWindowController.swift; sourceTree = "<group>"; };
+		SRC016 /* HistoryEntry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryEntry.swift; sourceTree = "<group>"; };
+		SRC017 /* HistoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryStore.swift; sourceTree = "<group>"; };
+		SRC018 /* HistoryWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryWindow.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -87,6 +93,8 @@
 				SRC003 /* AppState.swift */,
 				SRC004 /* Shortcuts.swift */,
 				SRC011 /* Provider.swift */,
+				SRC016 /* HistoryEntry.swift */,
+				SRC017 /* HistoryStore.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -111,6 +119,7 @@
 				SRC010 /* VisualizerView.swift */,
 				SRC013 /* OverlayWindow.swift */,
 				SRC015 /* SettingsWindowController.swift */,
+				SRC018 /* HistoryWindow.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -211,6 +220,9 @@
 				APP013 /* OverlayWindow.swift in Sources */,
 				APP014 /* HotkeyService.swift in Sources */,
 				APP015 /* SettingsWindowController.swift in Sources */,
+				APP016 /* HistoryEntry.swift in Sources */,
+				APP017 /* HistoryStore.swift in Sources */,
+				APP018 /* HistoryWindow.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -24,6 +24,11 @@ struct SettingsView: View {
                 .tabItem {
                     Label("Prompt", systemImage: "text.quote")
                 }
+            
+            recordingSettingsTab
+                .tabItem {
+                    Label("Recording", systemImage: "mic")
+                }
         }
         .padding()
         .frame(width: 500, height: 400)
@@ -164,6 +169,39 @@ struct SettingsView: View {
                         settings.systemPrompt = "You are a transcription refiner. Clean up the following speech-to-text input. Remove filler words, fix grammar, and structure it as clear, professional text or a concise command. Output ONLY the refined text."
                     }
                     .buttonStyle(.link)
+                }
+            }
+        }
+        .formStyle(.grouped)
+    }
+    
+    private var recordingSettingsTab: some View {
+        Form {
+            Section {
+                VStack(alignment: .leading, spacing: 12) {
+                    Toggle(isOn: $settings.highQualityAudio) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("High Quality Audio")
+                                .font(.headline)
+                            Text(settings.highQualityAudio ? "44.1 kHz · Larger files · Slower upload" : "16 kHz · Optimized for speech · Faster processing")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .toggleStyle(.switch)
+                    
+                    Divider()
+                    
+                    VStack(alignment: .leading, spacing: 8) {
+                        Label("Recommended Settings", systemImage: "lightbulb")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundColor(.orange)
+                        
+                        Text("16 kHz is optimal for speech recognition APIs. Use high quality only if you experience transcription issues.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.vertical, 4)
                 }
             }
         }

@@ -32,7 +32,8 @@ final class AppState: ObservableObject {
                 lastError = nil
                 overlay.show()
                 
-                let levelStream = try await audioRecorder.startRecording()
+                let highQuality = AppSettings.shared.highQualityAudio
+                let levelStream = try await audioRecorder.startRecording(highQuality: highQuality)
                 print("✅ Recording started")
                 for await level in levelStream {
                     audioLevel = level
@@ -78,10 +79,13 @@ final class AppState: ObservableObject {
             
             do {
                 print("🚀 Starting transcription...")
-                let text = try await transcribeAndRefine(url: url)
-                print("✅ Transcription result: '\(text)'")
+                let result = try await transcribeAndRefineWithOriginal(url: url)
+                print("✅ Transcription result: '\(result.refined)'")
+                
+                HistoryStore.shared.add(original: result.original, refined: result.refined)
+                
                 print("📋 Pasting text...")
-                PasteService.shared.paste(text: text)
+                PasteService.shared.paste(text: result.refined)
                 lastError = nil
             } catch {
                 print("❌ Transcription/Refinement failed: \(error.localizedDescription)")
@@ -95,11 +99,16 @@ final class AppState: ObservableObject {
         }
     }
     
-    private func transcribeAndRefine(url: URL) async throws -> String {
+    private struct TranscriptionResult {
+        let original: String
+        let refined: String
+    }
+    
+    private func transcribeAndRefineWithOriginal(url: URL) async throws -> TranscriptionResult {
         let settings = AppSettings.shared
         
         if settings.transcriptionProvider.supportsRefinementInOneCall {
-            return try await NetworkService.shared.transcribeAndRefine(
+            let refined = try await NetworkService.shared.transcribeAndRefine(
                 audioURL: url,
                 provider: settings.transcriptionProvider,
                 apiKey: settings.transcriptionAPIKey,
@@ -107,8 +116,9 @@ final class AppState: ObservableObject {
                 model: settings.transcriptionModel,
                 systemPrompt: settings.systemPrompt
             )
+            return TranscriptionResult(original: refined, refined: refined)
         } else {
-            let transcription = try await NetworkService.shared.transcribeAndRefine(
+            let original = try await NetworkService.shared.transcribeAndRefine(
                 audioURL: url,
                 provider: settings.transcriptionProvider,
                 apiKey: settings.transcriptionAPIKey,
@@ -117,14 +127,16 @@ final class AppState: ObservableObject {
                 systemPrompt: ""
             )
             
-            return try await NetworkService.shared.refine(
-                text: transcription,
+            let refined = try await NetworkService.shared.refine(
+                text: original,
                 provider: settings.refinementProvider,
                 apiKey: settings.refinementAPIKey,
                 baseURL: settings.refinementBaseURL,
                 model: settings.refinementModel,
                 systemPrompt: settings.systemPrompt
             )
+            
+            return TranscriptionResult(original: original, refined: refined)
         }
     }
 }

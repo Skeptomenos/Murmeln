@@ -865,3 +865,94 @@ struct IntegrationSimulationTests {
         }
     }
 }
+
+@Suite("HistoryEntry Tests")
+struct HistoryEntryTests {
+    
+    @Test("HistoryEntry initializes with correct values")
+    func historyEntryInit() {
+        let entry = HistoryEntry(original: "hello world", refined: "Hello, world.")
+        
+        #expect(entry.original == "hello world")
+        #expect(entry.refined == "Hello, world.")
+        #expect(!entry.id.uuidString.isEmpty)
+    }
+    
+    @Test("displayText returns refined when available")
+    func displayTextRefined() {
+        let entry = HistoryEntry(original: "original", refined: "refined")
+        #expect(entry.displayText == "refined")
+    }
+    
+    @Test("displayText returns original when refined is empty")
+    func displayTextFallback() {
+        let entry = HistoryEntry(original: "original", refined: "")
+        #expect(entry.displayText == "original")
+    }
+    
+    @Test("previewText truncates long text")
+    func previewTextTruncation() {
+        let longText = String(repeating: "a", count: 100)
+        let entry = HistoryEntry(original: longText, refined: longText)
+        
+        #expect(entry.previewText.count == 50)
+        #expect(entry.previewText.hasSuffix("..."))
+    }
+    
+    @Test("previewText preserves short text")
+    func previewTextShort() {
+        let entry = HistoryEntry(original: "short", refined: "short")
+        #expect(entry.previewText == "short")
+    }
+    
+    @Test("HistoryEntry is Codable")
+    func historyEntryCodable() throws {
+        let entry = HistoryEntry(original: "test", refined: "Test.")
+        
+        let encoded = try JSONEncoder().encode(entry)
+        let decoded = try JSONDecoder().decode(HistoryEntry.self, from: encoded)
+        
+        #expect(decoded.original == entry.original)
+        #expect(decoded.refined == entry.refined)
+        #expect(decoded.id == entry.id)
+    }
+    
+    @Test("HistoryEntry is Hashable")
+    func historyEntryHashable() {
+        let entry1 = HistoryEntry(original: "a", refined: "A")
+        let entry2 = HistoryEntry(original: "b", refined: "B")
+        
+        var set = Set<HistoryEntry>()
+        set.insert(entry1)
+        set.insert(entry2)
+        
+        #expect(set.count == 2)
+    }
+}
+
+@Suite("AudioQuality Tests")
+struct AudioQualityTests {
+    
+    @Test("Optimized quality is 16kHz")
+    func optimizedQuality() {
+        let quality = AudioRecorder.AudioQuality.optimized
+        #expect(quality.sampleRate == 16000)
+        #expect(quality.label == "16kHz")
+    }
+    
+    @Test("High quality is 44.1kHz")
+    func highQuality() {
+        let quality = AudioRecorder.AudioQuality.high
+        #expect(quality.sampleRate == 44100)
+        #expect(quality.label == "44.1kHz")
+    }
+    
+    @Test("16kHz produces smaller files than 44.1kHz")
+    func sampleRateComparison() {
+        let optimized = AudioRecorder.AudioQuality.optimized.sampleRate
+        let high = AudioRecorder.AudioQuality.high.sampleRate
+        
+        #expect(optimized < high)
+        #expect(high / optimized > 2.5)
+    }
+}

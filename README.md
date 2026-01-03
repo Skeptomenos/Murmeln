@@ -36,6 +36,8 @@ Murmeln is for you. It's the **BYOAPI** (Bring Your Own API) dictation tool.
 | **Smart Refinement** | LLM cleans up filler words, fixes grammar |
 | **Auto-Paste** | Transcribed text is pasted directly into your focused app |
 | **Visual Feedback** | Minimal line indicator under notch shows status |
+| **History** | Access recent transcriptions from menu bar |
+| **Optimized Audio** | 16kHz recording for faster processing |
 | **Menu Bar App** | Lives quietly in your menu bar |
 
 ---

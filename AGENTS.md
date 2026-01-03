@@ -1,7 +1,7 @@
 # MURMELN KNOWLEDGE BASE
 
 **Generated:** 2026-01-03
-**Commit:** a24d9f2
+**Commit:** (pending)
 **Branch:** main
 
 ## OVERVIEW
@@ -31,7 +31,8 @@ Murmeln/
 | Modify API calls | `Services/NetworkService.swift` | Switch on provider type |
 | Change hotkey | `Services/HotkeyService.swift` | Fn hold + Right Option double-tap |
 | Adjust overlay UI | `Views/OverlayWindow.swift` | Minimal line indicator under notch |
-| Settings UI | `Views/SettingsView.swift` | TabView with 3 tabs |
+| Settings UI | `Views/SettingsView.swift` | TabView with 4 tabs |
+| History | `Models/HistoryStore.swift` + `Views/HistoryWindow.swift` | UserDefaults, max 50 entries |
 | Recording logic | `Services/AudioService.swift` | Actor-based, streams audio levels |
 | App state | `Models/AppState.swift` | Singleton, orchestrates record→transcribe→paste |
 

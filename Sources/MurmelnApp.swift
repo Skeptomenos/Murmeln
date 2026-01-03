@@ -39,10 +39,11 @@ extension AppState {
 struct MenuContent: View {
     @ObservedObject private var appState = AppState.shared
     @ObservedObject private var overlay = OverlayWindowController.shared
+    @ObservedObject private var historyStore = HistoryStore.shared
     
     var body: some View {
         if overlay.state == .locked {
-            Text("Recording (Locked) - Tap Fn to stop")
+            Text("Recording (Locked) - Tap Right Option to stop")
                 .foregroundColor(.orange)
         } else if appState.isRecording {
             Text("Recording...")
@@ -51,7 +52,7 @@ struct MenuContent: View {
             Text("Processing...")
                 .foregroundColor(.blue)
         } else {
-            Text("Ready (Hold Fn or double-tap to lock)")
+            Text("Hold Fn · Double-tap ⌥ for lock")
                 .foregroundColor(.secondary)
         }
         
@@ -62,6 +63,36 @@ struct MenuContent: View {
         }
         
         Divider()
+        
+        if !historyStore.recentEntries.isEmpty {
+            Menu("History") {
+                ForEach(historyStore.recentEntries) { entry in
+                    Button {
+                        copyToClipboard(entry.displayText)
+                    } label: {
+                        HStack {
+                            Text(entry.formattedTime)
+                                .foregroundColor(.secondary)
+                            Text(entry.previewText)
+                        }
+                    }
+                }
+                
+                Divider()
+                
+                Button("Show All...") {
+                    HistoryWindowController.shared.show()
+                }
+                
+                if !historyStore.entries.isEmpty {
+                    Button("Clear History") {
+                        historyStore.clear()
+                    }
+                }
+            }
+            
+            Divider()
+        }
         
         if !PermissionService.shared.checkAccessibilityPermission() {
             Button("Grant Accessibility Permission") {
@@ -79,6 +110,11 @@ struct MenuContent: View {
             NSApplication.shared.terminate(nil)
         }
         .keyboardShortcut("q", modifiers: .command)
+    }
+    
+    private func copyToClipboard(_ text: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
     }
 }
 

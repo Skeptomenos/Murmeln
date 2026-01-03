@@ -6,22 +6,33 @@ actor AudioRecorder {
     private var audioFile: AVAudioFile?
     private var tempFileURL: URL?
     private var levelContinuation: AsyncStream<Float>.Continuation?
+    private var converter: AVAudioConverter?
     
     enum AudioError: Error, LocalizedError {
         case noInput
         case formatError
+        case converterError
         case engineStartFailed(Error)
         
         var errorDescription: String? {
             switch self {
             case .noInput: return "No audio input available. Check microphone permissions."
             case .formatError: return "Audio format error."
+            case .converterError: return "Audio converter error."
             case .engineStartFailed(let error): return "Audio engine failed: \(error.localizedDescription)"
             }
         }
     }
     
-    func startRecording() async throws -> AsyncStream<Float> {
+    struct AudioQuality {
+        let sampleRate: Double
+        let label: String
+        
+        static let optimized = AudioQuality(sampleRate: 16000, label: "16kHz")
+        static let high = AudioQuality(sampleRate: 44100, label: "44.1kHz")
+    }
+    
+    func startRecording(highQuality: Bool = false) async throws -> AsyncStream<Float> {
         let engine = AVAudioEngine()
         let node = engine.inputNode
         let inputFormat = node.inputFormat(forBus: 0)
@@ -30,17 +41,38 @@ actor AudioRecorder {
             throw AudioError.noInput
         }
         
-        let recordingFormat = AVAudioFormat(
+        let quality: AudioQuality = highQuality ? .high : .optimized
+        let targetSampleRate = quality.sampleRate
+        
+        let outputFormat = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: targetSampleRate,
+            channels: 1,
+            interleaved: false
+        )!
+        
+        let tapFormat = AVAudioFormat(
             commonFormat: .pcmFormatFloat32,
             sampleRate: inputFormat.sampleRate,
             channels: 1,
             interleaved: false
         )!
         
+        let needsConversion = inputFormat.sampleRate != targetSampleRate
+        var audioConverter: AVAudioConverter?
+        
+        if needsConversion {
+            guard let converter = AVAudioConverter(from: tapFormat, to: outputFormat) else {
+                throw AudioError.converterError
+            }
+            audioConverter = converter
+            self.converter = converter
+        }
+        
         let fileURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("recording_\(UUID().uuidString).wav")
         
-        let file = try AVAudioFile(forWriting: fileURL, settings: recordingFormat.settings)
+        let file = try AVAudioFile(forWriting: fileURL, settings: outputFormat.settings)
         
         self.audioEngine = engine
         self.audioFile = file
@@ -50,12 +82,40 @@ actor AudioRecorder {
             self.levelContinuation = continuation
         }
         
-        node.installTap(onBus: 0, bufferSize: 4096, format: recordingFormat) { [weak self] buffer, _ in
+        node.installTap(onBus: 0, bufferSize: 4096, format: tapFormat) { [weak self] buffer, _ in
             guard let self else { return }
             
-            try? file.write(from: buffer)
-            
             let level = Self.calculateRMS(buffer: buffer)
+            
+            if let converter = audioConverter {
+                let ratio = targetSampleRate / inputFormat.sampleRate
+                let outputFrameCount = AVAudioFrameCount(Double(buffer.frameLength) * ratio)
+                
+                guard let outputBuffer = AVAudioPCMBuffer(
+                    pcmFormat: outputFormat,
+                    frameCapacity: outputFrameCount
+                ) else { return }
+                
+                var error: NSError?
+                var hasData = true
+                
+                converter.convert(to: outputBuffer, error: &error) { _, outStatus in
+                    if hasData {
+                        hasData = false
+                        outStatus.pointee = .haveData
+                        return buffer
+                    }
+                    outStatus.pointee = .noDataNow
+                    return nil
+                }
+                
+                if error == nil && outputBuffer.frameLength > 0 {
+                    try? file.write(from: outputBuffer)
+                }
+            } else {
+                try? file.write(from: buffer)
+            }
+            
             Task {
                 await self.sendLevel(level)
             }
@@ -98,6 +158,7 @@ actor AudioRecorder {
         audioFile = nil
         tempFileURL = nil
         levelContinuation = nil
+        converter = nil
         
         return url
     }

@@ -16,6 +16,8 @@ final class AppSettings: ObservableObject {
     
     @AppStorage("systemPrompt") var systemPrompt = "You are a transcription refiner. Clean up the following speech-to-text input. Remove filler words, fix grammar, and structure it as clear, professional text or a concise command. Output ONLY the refined text."
     
+    @AppStorage("highQualityAudio") var highQualityAudio = false
+    
     var transcriptionProvider: TranscriptionProvider {
         get { TranscriptionProvider(rawValue: transcriptionProviderRaw) ?? .openAIWhisper }
         set {
