@@ -19,7 +19,7 @@ final class HistoryWindowController: ObservableObject {
         let contentView = HistoryView()
         
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 500, height: 400),
+            contentRect: NSRect(x: 0, y: 0, width: 450, height: 500),
             styleMask: [.titled, .closable, .resizable, .miniaturizable],
             backing: .buffered,
             defer: false
@@ -29,6 +29,7 @@ final class HistoryWindowController: ObservableObject {
         window.contentView = NSHostingView(rootView: contentView)
         window.center()
         window.isReleasedWhenClosed = false
+        window.minSize = NSSize(width: 350, height: 300)
         window.makeKeyAndOrderFront(nil)
         
         NSApp.activate(ignoringOtherApps: true)
@@ -39,126 +40,120 @@ final class HistoryWindowController: ObservableObject {
 
 struct HistoryView: View {
     @ObservedObject private var store = HistoryStore.shared
-    @State private var selectedEntry: HistoryEntry?
-    @State private var showOriginal = false
     
     var body: some View {
-        NavigationSplitView {
-            List(store.entries, selection: $selectedEntry) { entry in
-                HistoryRowView(entry: entry)
-                    .tag(entry)
-            }
-            .listStyle(.sidebar)
-            .frame(minWidth: 200)
-        } detail: {
-            if let entry = selectedEntry {
-                HistoryDetailView(entry: entry, showOriginal: $showOriginal)
-            } else {
-                ContentUnavailableView {
-                    Label("No Selection", systemImage: "text.bubble")
-                } description: {
-                    Text("Select an entry to view details")
-                }
-            }
-        }
-        .toolbar {
-            ToolbarItemGroup {
-                if selectedEntry != nil {
-                    Toggle(isOn: $showOriginal) {
-                        Label("Original", systemImage: showOriginal ? "doc.text.fill" : "doc.text")
-                    }
-                    .help(showOriginal ? "Showing original" : "Showing refined")
-                }
-                
-                if !store.entries.isEmpty {
-                    Button {
-                        store.clear()
-                        selectedEntry = nil
-                    } label: {
-                        Label("Clear All", systemImage: "trash")
-                    }
-                }
-            }
-        }
-    }
-}
-
-struct HistoryRowView: View {
-    let entry: HistoryEntry
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(entry.formattedDate)
-                .font(.caption)
-                .foregroundColor(.secondary)
-            
-            Text(entry.previewText)
-                .font(.body)
-                .lineLimit(2)
-        }
-        .padding(.vertical, 4)
-    }
-}
-
-struct HistoryDetailView: View {
-    let entry: HistoryEntry
-    @Binding var showOriginal: Bool
-    
-    private var displayText: String {
-        showOriginal ? entry.original : entry.refined
-    }
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(entry.formattedDate)
-                        .font(.headline)
-                    
-                    Text(showOriginal ? "Original transcription" : "Refined text")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                
+        VStack(spacing: 0) {
+            if store.entries.isEmpty {
                 Spacer()
-                
-                Button {
-                    copyToClipboard(displayText)
-                } label: {
-                    Label("Copy", systemImage: "doc.on.doc")
+                VStack(spacing: 12) {
+                    Image(systemName: "text.bubble")
+                        .font(.system(size: 48))
+                        .foregroundColor(.secondary.opacity(0.5))
+                    Text("No transcriptions yet")
+                        .font(.headline)
+                        .foregroundColor(.secondary)
+                    Text("Hold Fn to record")
+                        .font(.caption)
+                        .foregroundColor(.secondary.opacity(0.7))
                 }
-                .buttonStyle(.borderedProminent)
-            }
-            
-            ScrollView {
-                Text(displayText)
-                    .font(.body)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding()
-            }
-            .background(Color(nsColor: .textBackgroundColor))
-            .clipShape(RoundedRectangle(cornerRadius: 8))
-            
-            if entry.original != entry.refined {
+                Spacer()
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 1) {
+                        ForEach(store.entries) { entry in
+                            HistoryCard(entry: entry)
+                        }
+                    }
+                    .padding(.vertical, 8)
+                }
+                
+                Divider()
+                
                 HStack {
-                    Circle()
-                        .fill(showOriginal ? Color.orange : Color.green)
-                        .frame(width: 8, height: 8)
-                    
-                    Text(showOriginal ? "Original" : "Refined")
+                    Text("\(store.entries.count) entries")
                         .font(.caption)
                         .foregroundColor(.secondary)
                     
                     Spacer()
                     
-                    Text("\(displayText.count) characters")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                    Button("Clear All") {
+                        store.clear()
+                    }
+                    .buttonStyle(.plain)
+                    .font(.caption)
+                    .foregroundColor(.red.opacity(0.8))
                 }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
             }
         }
-        .padding()
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(nsColor: .windowBackgroundColor))
+    }
+}
+
+struct HistoryCard: View {
+    let entry: HistoryEntry
+    @State private var showOriginal = false
+    @State private var isHovering = false
+    
+    private var displayText: String {
+        showOriginal ? entry.original : entry.refined
+    }
+    
+    private var hasChanges: Bool {
+        entry.original != entry.refined
+    }
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(entry.formattedDate)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                
+                Spacer()
+                
+                if hasChanges {
+                    Text(showOriginal ? "Original" : "Refined")
+                        .font(.caption2)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(showOriginal ? Color.orange.opacity(0.2) : Color.green.opacity(0.2))
+                        .foregroundColor(showOriginal ? .orange : .green)
+                        .clipShape(Capsule())
+                }
+                
+                Button {
+                    copyToClipboard(displayText)
+                } label: {
+                    Image(systemName: "doc.on.doc")
+                        .font(.caption)
+                }
+                .buttonStyle(.plain)
+                .foregroundColor(.secondary)
+                .opacity(isHovering ? 1 : 0.5)
+            }
+            
+            Text(displayText)
+                .font(.body)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    if hasChanges {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            showOriginal.toggle()
+                        }
+                    }
+                }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(isHovering ? Color(nsColor: .selectedContentBackgroundColor).opacity(0.3) : Color.clear)
+        .onHover { hovering in
+            isHovering = hovering
+        }
     }
     
     private func copyToClipboard(_ text: String) {

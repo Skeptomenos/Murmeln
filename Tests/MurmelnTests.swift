@@ -956,3 +956,58 @@ struct AudioQualityTests {
         #expect(high / optimized > 2.5)
     }
 }
+
+@Suite("PromptPreset Tests")
+struct PromptPresetTests {
+    
+    @Test("All presets have unique raw values")
+    func uniqueRawValues() {
+        let rawValues = PromptPreset.allCases.map { $0.rawValue }
+        let uniqueValues = Set(rawValues)
+        #expect(rawValues.count == uniqueValues.count)
+    }
+    
+    @Test("All presets have descriptions")
+    func presetsHaveDescriptions() {
+        for preset in PromptPreset.allCases {
+            #expect(!preset.description.isEmpty)
+        }
+    }
+    
+    @Test("All presets have icons")
+    func presetsHaveIcons() {
+        for preset in PromptPreset.allCases {
+            #expect(!preset.icon.isEmpty)
+        }
+    }
+    
+    @Test("Non-custom presets have prompts")
+    func nonCustomPresetsHavePrompts() {
+        for preset in PromptPreset.allCases where preset != .custom {
+            #expect(!preset.prompt.isEmpty)
+        }
+    }
+    
+    @Test("Custom preset has empty prompt")
+    func customPresetEmptyPrompt() {
+        #expect(PromptPreset.custom.prompt.isEmpty)
+    }
+    
+    @Test("Casual preset is conversational")
+    func casualPresetContent() {
+        let prompt = PromptPreset.casual.prompt.lowercased()
+        #expect(prompt.contains("conversational") || prompt.contains("natural"))
+    }
+    
+    @Test("LLM preset mentions markdown")
+    func llmPresetContent() {
+        let prompt = PromptPreset.llmPrompt.prompt.lowercased()
+        #expect(prompt.contains("markdown"))
+    }
+    
+    @Test("Verbatim preset is restrictive")
+    func verbatimPresetContent() {
+        let prompt = PromptPreset.verbatim.prompt.lowercased()
+        #expect(prompt.contains("do not change") || prompt.contains("only"))
+    }
+}

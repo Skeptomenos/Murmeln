@@ -64,17 +64,13 @@ struct MenuContent: View {
         
         Divider()
         
-        if !historyStore.recentEntries.isEmpty {
-            Menu("History") {
+        if !historyStore.entries.isEmpty {
+            Menu("History (\(historyStore.entries.count))") {
                 ForEach(historyStore.recentEntries) { entry in
                     Button {
                         copyToClipboard(entry.displayText)
                     } label: {
-                        HStack {
-                            Text(entry.formattedTime)
-                                .foregroundColor(.secondary)
-                            Text(entry.previewText)
-                        }
+                        Text(entry.menuPreview)
                     }
                 }
                 
@@ -84,10 +80,8 @@ struct MenuContent: View {
                     HistoryWindowController.shared.show()
                 }
                 
-                if !historyStore.entries.isEmpty {
-                    Button("Clear History") {
-                        historyStore.clear()
-                    }
+                Button("Clear History") {
+                    historyStore.clear()
                 }
             }
             

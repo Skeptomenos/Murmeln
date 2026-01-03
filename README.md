@@ -33,7 +33,7 @@ Murmeln is for you. It's the **BYOAPI** (Bring Your Own API) dictation tool.
 | **Push-to-Talk** | Hold Fn key to record, release to process |
 | **Lock Recording** | Double-tap Right Option for hands-free recording |
 | **Multiple Providers** | OpenAI Whisper, Groq, GPT-4o Audio, Gemini 2.0 Flash, Local Whisper |
-| **Smart Refinement** | LLM cleans up filler words, fixes grammar |
+| **Prompt Presets** | Casual, Structured, LLM Prompt, Verbatim, or Custom |
 | **Auto-Paste** | Transcribed text is pasted directly into your focused app |
 | **Visual Feedback** | Minimal line indicator under notch shows status |
 | **History** | Access recent transcriptions from menu bar |
@@ -96,7 +96,21 @@ cp -r build/Build/Products/Release/Murmeln.app /Applications/
 | **GPT-4o Audio** | Fast | Higher | ✅ Yes |
 | **Local Whisper** | Varies | Free | ❌ No |
 
-> **Tip:** Gemini 2.0 Flash is recommended — fast, free tier, and handles transcription + refinement in one API call.
+> **Tip:** For speed, use **Groq Whisper** (transcription) + **Groq LLM** (refinement). For simplicity, use **Gemini 2.0 Flash** (one API call).
+
+---
+
+## Prompt Presets
+
+Choose how your dictation is refined:
+
+| Preset | Best For | Behavior |
+|--------|----------|----------|
+| **Casual** | WhatsApp, Chat | Natural, conversational cleanup |
+| **Structured** | Notes, Lists | Formats bullet points, numbered lists |
+| **LLM Prompt** | AI Prompts | Markdown formatting, precise structure |
+| **Verbatim** | Exact wording | Only removes filler words |
+| **Custom** | Your needs | Write your own prompt |
 
 ---
 
