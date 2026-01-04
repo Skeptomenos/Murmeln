@@ -1,7 +1,7 @@
 # MURMELN KNOWLEDGE BASE
 
-**Generated:** 2026-01-03
-**Commit:** (pending)
+**Generated:** 2026-01-04
+**Commit:** 99a28ad
 **Branch:** main
 
 ## OVERVIEW
@@ -13,10 +13,10 @@ Push-to-talk dictation macOS menu bar app. Swift 6 + SwiftUI. Hold Fn → record
 ```
 Murmeln/
 ├── Sources/
-│   ├── MurmelnApp.swift      # Entry point, MenuBarExtra, AppDelegate
+│   ├── MurmelnApp.swift      # Entry point, MenuBarExtra, AppDelegate, Restart logic
 │   ├── Models/               # State + settings + provider enums
 │   ├── Services/             # Audio, network, hotkey, paste, permissions
-│   └── Views/                # Settings window, overlay, visualizer
+│   └── Views/                # Settings window, overlay, visualizer, history
 ├── Tests/                    # XCTest target
 ├── Assets.xcassets/          # App icon, menu bar icon
 ├── Package.swift             # SPM manifest (executable: mrml)
@@ -31,19 +31,19 @@ Murmeln/
 | Modify API calls | `Services/NetworkService.swift` | Switch on provider type |
 | Change hotkey | `Services/HotkeyService.swift` | Fn hold + Right Option double-tap |
 | Adjust overlay UI | `Views/OverlayWindow.swift` | Minimal line indicator under notch |
-| Settings UI | `Views/SettingsView.swift` | TabView with 4 tabs |
-| History | `Models/HistoryStore.swift` + `Views/HistoryWindow.swift` | UserDefaults, max 50 entries |
+| Settings UI | `Views/SettingsView.swift` | Sidebar navigation, prompt presets |
+| History | `Models/HistoryStore.swift` + `Views/HistoryWindow.swift` | Side-by-side audit view, max 50 entries |
 | Recording logic | `Services/AudioService.swift` | Actor-based, streams audio levels |
-| App state | `Models/AppState.swift` | Singleton, orchestrates record→transcribe→paste |
+| App state | `Models/AppState.swift` | Singleton, orchestrates flow, snapshots settings |
 
 ## CODE MAP
 
 | Symbol | Type | Location | Role |
 |--------|------|----------|------|
-| `MurmelnApp` | struct | MurmelnApp.swift:5 | @main entry, MenuBarExtra |
-| `AppState` | class | Models/AppState.swift:5 | @MainActor singleton, orchestrates flow |
-| `AppSettings` | class | Models/AppSettings.swift:4 | @MainActor, @AppStorage persistence |
-| `AudioRecorder` | actor | Services/AudioService.swift:4 | Async audio capture, RMS levels |
+| `MurmelnApp` | struct | MurmelnApp.swift:5 | @main entry, MenuBarExtra, Restart logic |
+| `AppState` | class | Models/AppState.swift:5 | @MainActor singleton, orchestrates flow, snapshotter |
+| `AppSettings` | class | Models/AppSettings.swift:4 | @MainActor, @AppStorage, editable presets |
+| `AudioRecorder` | actor | Services/AudioService.swift:4 | Async audio capture, 16kHz conversion |
 | `NetworkService` | class | Services/NetworkService.swift:17 | API calls, Sendable |
 | `HotkeyService` | class | Services/HotkeyService.swift:4 | Fn hold + Right Option double-tap |
 | `PasteService` | class | Services/PasteService.swift:5 | CGEvent paste simulation |

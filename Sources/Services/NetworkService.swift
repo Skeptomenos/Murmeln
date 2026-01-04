@@ -31,9 +31,11 @@ final class NetworkService: Sendable {
         case .localWhisper:
             return try await transcribeLocalWhisper(audioURL: audioURL, baseURL: baseURL)
         case .gpt4oAudio:
-            return try await transcribeAndRefineGPT4oAudio(audioURL: audioURL, apiKey: apiKey, baseURL: baseURL, model: model, systemPrompt: systemPrompt)
+            let actualPrompt = systemPrompt.isEmpty ? "Transcribe this audio verbatim. Output only the transcribed text." : systemPrompt
+            return try await transcribeAndRefineGPT4oAudio(audioURL: audioURL, apiKey: apiKey, baseURL: baseURL, model: model, systemPrompt: actualPrompt)
         case .geminiAudio:
-            return try await transcribeAndRefineGeminiAudio(audioURL: audioURL, apiKey: apiKey, baseURL: baseURL, model: model, systemPrompt: systemPrompt)
+            let actualPrompt = systemPrompt.isEmpty ? "Transcribe this audio verbatim. Output only the transcribed text." : systemPrompt
+            return try await transcribeAndRefineGeminiAudio(audioURL: audioURL, apiKey: apiKey, baseURL: baseURL, model: model, systemPrompt: actualPrompt)
         }
     }
     

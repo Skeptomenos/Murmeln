@@ -14,9 +14,9 @@ final class AppState: ObservableObject {
     private let overlay = OverlayWindowController.shared
     private var recordingTask: Task<Void, Never>?
     
-    // Captured settings snapshot at start of recording
     private var capturedPresetName: String = ""
     private var capturedSystemPrompt: String = ""
+    private var capturedPresetsWithPrompts: [(name: String, prompt: String)] = []
     
     private init() {}
     
@@ -26,6 +26,11 @@ final class AppState: ObservableObject {
         let settings = AppSettings.shared
         capturedPresetName = settings.selectedPreset?.name ?? "Custom"
         capturedSystemPrompt = settings.systemPrompt
+        
+        // Capture all presets and their CURRENT prompts at the moment recording starts
+        capturedPresetsWithPrompts = settings.allPresets.map { preset in
+            (name: preset.name, prompt: settings.promptForPreset(preset))
+        }
         
         recordingTask = Task {
             let hasPermission = await PermissionService.shared.checkMicrophonePermission()
@@ -86,28 +91,83 @@ final class AppState: ObservableObject {
             overlay.setProcessing()
             
             do {
-                print("🚀 Starting transcription using prompt snapshot...")
-                let result = try await transcribeAndRefineWithOriginal(url: url, prompt: capturedSystemPrompt)
-                print("✅ Transcription result: '\(result.refined)'")
+                print("🚀 Starting multi-refinement audit...")
+                let settings = AppSettings.shared
                 
-                HistoryStore.shared.add(
-                    original: result.original,
-                    refined: result.refined,
-                    presetName: capturedPresetName,
-                    systemPrompt: capturedSystemPrompt
+                // 1. Get raw transcription (Baseline)
+                let originalText = try await NetworkService.shared.transcribeAndRefine(
+                    audioURL: url,
+                    provider: settings.transcriptionProvider,
+                    apiKey: settings.transcriptionAPIKey,
+                    baseURL: settings.transcriptionBaseURL,
+                    model: settings.transcriptionModel,
+                    systemPrompt: "" 
                 )
                 
-                print("📋 Pasting text...")
-                PasteService.shared.paste(text: result.refined)
+                print("✅ Baseline obtained: '\(originalText)'")
+                
+                // 2. Process all captured presets in parallel
+                var variants: [String: String] = [:]
+                var variantPrompts: [String: String] = [:]
+                
+                // Capture these for the closure
+                let refinementProvider = settings.refinementProvider
+                let refinementAPIKey = settings.refinementAPIKey
+                let refinementBaseURL = settings.refinementBaseURL
+                let refinementModel = settings.refinementModel
+                let presets = capturedPresetsWithPrompts
+                
+                await withTaskGroup(of: (String, String, String)?.self) { group in
+                    for p in presets {
+                        group.addTask {
+                            do {
+                                let refined = try await NetworkService.shared.refine(
+                                    text: originalText,
+                                    provider: refinementProvider,
+                                    apiKey: refinementAPIKey,
+                                    baseURL: refinementBaseURL,
+                                    model: refinementModel,
+                                    systemPrompt: p.prompt
+                                )
+                                return (p.name, refined, p.prompt)
+                            } catch {
+                                print("⚠️ Variant \(p.name) failed: \(error.localizedDescription)")
+                                return nil
+                            }
+                        }
+                    }
+                    
+                    for await result in group {
+                        if let (name, text, prompt) = result {
+                            variants[name] = text
+                            variantPrompts[name] = prompt
+                        }
+                    }
+                }
+                
+                // 3. Paste the result of the SELECTED preset
+                let finalResult = variants[capturedPresetName] ?? originalText
+                print("📋 Pasting result for \(capturedPresetName)...")
+                PasteService.shared.paste(text: finalResult)
+                
+                // 4. Save to history with all variants and their respective prompts
+                HistoryStore.shared.add(
+                    original: originalText,
+                    refined: finalResult,
+                    presetName: capturedPresetName,
+                    systemPrompt: capturedSystemPrompt,
+                    variants: variants,
+                    variantPrompts: variantPrompts
+                )
+                
                 lastError = nil
             } catch {
-                print("❌ Transcription/Refinement failed: \(error.localizedDescription)")
+                print("❌ Multi-refinement failed: \(error.localizedDescription)")
                 lastError = error.localizedDescription
             }
             
             isProcessing = false
             overlay.hide()
-            
             try? FileManager.default.removeItem(at: url)
         }
     }

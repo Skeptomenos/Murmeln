@@ -14,8 +14,22 @@ final class HistoryStore: ObservableObject {
         load()
     }
     
-    func add(original: String, refined: String, presetName: String, systemPrompt: String) {
-        let entry = HistoryEntry(original: original, refined: refined, presetName: presetName, systemPrompt: systemPrompt)
+    func add(
+        original: String, 
+        refined: String, 
+        presetName: String, 
+        systemPrompt: String, 
+        variants: [String: String]? = nil,
+        variantPrompts: [String: String]? = nil
+    ) {
+        let entry = HistoryEntry(
+            original: original, 
+            refined: refined, 
+            presetName: presetName, 
+            systemPrompt: systemPrompt, 
+            variants: variants,
+            variantPrompts: variantPrompts
+        )
         entries.insert(entry, at: 0)
         
         if entries.count > maxEntries {

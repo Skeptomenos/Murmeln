@@ -8,13 +8,25 @@ struct HistoryEntry: Codable, Identifiable, Equatable, Hashable {
     let presetName: String?
     let systemPrompt: String?
     
-    init(original: String, refined: String, presetName: String, systemPrompt: String) {
+    var variants: [String: String]?
+    var variantPrompts: [String: String]?
+    
+    init(
+        original: String, 
+        refined: String, 
+        presetName: String, 
+        systemPrompt: String, 
+        variants: [String: String]? = nil,
+        variantPrompts: [String: String]? = nil
+    ) {
         self.id = UUID()
         self.timestamp = Date()
         self.original = original
         self.refined = refined
         self.presetName = presetName
         self.systemPrompt = systemPrompt
+        self.variants = variants
+        self.variantPrompts = variantPrompts
     }
     
     var safePresetName: String {

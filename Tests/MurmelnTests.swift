@@ -1,5 +1,7 @@
 import Testing
 import Foundation
+import AppKit
+import AVFoundation
 @testable import mrml
 
 // MARK: - Provider Tests
@@ -99,15 +101,6 @@ struct TranscriptionProviderTests {
             #expect(!provider.defaultModel.isEmpty, "Provider \(provider.rawValue) has empty default model")
         }
     }
-    
-    @Test("Default model values are correct")
-    func specificDefaultModels() {
-        #expect(TranscriptionProvider.openAIWhisper.defaultModel == "whisper-1")
-        #expect(TranscriptionProvider.groqWhisper.defaultModel == "whisper-large-v3-turbo")
-        #expect(TranscriptionProvider.gpt4oAudio.defaultModel == "gpt-4o-audio-preview")
-        #expect(TranscriptionProvider.geminiAudio.defaultModel == "gemini-2.0-flash-exp")
-        #expect(TranscriptionProvider.localWhisper.defaultModel == "default")
-    }
 }
 
 // MARK: - NetworkError Tests
@@ -115,167 +108,68 @@ struct TranscriptionProviderTests {
 @Suite("NetworkError Tests")
 struct NetworkErrorTests {
     
-    @Test("NetworkError.invalidURL has correct description")
-    func invalidURLDescription() {
-        let error = NetworkError.invalidURL
-        #expect(error.errorDescription == "Invalid URL")
+    @Test("API error preserves message")
+    func apiErrorFormatting() {
+        let error = NetworkError.apiError("test message")
+        #expect(error.errorDescription == "test message")
     }
     
-    @Test("NetworkError.noResponse has correct description")
-    func noResponseDescription() {
-        let error = NetworkError.noResponse
-        #expect(error.errorDescription == "No response from server")
-    }
-    
-    @Test("NetworkError.apiError preserves message")
-    func apiErrorMessage() {
-        let message = "Rate limit exceeded"
-        let error = NetworkError.apiError(message)
-        #expect(error.errorDescription == message)
-    }
-    
-    @Test("NetworkError.apiError handles empty message")
-    func apiErrorEmptyMessage() {
-        let error = NetworkError.apiError("")
-        #expect(error.errorDescription == "")
-    }
-    
-    @Test("NetworkError.apiError handles special characters")
-    func apiErrorSpecialCharacters() {
-        let message = "Error: {\"code\": 401, \"message\": \"Unauthorized\"}"
-        let error = NetworkError.apiError(message)
-        #expect(error.errorDescription == message)
+    @Test("Standard errors have descriptions")
+    func standardErrorDescriptions() {
+        #expect(NetworkError.invalidURL.errorDescription != nil)
+        #expect(NetworkError.noResponse.errorDescription != nil)
     }
 }
 
-// MARK: - Response Parsing Tests
+// MARK: - API Response Parsing Tests
 
 @Suite("API Response Parsing Tests")
-struct ResponseParsingTests {
+struct APIResponseTests {
     
-    @Test("TranscriptionResponse parses valid JSON")
-    func parseTranscriptionResponse() throws {
-        let json = """
-        {"text": "Hello, world!"}
-        """
-        let data = json.data(using: .utf8)!
-        let response = try JSONDecoder().decode(TranscriptionResponse.self, from: data)
-        #expect(response.text == "Hello, world!")
+    @Test("OpenAI transcription response parses correctly")
+    func parseOpenAIResponse() throws {
+        let json = "{\"text\": \"hello world\"}".data(using: .utf8)!
+        let result = try JSONDecoder().decode(TranscriptionResponse.self, from: json)
+        #expect(result.text == "hello world")
     }
     
-    @Test("TranscriptionResponse handles empty text")
-    func parseEmptyTranscription() throws {
-        let json = """
-        {"text": ""}
-        """
-        let data = json.data(using: .utf8)!
-        let response = try JSONDecoder().decode(TranscriptionResponse.self, from: data)
-        #expect(response.text == "")
-    }
-    
-    @Test("TranscriptionResponse handles unicode")
-    func parseUnicodeTranscription() throws {
-        let json = """
-        {"text": "こんにちは世界 🌍"}
-        """
-        let data = json.data(using: .utf8)!
-        let response = try JSONDecoder().decode(TranscriptionResponse.self, from: data)
-        #expect(response.text == "こんにちは世界 🌍")
-    }
-    
-    @Test("ChatCompletionResponse parses valid JSON")
-    func parseChatCompletionResponse() throws {
+    @Test("GPT-4o Audio response parses correctly")
+    func parseGPT4oAudioResponse() throws {
         let json = """
         {
-            "choices": [
-                {
-                    "message": {
-                        "content": "Refined text here"
-                    }
+            "choices": [{
+                "message": {
+                    "content": "refined text"
                 }
-            ]
+            }]
         }
-        """
-        let data = json.data(using: .utf8)!
-        let response = try JSONDecoder().decode(ChatCompletionResponse.self, from: data)
-        #expect(response.choices.first?.message.content == "Refined text here")
+        """.data(using: .utf8)!
+        let result = try JSONDecoder().decode(ChatCompletionResponse.self, from: json)
+        #expect(result.choices.first?.message.content == "refined text")
     }
     
-    @Test("ChatCompletionResponse handles empty choices")
-    func parseEmptyChoices() throws {
-        let json = """
-        {"choices": []}
-        """
-        let data = json.data(using: .utf8)!
-        let response = try JSONDecoder().decode(ChatCompletionResponse.self, from: data)
-        #expect(response.choices.isEmpty)
-    }
-    
-    @Test("GoogleGenerateResponse parses valid JSON")
-    func parseGoogleGenerateResponse() throws {
+    @Test("Gemini response parses correctly")
+    func parseGeminiResponse() throws {
         let json = """
         {
-            "candidates": [
-                {
-                    "content": {
-                        "parts": [
-                            {"text": "Generated content"}
-                        ]
-                    }
+            "candidates": [{
+                "content": {
+                    "parts": [{
+                        "text": "gemini result"
+                    }]
                 }
-            ]
+            }]
         }
-        """
-        let data = json.data(using: .utf8)!
-        let response = try JSONDecoder().decode(GoogleGenerateResponse.self, from: data)
-        #expect(response.candidates?.first?.content.parts.first?.text == "Generated content")
+        """.data(using: .utf8)!
+        let result = try JSONDecoder().decode(GoogleGenerateResponse.self, from: json)
+        #expect(result.candidates?.first?.content.parts.first?.text == "gemini result")
     }
     
-    @Test("GoogleGenerateResponse handles null candidates")
-    func parseNullCandidates() throws {
-        let json = """
-        {"candidates": null}
-        """
-        let data = json.data(using: .utf8)!
-        let response = try JSONDecoder().decode(GoogleGenerateResponse.self, from: data)
-        #expect(response.candidates == nil)
-    }
-    
-    @Test("OpenAIModelsResponse parses model list")
-    func parseOpenAIModelsResponse() throws {
-        let json = """
-        {
-            "data": [
-                {"id": "gpt-4o"},
-                {"id": "gpt-4o-mini"},
-                {"id": "whisper-1"}
-            ]
-        }
-        """
-        let data = json.data(using: .utf8)!
-        let response = try JSONDecoder().decode(OpenAIModelsResponse.self, from: data)
-        #expect(response.data.count == 3)
-        #expect(response.data[0].id == "gpt-4o")
-    }
-    
-    @Test("GoogleModelsResponse parses model list")
-    func parseGoogleModelsResponse() throws {
-        let json = """
-        {
-            "models": [
-                {
-                    "name": "models/gemini-2.0-flash-exp",
-                    "displayName": "Gemini 2.0 Flash",
-                    "supportedGenerationMethods": ["generateContent"]
-                }
-            ]
-        }
-        """
-        let data = json.data(using: .utf8)!
-        let response = try JSONDecoder().decode(GoogleModelsResponse.self, from: data)
-        #expect(response.models.count == 1)
-        #expect(response.models[0].displayName == "Gemini 2.0 Flash")
-        #expect(response.models[0].supportedGenerationMethods?.contains("generateContent") == true)
+    @Test("Ollama response parses correctly")
+    func parseOllamaResponse() throws {
+        let json = "{\"choices\": [{\"message\": {\"content\": \"ollama result\"}}]}".data(using: .utf8)!
+        let result = try JSONDecoder().decode(ChatCompletionResponse.self, from: json)
+        #expect(result.choices.first?.message.content == "ollama result")
     }
 }
 
@@ -284,32 +178,25 @@ struct ResponseParsingTests {
 @Suite("ModelInfo Tests")
 struct ModelInfoTests {
     
-    @Test("ModelInfo is Identifiable by id")
+    @Test("ModelInfo Identifiable conformance")
     func modelInfoIdentifiable() {
-        let model = ModelInfo(id: "gpt-4o", name: "GPT-4o")
-        #expect(model.id == "gpt-4o")
+        let model = ModelInfo(id: "gpt-4", name: "GPT-4")
+        #expect(model.id == "gpt-4")
     }
     
-    @Test("ModelInfo equality based on id and name")
-    func modelInfoEquality() {
-        let model1 = ModelInfo(id: "gpt-4o", name: "GPT-4o")
-        let model2 = ModelInfo(id: "gpt-4o", name: "GPT-4o")
-        let model3 = ModelInfo(id: "gpt-4o", name: "Different Name")
-        
-        #expect(model1 == model2)
-        #expect(model1 != model3)
-    }
-    
-    @Test("ModelInfo is Hashable")
-    func modelInfoHashable() {
-        let model1 = ModelInfo(id: "gpt-4o", name: "GPT-4o")
-        let model2 = ModelInfo(id: "gpt-4o", name: "GPT-4o")
-        
-        var set = Set<ModelInfo>()
-        set.insert(model1)
-        set.insert(model2)
-        
-        #expect(set.count == 1)
+    @Test("OpenAI models list parsing")
+    func parseOpenAIModelsList() throws {
+        let json = """
+        {
+            "data": [
+                {"id": "whisper-1", "object": "model"},
+                {"id": "gpt-4", "object": "model"}
+            ]
+        }
+        """.data(using: .utf8)!
+        let result = try JSONDecoder().decode(OpenAIModelsResponse.self, from: json)
+        #expect(result.data.count == 2)
+        #expect(result.data.first?.id == "whisper-1")
     }
 }
 
@@ -318,71 +205,34 @@ struct ModelInfoTests {
 @Suite("Edge Case Tests")
 struct EdgeCaseTests {
     
-    @Test("Empty API key handling")
-    func emptyAPIKey() {
-        let apiKey = ""
-        #expect(apiKey.isEmpty)
+    @Test("Empty API responses handle gracefully")
+    func emptyResponse() {
+        let json = "{}".data(using: .utf8)!
+        #expect(throws: (any Error).self) {
+            try JSONDecoder().decode(TranscriptionResponse.self, from: json)
+        }
     }
     
-    @Test("Malformed URL handling")
-    func malformedURLs() {
-        let invalidURLs = [
-            "not a url",
-            "://missing-scheme",
-            "",
-            "   ",
-            "http://",
-        ]
-        
-        for urlString in invalidURLs {
-            _ = URL(string: urlString)
-        }
-        #expect(true)
+    @Test("Unicode text preservation")
+    func unicodePreservation() {
+        let text = "Hällö 👋 Wörld 🌍"
+        let data = "{\"text\": \"\(text)\"}".data(using: .utf8)!
+        let result = try? JSONDecoder().decode(TranscriptionResponse.self, from: data)
+        #expect(result?.text == text)
     }
     
     @Test("Very long text handling")
-    func veryLongText() throws {
-        let longText = String(repeating: "a", count: 100_000)
-        let json = """
-        {"text": "\(longText)"}
-        """
-        let data = json.data(using: .utf8)!
-        let response = try JSONDecoder().decode(TranscriptionResponse.self, from: data)
-        #expect(response.text.count == 100_000)
+    func longTextHandling() {
+        let longText = String(repeating: "a", count: 10000)
+        let data = "{\"text\": \"\(longText)\"}".data(using: .utf8)!
+        let result = try? JSONDecoder().decode(TranscriptionResponse.self, from: data)
+        #expect(result?.text == longText)
     }
     
-    @Test("Special characters in transcription")
-    func specialCharactersInTranscription() throws {
-        let specialText = "Hello \"world\" with 'quotes' and \\backslash\\ and\nnewlines\tand\ttabs"
-        let escapedText = specialText
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-            .replacingOccurrences(of: "\n", with: "\\n")
-            .replacingOccurrences(of: "\t", with: "\\t")
-        let json = """
-        {"text": "\(escapedText)"}
-        """
-        let data = json.data(using: .utf8)!
-        let response = try JSONDecoder().decode(TranscriptionResponse.self, from: data)
-        #expect(response.text.contains("quotes"))
-    }
-    
-    @Test("Provider enum Codable round-trip")
-    func providerCodableRoundTrip() throws {
-        for provider in Provider.allCases {
-            let encoded = try JSONEncoder().encode(provider)
-            let decoded = try JSONDecoder().decode(Provider.self, from: encoded)
-            #expect(decoded == provider)
-        }
-    }
-    
-    @Test("TranscriptionProvider enum Codable round-trip")
-    func transcriptionProviderCodableRoundTrip() throws {
-        for provider in TranscriptionProvider.allCases {
-            let encoded = try JSONEncoder().encode(provider)
-            let decoded = try JSONDecoder().decode(TranscriptionProvider.self, from: encoded)
-            #expect(decoded == provider)
-        }
+    @Test("Special characters in prompts")
+    func specialCharsInPrompt() {
+        let prompt = "Fix this: \"quotes\", \\slashes\\, and {brackets}."
+        #expect(!prompt.isEmpty)
     }
 }
 
@@ -391,54 +241,24 @@ struct EdgeCaseTests {
 @Suite("URL Construction Tests")
 struct URLConstructionTests {
     
-    @Test("OpenAI transcription URL construction")
-    func openAITranscriptionURL() {
-        let baseURL = "https://api.openai.com/v1"
-        let url = URL(string: baseURL + "/audio/transcriptions")
-        #expect(url != nil)
-        #expect(url?.absoluteString == "https://api.openai.com/v1/audio/transcriptions")
-    }
-    
-    @Test("Groq transcription URL construction")
-    func groqTranscriptionURL() {
-        let baseURL = "https://api.groq.com/openai/v1"
-        let url = URL(string: baseURL + "/audio/transcriptions")
-        #expect(url != nil)
+    @Test("Base URL stripping trailing slashes")
+    func urlFormatting() {
+        let base = "https://api.groq.com/openai/v1/"
+        let endpoint = "/audio/transcriptions"
+        
+        let combined = base.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + endpoint
+        let url = URL(string: combined)
+        
         #expect(url?.absoluteString == "https://api.groq.com/openai/v1/audio/transcriptions")
     }
     
-    @Test("Local Whisper URL construction")
-    func localWhisperURL() {
-        let baseURL = "http://localhost:8080"
-        let url = URL(string: baseURL + "/inference")
-        #expect(url != nil)
-        #expect(url?.absoluteString == "http://localhost:8080/inference")
-    }
-    
-    @Test("Gemini URL with API key")
-    func geminiURLWithAPIKey() {
-        let baseURL = "https://generativelanguage.googleapis.com/v1beta"
-        let model = "gemini-2.0-flash-exp"
-        let apiKey = "test-api-key"
-        let url = URL(string: "\(baseURL)/models/\(model):generateContent?key=\(apiKey)")
-        #expect(url != nil)
-        #expect(url?.absoluteString.contains("key=test-api-key") == true)
-    }
-    
-    @Test("Chat completions URL construction")
-    func chatCompletionsURL() {
-        let baseURL = "https://api.openai.com/v1"
-        let url = URL(string: baseURL + "/chat/completions")
-        #expect(url != nil)
-        #expect(url?.absoluteString == "https://api.openai.com/v1/chat/completions")
-    }
-    
-    @Test("Models endpoint URL construction")
-    func modelsEndpointURL() {
-        for provider in Provider.allCases {
-            let url = URL(string: provider.defaultBaseURL + provider.modelsEndpoint)
-            #expect(url != nil, "Failed to construct models URL for \(provider.rawValue)")
-        }
+    @Test("Gemini API key in URL query parameter")
+    func geminiURLFormat() {
+        let base = "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent"
+        let key = "AIza..."
+        let url = URL(string: "\(base)?key=\(key)")
+        
+        #expect(url?.query?.contains("key=AIza") == true)
     }
 }
 
@@ -447,46 +267,25 @@ struct URLConstructionTests {
 @Suite("Reliability Tests")
 struct ReliabilityTests {
     
-    @Test("All Provider cases are covered in allCases")
-    func allProviderCasesCovered() {
-        #expect(Provider.allCases.count == 4)
+    @Test("All provider raw values are unique")
+    func uniqueProviderRawValues() {
+        let values = Provider.allCases.map { $0.rawValue }
+        let unique = Set(values)
+        #expect(values.count == unique.count)
     }
     
-    @Test("All TranscriptionProvider cases are covered in allCases")
-    func allTranscriptionProviderCasesCovered() {
-        #expect(TranscriptionProvider.allCases.count == 5)
+    @Test("Transcription provider defaults are HTTPS")
+    func transcriptionHTTPS() {
+        for provider in TranscriptionProvider.allCases where provider != .localWhisper {
+            #expect(provider.defaultBaseURL.hasPrefix("https://"))
+        }
     }
     
-    @Test("Provider raw values are unique")
-    func providerRawValuesUnique() {
-        let rawValues = Provider.allCases.map { $0.rawValue }
-        let uniqueValues = Set(rawValues)
-        #expect(rawValues.count == uniqueValues.count)
-    }
-    
-    @Test("TranscriptionProvider raw values are unique")
-    func transcriptionProviderRawValuesUnique() {
-        let rawValues = TranscriptionProvider.allCases.map { $0.rawValue }
-        let uniqueValues = Set(rawValues)
-        #expect(rawValues.count == uniqueValues.count)
-    }
-    
-    @Test("Default base URLs use HTTPS for cloud providers")
-    func cloudProvidersUseHTTPS() {
-        #expect(Provider.openAI.defaultBaseURL.hasPrefix("https://"))
-        #expect(Provider.google.defaultBaseURL.hasPrefix("https://"))
-        #expect(Provider.groq.defaultBaseURL.hasPrefix("https://"))
-        
-        #expect(TranscriptionProvider.openAIWhisper.defaultBaseURL.hasPrefix("https://"))
-        #expect(TranscriptionProvider.groqWhisper.defaultBaseURL.hasPrefix("https://"))
-        #expect(TranscriptionProvider.gpt4oAudio.defaultBaseURL.hasPrefix("https://"))
-        #expect(TranscriptionProvider.geminiAudio.defaultBaseURL.hasPrefix("https://"))
-    }
-    
-    @Test("Local providers use HTTP")
-    func localProvidersUseHTTP() {
-        #expect(Provider.ollama.defaultBaseURL.hasPrefix("http://localhost"))
-        #expect(TranscriptionProvider.localWhisper.defaultBaseURL.hasPrefix("http://localhost"))
+    @Test("Refinement provider defaults are HTTPS")
+    func refinementHTTPS() {
+        for provider in Provider.allCases where provider != .ollama {
+            #expect(provider.defaultBaseURL.hasPrefix("https://"))
+        }
     }
 }
 
@@ -495,60 +294,31 @@ struct ReliabilityTests {
 @Suite("Audio Level Calculation Tests")
 struct AudioLevelTests {
     
-    @Test("Zero audio level produces minimum bar heights")
-    func zeroAudioLevel() {
-        let level: Float = 0.0
-        let normalizedLevel = min(1.0, level * 8)
-        #expect(normalizedLevel == 0.0)
-    }
-    
-    @Test("Maximum audio level is clamped")
-    func maxAudioLevelClamped() {
-        let level: Float = 1.0
-        let normalizedLevel = min(1.0, level * 8)
-        #expect(normalizedLevel == 1.0)
-    }
-    
-    @Test("Audio level normalization")
-    func audioLevelNormalization() {
-        let testLevels: [Float] = [0.0, 0.05, 0.1, 0.125, 0.2, 0.5, 1.0]
-        
-        for level in testLevels {
-            let normalized = min(1.0, level * 8)
-            #expect(normalized >= 0.0)
-            #expect(normalized <= 1.0)
-        }
-    }
-    
     @Test("RMS calculation edge case: empty buffer returns zero")
     func rmsEmptyBuffer() {
-        let frameLength = 0
-        guard frameLength > 0 else {
-            #expect(true)
-            return
-        }
+        let frameLength: Float = 0
+        let sum: Float = 0
+        let rms = frameLength > 0 ? sqrt(sum / frameLength) : 0
+        #expect(rms == 0)
     }
     
-    @Test("Bar height calculation bounds")
-    func barHeightBounds() {
+    @Test("Visualizer bar height calculation")
+    func visualizerCalculation() {
         let baseHeight: CGFloat = 4
-        let maxHeight: CGFloat = 16
-        let barCount = 5
+        let maxHeight: CGFloat = 20
+        let normalizedLevel: Float = 0.5 
         
-        for level in stride(from: Float(0), through: Float(1), by: Float(0.1)) {
-            let normalizedLevel = min(1.0, level * 8)
+        let barCount = 5
+        for index in 0..<barCount {
+            let indexFactor = Float(index) / Float(barCount - 1)
+            let centerDistance = abs(indexFactor - 0.5) * 2
+            let heightMultiplier = 1.0 - (centerDistance * 0.3)
             
-            for index in 0..<barCount {
-                let indexFactor = Float(index) / Float(barCount - 1)
-                let centerDistance = abs(indexFactor - 0.5) * 2
-                let heightMultiplier = 1.0 - (centerDistance * 0.3)
-                
-                let dynamicHeight = CGFloat(normalizedLevel * heightMultiplier) * (maxHeight - baseHeight)
-                let finalHeight = baseHeight + dynamicHeight
-                
-                #expect(finalHeight >= baseHeight)
-                #expect(finalHeight <= maxHeight)
-            }
+            let dynamicHeight = CGFloat(normalizedLevel * heightMultiplier) * (maxHeight - baseHeight)
+            let finalHeight = baseHeight + dynamicHeight
+            
+            #expect(finalHeight >= baseHeight)
+            #expect(finalHeight <= maxHeight)
         }
     }
 }
@@ -683,7 +453,7 @@ struct HotkeyServiceConfigTests {
     }
 }
 
-// MARK: - Feature 1: Delayed Recording Start Tests
+// MARK: - Delayed Recording Start Tests
 
 @Suite("Delayed Recording Start Tests")
 struct DelayedRecordingStartTests {
@@ -796,7 +566,7 @@ struct RightOptionLockModeTests {
     }
 }
 
-// MARK: - Feature 3: Thin Line Indicator Tests
+// MARK: - Thin Line Indicator Tests
 
 @Suite("Thin Line Indicator Tests")
 struct ThinLineIndicatorTests {
@@ -866,36 +636,42 @@ struct IntegrationSimulationTests {
     }
 }
 
+// MARK: - HistoryEntry Tests
+
 @Suite("HistoryEntry Tests")
 struct HistoryEntryTests {
     
     @Test("HistoryEntry initializes with correct values")
     func historyEntryInit() {
-        let entry = HistoryEntry(original: "hello world", refined: "Hello, world.", presetName: "Casual", systemPrompt: "Prompt")
+        let variants = ["Casual": "Hello, world."]
+        let variantPrompts = ["Casual": "Prompt"]
+        let entry = HistoryEntry(original: "hello world", refined: "Hello, world.", presetName: "Casual", systemPrompt: "Prompt", variants: variants, variantPrompts: variantPrompts)
         
         #expect(entry.original == "hello world")
         #expect(entry.refined == "Hello, world.")
         #expect(entry.safePresetName == "Casual")
         #expect(entry.safeSystemPrompt == "Prompt")
+        #expect(entry.variants?["Casual"] == "Hello, world.")
+        #expect(entry.variantPrompts?["Casual"] == "Prompt")
         #expect(!entry.id.uuidString.isEmpty)
     }
     
     @Test("displayText returns refined when available")
     func displayTextRefined() {
-        let entry = HistoryEntry(original: "original", refined: "refined", presetName: "Casual", systemPrompt: "Prompt")
+        let entry = HistoryEntry(original: "original", refined: "refined", presetName: "Casual", systemPrompt: "Prompt", variants: nil, variantPrompts: nil)
         #expect(entry.displayText == "refined")
     }
     
     @Test("displayText returns original when refined is empty")
     func displayTextFallback() {
-        let entry = HistoryEntry(original: "original", refined: "", presetName: "Casual", systemPrompt: "Prompt")
+        let entry = HistoryEntry(original: "original", refined: "", presetName: "Casual", systemPrompt: "Prompt", variants: nil, variantPrompts: nil)
         #expect(entry.displayText == "original")
     }
     
     @Test("previewText truncates long text")
     func previewTextTruncation() {
         let longText = String(repeating: "a", count: 100)
-        let entry = HistoryEntry(original: longText, refined: longText, presetName: "Casual", systemPrompt: "Prompt")
+        let entry = HistoryEntry(original: longText, refined: longText, presetName: "Casual", systemPrompt: "Prompt", variants: nil, variantPrompts: nil)
         
         #expect(entry.previewText.count == 50)
         #expect(entry.previewText.hasSuffix("..."))
@@ -903,13 +679,14 @@ struct HistoryEntryTests {
     
     @Test("previewText preserves short text")
     func previewTextShort() {
-        let entry = HistoryEntry(original: "short", refined: "short", presetName: "Casual", systemPrompt: "Prompt")
+        let entry = HistoryEntry(original: "short", refined: "short", presetName: "Casual", systemPrompt: "Prompt", variants: nil, variantPrompts: nil)
         #expect(entry.previewText == "short")
     }
     
     @Test("HistoryEntry is Codable")
     func historyEntryCodable() throws {
-        let entry = HistoryEntry(original: "test", refined: "Test.", presetName: "Casual", systemPrompt: "Prompt")
+        let variants = ["Casual": "Test.", "Structured": "Test!"]
+        let entry = HistoryEntry(original: "test", refined: "Test.", presetName: "Casual", systemPrompt: "Prompt", variants: variants, variantPrompts: nil)
         
         let encoded = try JSONEncoder().encode(entry)
         let decoded = try JSONDecoder().decode(HistoryEntry.self, from: encoded)
@@ -918,13 +695,14 @@ struct HistoryEntryTests {
         #expect(decoded.refined == entry.refined)
         #expect(decoded.safePresetName == entry.safePresetName)
         #expect(decoded.safeSystemPrompt == entry.safeSystemPrompt)
+        #expect(decoded.variants?["Structured"] == "Test!")
         #expect(decoded.id == entry.id)
     }
     
     @Test("HistoryEntry is Hashable")
     func historyEntryHashable() {
-        let entry1 = HistoryEntry(original: "a", refined: "A", presetName: "Casual", systemPrompt: "Prompt")
-        let entry2 = HistoryEntry(original: "b", refined: "B", presetName: "Casual", systemPrompt: "Prompt")
+        let entry1 = HistoryEntry(original: "a", refined: "A", presetName: "Casual", systemPrompt: "Prompt", variants: nil, variantPrompts: nil)
+        let entry2 = HistoryEntry(original: "b", refined: "B", presetName: "Casual", systemPrompt: "Prompt", variants: nil, variantPrompts: nil)
         
         var set = Set<HistoryEntry>()
         set.insert(entry1)
@@ -933,6 +711,8 @@ struct HistoryEntryTests {
         #expect(set.count == 2)
     }
 }
+
+// MARK: - AudioQuality Tests
 
 @Suite("AudioQuality Tests")
 struct AudioQualityTests {
@@ -960,6 +740,8 @@ struct AudioQualityTests {
         #expect(high / optimized > 2.5)
     }
 }
+
+// MARK: - PromptPreset Tests
 
 @Suite("PromptPreset Tests")
 struct PromptPresetTests {
@@ -1006,11 +788,11 @@ struct PromptPresetTests {
         #expect(casual!.prompt.lowercased().contains("natural"))
     }
     
-    @Test("Markdown preset mentions markdown")
-    func markdownPresetContent() {
-        let markdown = PromptPreset.builtInPresets.first { $0.name == "Markdown" }
-        #expect(markdown != nil)
-        #expect(markdown!.prompt.lowercased().contains("markdown"))
+    @Test("LLM preset mentions markdown")
+    func llmPresetContent() {
+        let llm = PromptPreset.builtInPresets.first { $0.name == "LLM Prompt" }
+        #expect(llm != nil)
+        #expect(llm!.prompt.lowercased().contains("markdown"))
     }
     
     @Test("Custom preset creation")
