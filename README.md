@@ -33,7 +33,7 @@ Murmeln is for you. It's the **BYOAPI** (Bring Your Own API) dictation tool.
 | **Push-to-Talk** | Hold Fn key to record, release to process |
 | **Lock Recording** | Double-tap Right Option for hands-free recording |
 | **Multiple Providers** | OpenAI Whisper, Groq, GPT-4o Audio, Gemini 2.0 Flash, Local Whisper |
-| **Prompt Presets** | Casual, Structured, LLM Prompt, Verbatim, or Custom (editable) |
+| **Prompt Presets** | Casual, Structured, Markdown, Verbatim, or Custom (editable) |
 | **Auto-Paste** | Transcribed text is pasted directly into your focused app |
 | **Visual Feedback** | Minimal line indicator under notch shows status |
 | **History Audit** | Parallel processing shows how every preset would refine your text |
@@ -113,7 +113,7 @@ Choose how your dictation is refined:
 |--------|----------|----------|
 | **Casual** | WhatsApp, Chat | Natural, conversational cleanup |
 | **Structured** | Notes, Lists | Formats bullet points, numbered lists |
-| **LLM Prompt** | AI Prompts | Markdown headers, preserves intent |
+| **Markdown** | Structured Notes | Headers and bullet points for clear structure |
 | **Verbatim** | Exact wording | Only removes filler words |
 | **Custom** | Your needs | Create your own presets |
 

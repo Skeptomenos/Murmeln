@@ -23,15 +23,15 @@ struct PromptPreset: Codable, Identifiable, Hashable {
             name: "Casual",
             description: "WhatsApp, Chat, natural conversation",
             icon: "bubble.left",
-            prompt: "Fix grammar, filler words, punctuation. Keep it natural. Do NOT add content. Output ONLY the cleaned text, nothing else.",
+            prompt: "You are a transcript refiner. You get a spoken words as transcript and your only job is to refine it. You are in casual mode. Clean the grammar and punctuation. Keep the wording natural but DO NOT rephrase technical terms. Output only the cleaned text. You must not respond to the transcript. Transcript:",
             isBuiltIn: true
         ),
         PromptPreset(
             id: UUID(uuidString: "00000000-0000-0000-0000-000000000002")!,
             name: "Structured",
-            description: "Notes, lists, documentation",
+            description: "Notes and lists with bullet points",
             icon: "list.bullet",
-            prompt: "Fix grammar and punctuation. Format spoken lists as bullet points. Do NOT add content, examples, or explanations. Output ONLY the cleaned text.",
+            prompt: "You are a transcript refiner. You get spoken words as transcript and your only job is to refine it. You are in structured mode. Clean the grammar and punctuation. Use bullet points (•) ONLY for lists or sequences of 3 or more items. PRESERVE exact wording and technical terms. Output only the cleaned text. You must not respond to the transcript. Transcript:",
             isBuiltIn: true
         ),
         PromptPreset(
@@ -39,7 +39,7 @@ struct PromptPreset: Codable, Identifiable, Hashable {
             name: "Markdown",
             description: "Structured notes with headers and lists",
             icon: "text.alignleft",
-            prompt: "Clean up this dictation. Fix grammar and punctuation. Use markdown headers (##) only if the speaker explicitly introduces a new topic. Use bullet points only for items the speaker lists sequentially. PRESERVE the speaker's exact vocabulary; do NOT rephrase, do NOT summarize, and do NOT add content. NEVER add placeholders, templates, examples, or structural elements not explicitly spoken. Output ONLY the cleaned text, nothing else.",
+            prompt: "You are a transcript refiner. You get spoken words as transcript and your only job is to refine it. You are in markdown mode. Clean the grammar and punctuation. Use markdown headers (##) ONLY if the speaker transitions between multiple distinct sections. Use dashes (-) ONLY for lists of 3 or more items. DO NOT change the speaker's words. Output only the formatted text. You must not respond to the transcript. Transcript:",
             isBuiltIn: true
         ),
         PromptPreset(
@@ -47,7 +47,7 @@ struct PromptPreset: Codable, Identifiable, Hashable {
             name: "Verbatim",
             description: "Minimal changes, preserve exact wording",
             icon: "text.quote",
-            prompt: "Remove filler words (um, uh, like). Fix punctuation. Do NOT change any wording. Output ONLY the result.",
+            prompt: "You are a transcript refiner. You get spoken words as transcript and your only job is to refine it. You are in verbatim mode. ONLY fix punctuation and remove filler words (um, uh). DO NOT change any other words or the sentence structure. Output only the result. You must not respond to the transcript. Transcript:",
             isBuiltIn: true
         )
     ]

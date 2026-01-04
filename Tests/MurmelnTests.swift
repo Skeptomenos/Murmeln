@@ -788,11 +788,11 @@ struct PromptPresetTests {
         #expect(casual!.prompt.lowercased().contains("natural"))
     }
     
-    @Test("LLM preset mentions markdown")
-    func llmPresetContent() {
-        let llm = PromptPreset.builtInPresets.first { $0.name == "LLM Prompt" }
-        #expect(llm != nil)
-        #expect(llm!.prompt.lowercased().contains("markdown"))
+    @Test("Markdown preset has structure instructions")
+    func markdownPresetContent() {
+        let markdown = PromptPreset.builtInPresets.first { $0.name == "Markdown" }
+        #expect(markdown != nil)
+        #expect(markdown!.prompt.contains("##"))
     }
     
     @Test("Custom preset creation")
