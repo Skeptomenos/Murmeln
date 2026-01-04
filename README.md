@@ -36,9 +36,9 @@ Murmeln is for you. It's the **BYOAPI** (Bring Your Own API) dictation tool.
 | **Prompt Presets** | Casual, Structured, LLM Prompt, Verbatim, or Custom (editable) |
 | **Auto-Paste** | Transcribed text is pasted directly into your focused app |
 | **Visual Feedback** | Minimal line indicator under notch shows status |
-| **History** | Side-by-side Original/Refined view, copy as Markdown |
+| **History Audit** | Side-by-side comparison of original vs. refined text |
 | **Optimized Audio** | 16kHz recording for faster processing |
-| **Menu Bar App** | Lives quietly in your menu bar |
+| **Menu Bar App** | Quick access with direct history and restart options |
 
 ---
 
@@ -83,6 +83,11 @@ cp -r build/Build/Products/Release/Murmeln.app /Applications/
 2. **Double-tap Right Option** → speak hands-free
 3. **Tap Right Option** again to stop
 4. Text appears automatically
+
+**History & Training:**
+1. Click **Show History** in the menu bar
+2. See exactly what you said vs. what the AI produced
+3. Click **Copy both for LLM** to get a formatted audit for prompt tuning
 
 ---
 

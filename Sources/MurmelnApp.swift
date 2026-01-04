@@ -64,29 +64,11 @@ struct MenuContent: View {
         
         Divider()
         
-        if !historyStore.entries.isEmpty {
-            Menu("History (\(historyStore.entries.count))") {
-                ForEach(historyStore.recentEntries) { entry in
-                    Button {
-                        copyToClipboard(entry.displayText)
-                    } label: {
-                        Text(entry.menuPreview)
-                    }
-                }
-                
-                Divider()
-                
-                Button("Show All...") {
-                    HistoryWindowController.shared.show()
-                }
-                
-                Button("Clear History") {
-                    historyStore.clear()
-                }
-            }
-            
-            Divider()
+        Button("Show History (\(historyStore.entries.count))") {
+            HistoryWindowController.shared.show()
         }
+        
+        Divider()
         
         if !PermissionService.shared.checkAccessibilityPermission() {
             Button("Grant Accessibility Permission") {

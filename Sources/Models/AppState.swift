@@ -14,10 +14,18 @@ final class AppState: ObservableObject {
     private let overlay = OverlayWindowController.shared
     private var recordingTask: Task<Void, Never>?
     
+    // Captured settings snapshot at start of recording
+    private var capturedPresetName: String = ""
+    private var capturedSystemPrompt: String = ""
+    
     private init() {}
     
     func startRecording() {
         guard !isRecording, !isProcessing else { return }
+        
+        let settings = AppSettings.shared
+        capturedPresetName = settings.selectedPreset?.name ?? "Custom"
+        capturedSystemPrompt = settings.systemPrompt
         
         recordingTask = Task {
             let hasPermission = await PermissionService.shared.checkMicrophonePermission()
@@ -27,7 +35,7 @@ final class AppState: ObservableObject {
             }
             
             do {
-                print("📝 Starting recording...")
+                print("📝 Starting recording with preset: \(capturedPresetName)")
                 isRecording = true
                 lastError = nil
                 overlay.show()
@@ -78,11 +86,16 @@ final class AppState: ObservableObject {
             overlay.setProcessing()
             
             do {
-                print("🚀 Starting transcription...")
-                let result = try await transcribeAndRefineWithOriginal(url: url)
+                print("🚀 Starting transcription using prompt snapshot...")
+                let result = try await transcribeAndRefineWithOriginal(url: url, prompt: capturedSystemPrompt)
                 print("✅ Transcription result: '\(result.refined)'")
                 
-                HistoryStore.shared.add(original: result.original, refined: result.refined)
+                HistoryStore.shared.add(
+                    original: result.original,
+                    refined: result.refined,
+                    presetName: capturedPresetName,
+                    systemPrompt: capturedSystemPrompt
+                )
                 
                 print("📋 Pasting text...")
                 PasteService.shared.paste(text: result.refined)
@@ -104,7 +117,7 @@ final class AppState: ObservableObject {
         let refined: String
     }
     
-    private func transcribeAndRefineWithOriginal(url: URL) async throws -> TranscriptionResult {
+    private func transcribeAndRefineWithOriginal(url: URL, prompt: String) async throws -> TranscriptionResult {
         let settings = AppSettings.shared
         
         if settings.transcriptionProvider.supportsRefinementInOneCall {
@@ -114,7 +127,7 @@ final class AppState: ObservableObject {
                 apiKey: settings.transcriptionAPIKey,
                 baseURL: settings.transcriptionBaseURL,
                 model: settings.transcriptionModel,
-                systemPrompt: settings.systemPrompt
+                systemPrompt: prompt
             )
             return TranscriptionResult(original: refined, refined: refined)
         } else {
@@ -133,7 +146,7 @@ final class AppState: ObservableObject {
                 apiKey: settings.refinementAPIKey,
                 baseURL: settings.refinementBaseURL,
                 model: settings.refinementModel,
-                systemPrompt: settings.systemPrompt
+                systemPrompt: prompt
             )
             
             return TranscriptionResult(original: original, refined: refined)

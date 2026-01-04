@@ -19,7 +19,7 @@ final class HistoryWindowController: ObservableObject {
         let contentView = HistoryView()
         
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 700, height: 500),
+            contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
             styleMask: [.titled, .closable, .resizable, .miniaturizable],
             backing: .buffered,
             defer: false
@@ -29,7 +29,7 @@ final class HistoryWindowController: ObservableObject {
         window.contentView = NSHostingView(rootView: contentView)
         window.center()
         window.isReleasedWhenClosed = false
-        window.minSize = NSSize(width: 500, height: 300)
+        window.minSize = NSSize(width: 600, height: 400)
         window.makeKeyAndOrderFront(nil)
         
         NSApp.activate(ignoringOtherApps: true)
@@ -40,7 +40,6 @@ final class HistoryWindowController: ObservableObject {
 
 struct HistoryView: View {
     @ObservedObject private var store = HistoryStore.shared
-    @State private var selectedEntry: HistoryEntry?
     
     var body: some View {
         VStack(spacing: 0) {
@@ -60,21 +59,12 @@ struct HistoryView: View {
                 Spacer()
             } else {
                 ScrollView {
-                    LazyVStack(spacing: 12) {
+                    LazyVStack(spacing: 16) {
                         ForEach(store.entries) { entry in
-                            HistoryCard(entry: entry, isExpanded: selectedEntry?.id == entry.id)
-                                .onTapGesture {
-                                    withAnimation(.easeInOut(duration: 0.2)) {
-                                        if selectedEntry?.id == entry.id {
-                                            selectedEntry = nil
-                                        } else {
-                                            selectedEntry = entry
-                                        }
-                                    }
-                                }
+                            HistoryCard(entry: entry)
                         }
                     }
-                    .padding(12)
+                    .padding(16)
                 }
                 
                 Divider()
@@ -104,7 +94,6 @@ struct HistoryView: View {
 
 struct HistoryCard: View {
     let entry: HistoryEntry
-    let isExpanded: Bool
     @State private var isHovering = false
     
     private var hasChanges: Bool {
@@ -113,129 +102,167 @@ struct HistoryCard: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text(entry.formattedDate)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                
-                Spacer()
-                
-                if hasChanges {
-                    Text("Original ≠ Refined")
-                        .font(.caption2)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Color.blue.opacity(0.2))
-                        .foregroundColor(.blue)
-                        .clipShape(Capsule())
-                    
-                    Button {
-                        copyAsMarkdown()
-                    } label: {
-                        Image(systemName: "doc.text")
-                            .font(.caption)
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundColor(.secondary)
-                    .help("Copy as Markdown (Original + Refined)")
-                } else {
-                    Text("One-Call Provider")
-                        .font(.caption2)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Color.secondary.opacity(0.2))
-                        .foregroundColor(.secondary)
-                        .clipShape(Capsule())
-                }
-                
-                Button {
-                    copyToClipboard(entry.refined)
-                } label: {
-                    Image(systemName: "doc.on.doc")
-                        .font(.caption)
-                }
-                .buttonStyle(.plain)
-                .foregroundColor(.secondary)
-                .help("Copy refined text")
-            }
-            .padding(.horizontal, 12)
-            .padding(.top, 10)
-            .padding(.bottom, 8)
+            header
             
-            if isExpanded && hasChanges {
-                HStack(alignment: .top, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack {
-                            Text("Original")
-                                .font(.caption.weight(.semibold))
-                                .foregroundColor(.orange)
-                            Spacer()
-                            Button {
-                                copyToClipboard(entry.original)
-                            } label: {
-                                Image(systemName: "doc.on.doc")
-                                    .font(.caption2)
-                            }
-                            .buttonStyle(.plain)
-                            .foregroundColor(.secondary)
-                        }
-                        
-                        Text(entry.original)
-                            .font(.system(.body, design: .default))
-                            .textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(10)
-                            .background(Color.orange.opacity(0.1))
-                            .cornerRadius(8)
-                    }
-                    .frame(maxWidth: .infinity)
-                    
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack {
-                            Text("Refined")
-                                .font(.caption.weight(.semibold))
-                                .foregroundColor(.green)
-                            Spacer()
-                            Button {
-                                copyToClipboard(entry.refined)
-                            } label: {
-                                Image(systemName: "doc.on.doc")
-                                    .font(.caption2)
-                            }
-                            .buttonStyle(.plain)
-                            .foregroundColor(.secondary)
-                        }
-                        
-                        Text(entry.refined)
-                            .font(.system(.body, design: .default))
-                            .textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(10)
-                            .background(Color.green.opacity(0.1))
-                            .cornerRadius(8)
-                    }
-                    .frame(maxWidth: .infinity)
-                }
-                .padding(.horizontal, 12)
-                .padding(.bottom, 10)
+            if hasChanges {
+                sideBySideContent
             } else {
-                Text(entry.refined)
-                    .font(.body)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 12)
-                    .padding(.bottom, 10)
+                singleContent
             }
+            
+            footer
         }
-        .background(isHovering ? Color(nsColor: .selectedContentBackgroundColor).opacity(0.2) : Color(nsColor: .controlBackgroundColor))
-        .cornerRadius(10)
+        .background(Color(nsColor: .controlBackgroundColor))
+        .cornerRadius(12)
         .overlay(
-            RoundedRectangle(cornerRadius: 10)
+            RoundedRectangle(cornerRadius: 12)
                 .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
         )
         .onHover { hovering in
             isHovering = hovering
         }
+    }
+    
+    private var header: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(entry.formattedDate)
+                    .font(.caption.weight(.medium))
+                    .foregroundColor(.secondary)
+                
+                HStack(spacing: 4) {
+                    Image(systemName: "tag.fill")
+                        .font(.system(size: 8))
+                    Text(entry.safePresetName)
+                        .font(.system(size: 9, weight: .bold))
+                }
+                .foregroundColor(.accentColor)
+            }
+            
+            Spacer()
+            
+            if hasChanges {
+                Label("Refined", systemImage: "sparkles")
+                    .font(.caption2.weight(.bold))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Color.blue.opacity(0.15))
+                    .foregroundColor(.blue)
+                    .clipShape(Capsule())
+            } else {
+                Text("One-Call")
+                    .font(.caption2)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Color.secondary.opacity(0.15))
+                    .foregroundColor(.secondary)
+                    .clipShape(Capsule())
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 12)
+        .padding(.bottom, 8)
+    }
+
+    private var sideBySideContent: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("SYSTEM PROMPT")
+                    .font(.system(size: 8, weight: .black))
+                    .foregroundColor(.secondary.opacity(0.8))
+                
+                Text(entry.safeSystemPrompt)
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundColor(.secondary)
+                    .lineLimit(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(8)
+                    .background(Color.secondary.opacity(0.05))
+                    .cornerRadius(6)
+            }
+            .padding(.horizontal, 16)
+
+            HStack(alignment: .top, spacing: 16) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("ORIGINAL")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(.orange.opacity(0.8))
+                    
+                    Text(entry.original)
+                        .font(.system(.body, design: .default))
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(12)
+                        .background(Color.orange.opacity(0.05))
+                        .cornerRadius(8)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(Color.orange.opacity(0.1), lineWidth: 1)
+                        )
+                }
+                
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("REFINED")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(.green.opacity(0.8))
+                    
+                    Text(entry.refined)
+                        .font(.system(.body, design: .default))
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(12)
+                        .background(Color.green.opacity(0.05))
+                        .cornerRadius(8)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(Color.green.opacity(0.1), lineWidth: 1)
+                        )
+                }
+            }
+            .padding(.horizontal, 16)
+        }
+        .padding(.bottom, 12)
+    }
+    
+    private var singleContent: some View {
+        Text(entry.refined)
+            .font(.body)
+            .textSelection(.enabled)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(12)
+            .background(Color.secondary.opacity(0.05))
+            .cornerRadius(8)
+            .padding(.horizontal, 16)
+            .padding(.bottom, 12)
+    }
+    
+    private var footer: some View {
+        HStack(spacing: 12) {
+            Spacer()
+            
+            if hasChanges {
+                Button {
+                    copyAsMarkdown()
+                } label: {
+                    Label("Copy both for LLM", systemImage: "doc.on.doc.fill")
+                        .font(.caption.weight(.medium))
+                }
+                .buttonStyle(.bordered)
+                .tint(.blue)
+                .help("Copy original and refined text formatted for LLM training")
+            }
+            
+            Button {
+                copyToClipboard(entry.refined)
+            } label: {
+                Label("Copy Refined", systemImage: "doc.on.doc")
+                    .font(.caption.weight(.medium))
+            }
+            .buttonStyle(.bordered)
+            .help("Copy only the refined text")
+        }
+        .padding(.horizontal, 16)
+        .padding(.bottom, 12)
     }
     
     private func copyToClipboard(_ text: String) {
@@ -245,12 +272,14 @@ struct HistoryCard: View {
     
     private func copyAsMarkdown() {
         let markdown = """
-        ## Original (Transcription)
+        ### Prompt Information
+        - **Preset**: \(entry.safePresetName)
+        - **System Prompt**: \(entry.safeSystemPrompt)
         
+        ### Original Transcription
         \(entry.original)
         
-        ## Refined (After Processing)
-        
+        ### Refined Output
         \(entry.refined)
         """
         NSPasteboard.general.clearContents()

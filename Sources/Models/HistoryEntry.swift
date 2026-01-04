@@ -5,12 +5,24 @@ struct HistoryEntry: Codable, Identifiable, Equatable, Hashable {
     let timestamp: Date
     let original: String
     let refined: String
+    let presetName: String?
+    let systemPrompt: String?
     
-    init(original: String, refined: String) {
+    init(original: String, refined: String, presetName: String, systemPrompt: String) {
         self.id = UUID()
         self.timestamp = Date()
         self.original = original
         self.refined = refined
+        self.presetName = presetName
+        self.systemPrompt = systemPrompt
+    }
+    
+    var safePresetName: String {
+        presetName ?? "Unknown"
+    }
+    
+    var safeSystemPrompt: String {
+        systemPrompt ?? "Prompt not saved for this entry."
     }
     
     var displayText: String {

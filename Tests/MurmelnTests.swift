@@ -871,29 +871,31 @@ struct HistoryEntryTests {
     
     @Test("HistoryEntry initializes with correct values")
     func historyEntryInit() {
-        let entry = HistoryEntry(original: "hello world", refined: "Hello, world.")
+        let entry = HistoryEntry(original: "hello world", refined: "Hello, world.", presetName: "Casual", systemPrompt: "Prompt")
         
         #expect(entry.original == "hello world")
         #expect(entry.refined == "Hello, world.")
+        #expect(entry.safePresetName == "Casual")
+        #expect(entry.safeSystemPrompt == "Prompt")
         #expect(!entry.id.uuidString.isEmpty)
     }
     
     @Test("displayText returns refined when available")
     func displayTextRefined() {
-        let entry = HistoryEntry(original: "original", refined: "refined")
+        let entry = HistoryEntry(original: "original", refined: "refined", presetName: "Casual", systemPrompt: "Prompt")
         #expect(entry.displayText == "refined")
     }
     
     @Test("displayText returns original when refined is empty")
     func displayTextFallback() {
-        let entry = HistoryEntry(original: "original", refined: "")
+        let entry = HistoryEntry(original: "original", refined: "", presetName: "Casual", systemPrompt: "Prompt")
         #expect(entry.displayText == "original")
     }
     
     @Test("previewText truncates long text")
     func previewTextTruncation() {
         let longText = String(repeating: "a", count: 100)
-        let entry = HistoryEntry(original: longText, refined: longText)
+        let entry = HistoryEntry(original: longText, refined: longText, presetName: "Casual", systemPrompt: "Prompt")
         
         #expect(entry.previewText.count == 50)
         #expect(entry.previewText.hasSuffix("..."))
@@ -901,26 +903,28 @@ struct HistoryEntryTests {
     
     @Test("previewText preserves short text")
     func previewTextShort() {
-        let entry = HistoryEntry(original: "short", refined: "short")
+        let entry = HistoryEntry(original: "short", refined: "short", presetName: "Casual", systemPrompt: "Prompt")
         #expect(entry.previewText == "short")
     }
     
     @Test("HistoryEntry is Codable")
     func historyEntryCodable() throws {
-        let entry = HistoryEntry(original: "test", refined: "Test.")
+        let entry = HistoryEntry(original: "test", refined: "Test.", presetName: "Casual", systemPrompt: "Prompt")
         
         let encoded = try JSONEncoder().encode(entry)
         let decoded = try JSONDecoder().decode(HistoryEntry.self, from: encoded)
         
         #expect(decoded.original == entry.original)
         #expect(decoded.refined == entry.refined)
+        #expect(decoded.safePresetName == entry.safePresetName)
+        #expect(decoded.safeSystemPrompt == entry.safeSystemPrompt)
         #expect(decoded.id == entry.id)
     }
     
     @Test("HistoryEntry is Hashable")
     func historyEntryHashable() {
-        let entry1 = HistoryEntry(original: "a", refined: "A")
-        let entry2 = HistoryEntry(original: "b", refined: "B")
+        let entry1 = HistoryEntry(original: "a", refined: "A", presetName: "Casual", systemPrompt: "Prompt")
+        let entry2 = HistoryEntry(original: "b", refined: "B", presetName: "Casual", systemPrompt: "Prompt")
         
         var set = Set<HistoryEntry>()
         set.insert(entry1)
