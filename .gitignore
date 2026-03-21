@@ -1,0 +1,35 @@
+# Xcode
+.build/
+DerivedData/
+*.xcuserstate
+*.xcuserdatad/
+xcuserdata/
+
+# Swift Package Manager
+.swiftpm/
+Package.resolved
+
+# macOS
+.DS_Store
+*.swp
+*~
+
+# Build artifacts
+*.app
+*.ipa
+*.dSYM.zip
+*.dSYM
+OpenWhisperScribe/
+OpenWhisperScribe 2025-12-30 09-57-53/
+screenshots/
+tmp/
+build/
+
+# Archives
+*.zip
+
+# Xcode Build MCP
+.xcodebuildmcp/
+
+# Local state
+.last-branch
