@@ -1,88 +1,18 @@
 # Murmeln
 
-Push-to-talk dictation macOS menu bar app. Hold Fn to record, release to transcribe and auto-paste.
+Push-to-talk dictation macOS menu bar app. Hold `Fn` to record, release to transcribe and auto-paste.
 
 ## Identity
 - **Status:** poc
-- **Tech:** Swift 6, SwiftUI, macOS
+- **Tech:** Swift 6, SwiftUI, macOS, Apple Silicon
 
-## Commands
+Read `index.md` first for project map, commands, key docs, and active planning files.
 
-```bash
-# Build (debug)
-swift build
-
-# Build (release via xcodebuild)
-xcodebuild -scheme Murmeln -configuration Release -derivedDataPath build build
-
-# Run all tests
-swift test
-
-# Run a single test file
-swift test --filter AppStateTests
-
-# Run a single test method
-swift test --filter "AppStateTests/initialStateIsIdle"
-
-# Run tests matching pattern
-swift test --filter "HotkeyService"
-
-# Install to /Applications
-cp -r build/Build/Products/Release/Murmeln.app /Applications/
-```
-
-## Project Structure
-
-```
-Sources/
-├── MurmelnApp.swift          # @main entry, MenuBarExtra, hotkey wiring
-├── Models/                   # State, settings, provider enums
-│   ├── AppState.swift        # @MainActor singleton, orchestrates recording flow
-│   ├── AppSettings.swift     # @AppStorage persistence
-│   └── Provider.swift        # TranscriptionProvider + Provider enums
-├── Services/                 # Business logic, all async
-│   ├── AudioService.swift    # actor AudioRecorder - capture, conversion
-│   ├── NetworkService.swift  # Sendable - API calls
-│   ├── HotkeyService.swift   # Fn hold + Right Option detection
-│   └── ...
-└── Views/                    # SwiftUI views
-Tests/                        # Swift Testing framework suites
-docs/                         # Concept and implementation docs
-```
-
-## Code Style
-
-### Concurrency Model
-- **UI-bound classes**: `@MainActor` (e.g., `AppState`)
-- **Stateless services**: `Sendable` (e.g., `NetworkService`)
-- **Stateful async work**: `actor` (e.g., `AudioRecorder`)
-
-### Rules
-- No `as any` — use concrete types or proper generics.
-- No force unwraps — except in controlled contexts.
-- No blocking main thread — all network/audio is async.
-- No hardcoded API keys — all keys from AppSettings.
-- Nested error enums conforming to `LocalizedError` with `errorDescription`.
-
-## Testing
-
-Uses Swift Testing framework (not XCTest):
-
-```swift
-import Testing
-@testable import mrml
-
-@Suite("AppState Tests")
-struct AppStateTests {
-    @Test("Initial state is idle")
-    func initialStateIsIdle() {
-        #expect(isRecording == false)
-    }
-}
-```
-
-## Key Patterns
-
-- **State Machine**: `RecordingPhase`: `idle → warmingUp → recording → processing → idle`.
-- **Provider Pattern**: Separate enums for `TranscriptionProvider` and `Provider`.
-- **Audio Pipeline**: Engine warms up during 400ms hold threshold. See `docs/audio-pipeline.md`.
+## Rules
+- Treat Murmeln as Apple Silicon local-first and cloud-second — cleanup and architecture should make future local-native backends first-class.
+- Keep durable planning memory in repo files, not session context — use the active planning docs listed in `index.md`.
+- Update only the lowest necessary planning layer — evidence goes in findings, scope/priority changes go in the roadmap, executable tasks go in the active phase plan.
+- Keep one active roadmap, one active findings log, and at most one active phase plan — archive superseded docs and repoint `index.md` instead of keeping parallel "current" files.
+- Reconcile truth before expansion — when docs, specs, and code drift or a feature stops earning its complexity, restore one supported story before adding more surface area.
+- Use `Murmeln Dev` for dogfooding once available — routine work must not overwrite the production app.
+- Preserve the recording state machine and warm-up model unless evidence shows a better design — cutoff and latency work starts with root-cause investigation.
