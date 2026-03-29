@@ -13,8 +13,9 @@ The long-term direction is Apple-Silicon-local-first. Cloud and local-server bac
 - The installed `/Applications/Murmeln.app` currently supports WhisperKit on-device transcription.
 - The app also supports cloud transcription providers and local-server transcription via `Local Whisper Server`.
 - Refinement is a separate layer and can use cloud providers, Ollama, or be skipped entirely with Raw Mode.
-- The checked-in repo does not yet cleanly reproduce the installed WhisperKit build path. `swift test` currently fails because `Package.swift` does not declare `WhisperKit`.
-- Known live issues still under investigation include short-utterance cutoff, occasional crashes, and latency slower than target.
+- The checked-in Xcode project now builds both `Murmeln` and `Murmeln Dev`, and the touched reliability test suites pass with the restored WhisperKit dependency path.
+- Full `swift test` still has a known unrelated failure in `RefinementTestSuite.testCategoryCoverage`.
+- Current residual user-facing issues are occasional recognition misses, rare transcription-side latency outliers, and workflow polish items such as configurable paste delimiters.
 
 ## System Shape
 

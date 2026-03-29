@@ -142,6 +142,40 @@ struct AudioServiceTests {
         #expect(abs(originalData[128] - copiedData[128]) < 0.0001)
     }
 
+    @Test("Pre-roll flush writes buffered audio without post-threshold callback")
+    func preRollFlushWritesBufferedAudioWithoutPostThresholdCallback() throws {
+        let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16_000, channels: 1, interleaved: false)!
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("audio-preroll-flush-\(UUID().uuidString).wav")
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+
+        var buffers = [
+            makeConstantBuffer(format: format, frameCount: 160, value: 0.1),
+            makeConstantBuffer(format: format, frameCount: 160, value: 0.2)
+        ]
+        var totalFrames = 320
+        var pendingFlush = true
+
+        do {
+            let file = try AVAudioFile(forWriting: fileURL, settings: format.settings)
+            let flushedFrames = try AudioRecorder.flushPreRollBuffers(
+                to: file,
+                buffers: &buffers,
+                totalFrames: &totalFrames,
+                pendingFlush: &pendingFlush
+            )
+
+            #expect(flushedFrames == 320)
+            #expect(buffers.isEmpty)
+            #expect(totalFrames == 0)
+            #expect(pendingFlush == false)
+            #expect(Int(file.framePosition) == 320)
+        }
+
+        let writtenFile = try AVAudioFile(forReading: fileURL)
+        #expect(Int(writtenFile.length) == 320)
+    }
+
     private func makeSineBuffer(
         format: AVAudioFormat,
         startFrame: Int,
