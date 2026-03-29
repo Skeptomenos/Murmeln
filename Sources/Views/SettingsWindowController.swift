@@ -12,7 +12,7 @@ final class SettingsWindowController: NSWindowController {
             backing: .buffered,
             defer: false
         )
-        window.title = "Murmeln Settings"
+        window.title = AppIdentity.settingsWindowTitle
         window.center()
         window.isReleasedWhenClosed = false
         super.init(window: window)

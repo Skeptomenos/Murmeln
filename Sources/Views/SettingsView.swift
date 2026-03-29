@@ -171,7 +171,9 @@ struct ValidatedURLField: View {
 struct SettingsView: View {
     @ObservedObject private var settings = AppSettings.shared
     @ObservedObject private var ollamaService = OllamaService.shared
+    @ObservedObject private var whisperKitService = WhisperKitService.shared
     @State private var selectedTab: SettingsTab = .transcription
+    @State private var showingWhisperKitSetup = false
     
     @State private var transcriptionModels: [ModelInfo] = []
     @State private var refinementModels: [ModelInfo] = []
@@ -339,7 +341,7 @@ struct SettingsView: View {
                 Picker("Provider", selection: $settings.transcriptionProviderRaw) {
                     ForEach(TranscriptionProvider.allCases, id: \.rawValue) { provider in
                         HStack {
-                            Text(provider.rawValue)
+                            Text(provider.displayName)
                             if provider.supportsRefinementInOneCall {
                                 Text("+ Refinement")
                                     .font(.caption)
@@ -353,7 +355,7 @@ struct SettingsView: View {
                 .onChange(of: settings.transcriptionProviderRaw) { _, newValue in
                     if let provider = TranscriptionProvider(rawValue: newValue) {
                         settings.transcriptionBaseURL = provider.defaultBaseURL
-                        settings.transcriptionModel = provider.defaultModel
+                        settings.transcriptionModel = provider == .whisperKit ? settings.whisperKitModel : provider.defaultModel
                     }
                     loadTranscriptionModels()
                 }
@@ -370,6 +372,10 @@ struct SettingsView: View {
                     .background(Color.green.opacity(0.1))
                     .cornerRadius(8)
                 }
+
+                if settings.transcriptionProvider == .whisperKit {
+                    whisperKitSection
+                }
                 
                 if settings.transcriptionProvider.requiresAPIKey {
                     VStack(alignment: .leading, spacing: 4) {
@@ -383,38 +389,116 @@ struct SettingsView: View {
                     }
                 }
                 
-                ValidatedURLField(title: "Base URL", url: $settings.transcriptionBaseURL)
+                if settings.transcriptionProvider != .whisperKit {
+                    ValidatedURLField(title: "Base URL", url: $settings.transcriptionBaseURL)
+                }
                 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Model")
-                        .font(.caption.weight(.medium))
-                    HStack {
-                        if isLoadingTranscriptionModels {
-                            ProgressView()
-                                .scaleEffect(0.7)
-                        }
-                        
-                        if transcriptionModels.isEmpty {
-                            TextField("Model name", text: $settings.transcriptionModel)
-                                .textFieldStyle(.roundedBorder)
-                        } else {
-                            Picker("", selection: $settings.transcriptionModel) {
-                                ForEach(transcriptionModels) { model in
-                                    Text(model.name).tag(model.id)
-                                }
+                if settings.transcriptionProvider != .whisperKit {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Model")
+                            .font(.caption.weight(.medium))
+                        HStack {
+                            if isLoadingTranscriptionModels {
+                                ProgressView()
+                                    .scaleEffect(0.7)
                             }
-                            .labelsHidden()
+                            
+                            if transcriptionModels.isEmpty {
+                                TextField("Model name", text: $settings.transcriptionModel)
+                                    .textFieldStyle(.roundedBorder)
+                            } else {
+                                Picker("", selection: $settings.transcriptionModel) {
+                                    ForEach(transcriptionModels) { model in
+                                        Text(model.name).tag(model.id)
+                                    }
+                                }
+                                .labelsHidden()
+                            }
+                            
+                            Button(action: loadTranscriptionModels) {
+                                Image(systemName: "arrow.clockwise")
+                            }
+                            .buttonStyle(.borderless)
                         }
-                        
-                        Button(action: loadTranscriptionModels) {
-                            Image(systemName: "arrow.clockwise")
-                        }
-                        .buttonStyle(.borderless)
                     }
                 }
             }
         }
         .onAppear { loadTranscriptionModels() }
+        .sheet(isPresented: $showingWhisperKitSetup) {
+            WhisperKitSetupView()
+        }
+    }
+
+    @ViewBuilder
+    private var whisperKitSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Current Model")
+                        .font(.caption.weight(.medium))
+                    Text(settings.whisperKitModel)
+                        .font(.system(.body, design: .monospaced))
+                }
+
+                Spacer()
+
+                if whisperKitService.modelState == .ready {
+                    Label("Ready", systemImage: "circle.fill")
+                        .font(.caption)
+                        .foregroundColor(.green)
+                }
+            }
+
+            Button("Download & Manage Models...") {
+                showingWhisperKitSetup = true
+            }
+
+            Text("Transcription runs entirely on-device. No data leaves your Mac.")
+                .font(.caption)
+                .foregroundColor(.green)
+                .padding(10)
+                .background(Color.green.opacity(0.1))
+                .cornerRadius(8)
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Decoding Strategy")
+                    .font(.caption.weight(.medium))
+
+                HStack {
+                    Text("Language")
+                    Spacer()
+                    Picker("Language", selection: Binding(
+                        get: { settings.whisperKitLanguages.first ?? .english },
+                        set: { settings.whisperKitLanguages = [$0] }
+                    )) {
+                        ForEach(WhisperKitLanguage.allCases, id: \.self) { language in
+                            Text(language.rawValue).tag(language)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                }
+
+                HStack {
+                    Text("Profile")
+                    Spacer()
+                    Picker("Profile", selection: Binding(
+                        get: { settings.whisperKitProfile },
+                        set: { settings.whisperKitProfile = $0 }
+                    )) {
+                        ForEach(WhisperKitProfile.allCases, id: \.self) { profile in
+                            Text(profile.rawValue).tag(profile)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                }
+            }
+        }
+        .padding(12)
+        .background(Color(nsColor: .controlBackgroundColor))
+        .cornerRadius(8)
     }
     
     private var refinementContent: some View {

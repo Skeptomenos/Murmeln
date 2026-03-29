@@ -18,7 +18,21 @@ actor ModelDiscoveryService {
     }
     
     func fetchTranscriptionModels(provider: TranscriptionProvider, apiKey: String, baseURL: String) async -> [ModelInfo] {
+        let whisperKitFallbackModel = await MainActor.run { AppSettings.shared.whisperKitModel }
+
         switch provider {
+        case .whisperKit:
+            let service = await MainActor.run { WhisperKitService.shared }
+            await MainActor.run {
+                service.scanDownloadedModels()
+            }
+            let downloaded = await MainActor.run { service.downloadedModels }
+            if downloaded.isEmpty {
+                return [ModelInfo(id: whisperKitFallbackModel, name: formatWhisperKitModelName(whisperKitFallbackModel))]
+            }
+            return downloaded.map { variant in
+                ModelInfo(id: variant, name: formatWhisperKitModelName(variant))
+            }
         case .openAIWhisper:
             return [ModelInfo(id: "whisper-1", name: "Whisper v1")]
         case .groqWhisper:
@@ -33,6 +47,13 @@ actor ModelDiscoveryService {
         case .localWhisper:
             return [ModelInfo(id: "default", name: "Local Whisper")]
         }
+    }
+
+    private func formatWhisperKitModelName(_ variant: String) -> String {
+        variant
+            .replacingOccurrences(of: "openai_whisper-", with: "")
+            .replacingOccurrences(of: "-", with: " ")
+            .capitalized
     }
     
     private func fetchOpenAICompatibleModels(apiKey: String, baseURL: String, provider: Provider) async -> [ModelInfo] {

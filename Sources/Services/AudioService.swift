@@ -16,6 +16,10 @@ actor AudioRecorder {
         var converter: AVAudioConverter?
         var outputFormat: AVAudioFormat?
         var inputFormat: AVAudioFormat?
+        var preRollBuffers: [AVAudioPCMBuffer] = []
+        var preRollFrameCount = 0
+        var preRollMaxFrames = 0
+        var pendingPreRollFlush = false
     }
     
     private let tapState = TapState()
@@ -25,6 +29,8 @@ actor AudioRecorder {
     private var cachedHighQuality = false
     private var cachedOutputFormat: AVAudioFormat?
     private var cachedTapFormat: AVAudioFormat?
+    private var activeCaptureID: String?
+    private let preRollDurationSeconds: Double = 0.35
     
     enum AudioError: Error, LocalizedError {
         case noInput
@@ -56,7 +62,15 @@ actor AudioRecorder {
     
     /// Prepares and starts the audio engine without recording to file.
     /// Call this during the hold threshold delay to eliminate startup latency.
-    func prepareEngine(highQuality: Bool = false) async throws -> AsyncStream<Float> {
+    func prepareEngine(highQuality: Bool = false, captureID: String? = nil) async throws -> AsyncStream<Float> {
+        if let captureID {
+            activeCaptureID = captureID
+        }
+
+        logDiagnostics("audio.warmup.prepare_start", [
+            "high_quality": String(highQuality)
+        ])
+
         // Clean up any previous state
         if audioEngine != nil {
             await cancelWarmUp()
@@ -107,6 +121,10 @@ actor AudioRecorder {
         tapState.lastBufferTime = Date()
         tapState.outputFormat = outputFormat
         tapState.inputFormat = inputFormat
+        tapState.preRollBuffers.removeAll(keepingCapacity: true)
+        tapState.preRollFrameCount = 0
+        tapState.preRollMaxFrames = Int(outputFormat.sampleRate * preRollDurationSeconds)
+        tapState.pendingPreRollFlush = false
         
         let stream = AsyncStream<Float> { continuation in
             self.levelContinuation = continuation
@@ -119,33 +137,52 @@ actor AudioRecorder {
             
             let level = Self.calculateRMS(buffer: buffer)
             
-            // Write to file if capture is active
-            if tapState.isWriting, let file = tapState.audioFile {
-                if let converter = tapState.converter, let outFormat = tapState.outputFormat, let inFormat = tapState.inputFormat {
-                    let ratio = outFormat.sampleRate / inFormat.sampleRate
-                    let outputFrameCount = AVAudioFrameCount(Double(buffer.frameLength) * ratio)
-                    
-                    if let outputBuffer = AVAudioPCMBuffer(pcmFormat: outFormat, frameCapacity: outputFrameCount) {
-                        var error: NSError?
-                        nonisolated(unsafe) var hasData = true
-                        
-                        converter.convert(to: outputBuffer, error: &error) { _, outStatus in
-                            if hasData {
-                                hasData = false
-                                outStatus.pointee = .haveData
-                                return buffer
-                            }
-                            outStatus.pointee = .noDataNow
-                            return nil
+            func handleOutputBuffer(_ processedBuffer: AVAudioPCMBuffer) {
+                if tapState.isWriting, let file = tapState.audioFile {
+                    if tapState.pendingPreRollFlush {
+                        for preRollBuffer in tapState.preRollBuffers {
+                            try? file.write(from: preRollBuffer)
                         }
-                        
-                        if error == nil && outputBuffer.frameLength > 0 {
-                            try? file.write(from: outputBuffer)
-                        }
+                        tapState.preRollBuffers.removeAll(keepingCapacity: true)
+                        tapState.preRollFrameCount = 0
+                        tapState.pendingPreRollFlush = false
                     }
+
+                    try? file.write(from: processedBuffer)
                 } else {
-                    try? file.write(from: buffer)
+                    Self.appendPreRollBuffer(
+                        processedBuffer,
+                        to: &tapState.preRollBuffers,
+                        totalFrames: &tapState.preRollFrameCount,
+                        maxFrames: tapState.preRollMaxFrames
+                    )
                 }
+            }
+
+            if let converter = tapState.converter, let outFormat = tapState.outputFormat, let inFormat = tapState.inputFormat {
+                let ratio = outFormat.sampleRate / inFormat.sampleRate
+                let outputFrameCount = AVAudioFrameCount(Double(buffer.frameLength) * ratio)
+
+                if let outputBuffer = AVAudioPCMBuffer(pcmFormat: outFormat, frameCapacity: outputFrameCount) {
+                    var error: NSError?
+                    nonisolated(unsafe) var hasData = true
+
+                    converter.convert(to: outputBuffer, error: &error) { _, outStatus in
+                        if hasData {
+                            hasData = false
+                            outStatus.pointee = .haveData
+                            return buffer
+                        }
+                        outStatus.pointee = .noDataNow
+                        return nil
+                    }
+
+                    if error == nil && outputBuffer.frameLength > 0 {
+                        handleOutputBuffer(outputBuffer)
+                    }
+                }
+            } else {
+                handleOutputBuffer(buffer)
             }
             
             if let self {
@@ -160,7 +197,12 @@ actor AudioRecorder {
             #if DEBUG
             print("🔥 Engine warmed up (persistent tap installed)")
             #endif
+            logDiagnostics("audio.warmup.prepare_complete", [
+                "input_sample_rate": String(format: "%.0f", inputFormat.sampleRate),
+                "output_sample_rate": String(format: "%.0f", outputFormat.sampleRate)
+            ])
         } catch {
+            logDiagnostics("audio.warmup.prepare_failed", ["error": error.localizedDescription])
             throw AudioError.engineStartFailed(error)
         }
         
@@ -171,8 +213,13 @@ actor AudioRecorder {
     // MARK: - Phase 2: Begin Capture (called after 400ms threshold)
     
     /// Starts actual recording to file. Must call prepareEngine() first.
-    func beginCapture() async throws {
+    func beginCapture(captureID: String? = nil) async throws {
+        if let captureID {
+            activeCaptureID = captureID
+        }
+
         guard isWarmedUp, let outputFormat = cachedOutputFormat else {
+            logDiagnostics("audio.capture.begin_failed", ["reason": "not_warmed_up"])
             throw AudioError.notWarmedUp
         }
         
@@ -184,10 +231,21 @@ actor AudioRecorder {
         
         self.audioFile = file
         self.tempFileURL = fileURL
+
+        let preRollFrames = tapState.preRollFrameCount
+        let preRollMs = Int((Double(preRollFrames) / outputFormat.sampleRate) * 1000)
         
         // Signal the tap to start writing
         tapState.audioFile = file
+        tapState.pendingPreRollFlush = preRollFrames > 0
         tapState.isWriting = true
+
+        logDiagnostics("audio.capture.begin", [
+            "file": fileURL.lastPathComponent,
+            "sample_rate": String(format: "%.0f", outputFormat.sampleRate),
+            "pre_roll_frames": String(preRollFrames),
+            "pre_roll_ms": String(preRollMs)
+        ])
         
         #if DEBUG
         print("🎙️ Capture started (zero latency, no tap gap)")
@@ -198,6 +256,7 @@ actor AudioRecorder {
     
     /// Stops the warmed-up engine without saving any audio.
     func cancelWarmUp() async {
+        logDiagnostics("audio.warmup.cancel")
         audioEngine?.inputNode.removeTap(onBus: 0)
         audioEngine?.stop()
         levelContinuation?.finish()
@@ -210,10 +269,15 @@ actor AudioRecorder {
         cachedOutputFormat = nil
         cachedTapFormat = nil
         isWarmedUp = false
+        activeCaptureID = nil
         
         tapState.isWriting = false
         tapState.audioFile = nil
         tapState.converter = nil
+        tapState.preRollBuffers.removeAll(keepingCapacity: true)
+        tapState.preRollFrameCount = 0
+        tapState.preRollMaxFrames = 0
+        tapState.pendingPreRollFlush = false
         
         #if DEBUG
         print("❄️ Warm-up cancelled")
@@ -222,9 +286,9 @@ actor AudioRecorder {
     
     // MARK: - Legacy API (for backward compatibility)
     
-    func startRecording(highQuality: Bool = false) async throws -> AsyncStream<Float> {
-        let stream = try await prepareEngine(highQuality: highQuality)
-        try await beginCapture()
+    func startRecording(highQuality: Bool = false, captureID: String? = nil) async throws -> AsyncStream<Float> {
+        let stream = try await prepareEngine(highQuality: highQuality, captureID: captureID)
+        try await beginCapture(captureID: captureID)
         return stream
     }
     
@@ -242,13 +306,62 @@ actor AudioRecorder {
         }
         return sqrt(sum / Float(frameLength))
     }
+
+    static func copyBuffer(_ source: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
+        guard source.frameLength > 0,
+              let copiedBuffer = AVAudioPCMBuffer(pcmFormat: source.format, frameCapacity: source.frameLength),
+              let sourceChannelData = source.floatChannelData,
+              let destinationChannelData = copiedBuffer.floatChannelData else {
+            return nil
+        }
+
+        copiedBuffer.frameLength = source.frameLength
+        let channelCount = Int(source.format.channelCount)
+        let frameCount = Int(source.frameLength)
+
+        for channel in 0..<channelCount {
+            destinationChannelData[channel].update(from: sourceChannelData[channel], count: frameCount)
+        }
+
+        return copiedBuffer
+    }
+
+    static func appendPreRollBuffer(
+        _ sourceBuffer: AVAudioPCMBuffer,
+        to buffers: inout [AVAudioPCMBuffer],
+        totalFrames: inout Int,
+        maxFrames: Int
+    ) {
+        guard maxFrames > 0,
+              let copiedBuffer = copyBuffer(sourceBuffer) else {
+            return
+        }
+
+        buffers.append(copiedBuffer)
+        totalFrames += Int(copiedBuffer.frameLength)
+
+        while totalFrames > maxFrames, !buffers.isEmpty {
+            let removed = buffers.removeFirst()
+            totalFrames -= Int(removed.frameLength)
+        }
+    }
     
-    func stopRecording() async -> URL? {
-        // Wait for audio pipeline to drain (no new buffers for 300ms)
-        // with a maximum timeout of 1000ms to ensure all trailing speech is captured
-        let drainThreshold: TimeInterval = 0.3  // 300ms silence = drained
-        let maxWait: TimeInterval = 1.0         // 1.0s max wait
+    func stopRecording(captureID: String? = nil) async -> URL? {
+        if let captureID {
+            activeCaptureID = captureID
+        }
+
+        // Wait briefly for trailing buffers before stopping.
+        // Current tap behavior tends to update buffer timestamps continuously,
+        // so this branch is primarily a bounded grace period.
+        let drainThreshold: TimeInterval = 0.12
+        let maxWait: TimeInterval = 0.35
         let startTime = Date()
+
+        logDiagnostics("audio.capture.stop_requested", [
+            "drain_threshold_ms": String(Int(drainThreshold * 1000)),
+            "max_wait_ms": String(Int(maxWait * 1000))
+        ])
         
         #if DEBUG
         print("⏳ Waiting for pipeline drain...")
@@ -263,6 +376,10 @@ actor AudioRecorder {
                 #if DEBUG
                 print("🔊 Buffer drain detected after \(String(format: "%.0f", totalWaitTime * 1000))ms")
                 #endif
+                logDiagnostics("audio.capture.stop_drain_detected", [
+                    "wait_ms": String(Int(totalWaitTime * 1000)),
+                    "since_last_buffer_ms": String(Int(timeSinceLastBuffer * 1000))
+                ])
                 break
             }
             
@@ -270,6 +387,10 @@ actor AudioRecorder {
                 #if DEBUG
                 print("⚠️ Buffer drain timeout after \(String(format: "%.0f", maxWait * 1000))ms")
                 #endif
+                logDiagnostics("audio.capture.stop_drain_timeout", [
+                    "wait_ms": String(Int(totalWaitTime * 1000)),
+                    "since_last_buffer_ms": String(Int(timeSinceLastBuffer * 1000))
+                ])
                 break
             }
             
@@ -282,6 +403,13 @@ actor AudioRecorder {
         audioEngine?.inputNode.removeTap(onBus: 0)
         audioEngine?.stop()
         levelContinuation?.finish()
+
+        let flushedFrames = flushPendingConvertedFrames()
+        if flushedFrames > 0 {
+            logDiagnostics("audio.capture.converter_flushed", [
+                "flushed_frames": String(flushedFrames)
+            ])
+        }
         
         let url = tempFileURL
         
@@ -296,8 +424,78 @@ actor AudioRecorder {
         
         tapState.audioFile = nil
         tapState.converter = nil
+        tapState.preRollBuffers.removeAll(keepingCapacity: true)
+        tapState.preRollFrameCount = 0
+        tapState.preRollMaxFrames = 0
+        tapState.pendingPreRollFlush = false
+
+        if let url {
+            let fileSize = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) ?? -1
+            logDiagnostics("audio.capture.stop_complete", [
+                "file": url.lastPathComponent,
+                "file_size_bytes": String(fileSize)
+            ])
+        } else {
+            logDiagnostics("audio.capture.stop_complete", ["file": "nil"])
+        }
+
+        activeCaptureID = nil
         
         return url
+    }
+
+    private func logDiagnostics(_ event: String, _ metadata: [String: String] = [:]) {
+        let captureID = activeCaptureID
+        Task {
+            await CaptureDiagnostics.shared.mark(event, captureID: captureID, metadata: metadata)
+        }
+    }
+
+    private func flushPendingConvertedFrames() -> Int {
+        guard let converter = tapState.converter,
+              let outputFormat = tapState.outputFormat,
+              let file = tapState.audioFile else {
+            return 0
+        }
+
+        return Self.flushConverter(converter, outputFormat: outputFormat) { buffer in
+            try file.write(from: buffer)
+        }
+    }
+
+    static func flushConverter(
+        _ converter: AVAudioConverter,
+        outputFormat: AVAudioFormat,
+        maxIterations: Int = 16,
+        writeBuffer: (AVAudioPCMBuffer) throws -> Void
+    ) -> Int {
+        var totalFlushedFrames = 0
+
+        for _ in 0..<maxIterations {
+            guard let flushBuffer = AVAudioPCMBuffer(pcmFormat: outputFormat, frameCapacity: 2048) else {
+                break
+            }
+
+            var conversionError: NSError?
+            converter.convert(to: flushBuffer, error: &conversionError) { _, outStatus in
+                outStatus.pointee = .endOfStream
+                return nil
+            }
+
+            if conversionError != nil || flushBuffer.frameLength == 0 {
+                break
+            }
+
+            do {
+                try writeBuffer(flushBuffer)
+            } catch {
+                break
+            }
+
+            totalFlushedFrames += Int(flushBuffer.frameLength)
+        }
+
+        return totalFlushedFrames
     }
     
     /// Trims silence from audio using chunked processing to minimize memory usage.

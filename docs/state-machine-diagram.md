@@ -1,7 +1,9 @@
 # Murmeln State Machine Diagram
 
 **Generated:** 2026-01-11  
-**Purpose:** Complete state machine documentation for the Murmeln push-to-talk dictation app
+**Purpose:** Deep state-machine reference for the Murmeln push-to-talk dictation app
+
+> Current-state caveat: this document is a detailed historical/deep reference. For authoritative current-state behavior, start with `README.md`, `docs/architecture-overview.md`, and the active planning docs in `_planning/`.
 
 ---
 

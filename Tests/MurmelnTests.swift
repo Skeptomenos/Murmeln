@@ -59,8 +59,12 @@ struct TranscriptionProviderTests {
     @Test("All TranscriptionProvider cases have valid default base URLs")
     func transcriptionProviderDefaultBaseURLs() {
         for provider in TranscriptionProvider.allCases {
-            let url = URL(string: provider.defaultBaseURL)
-            #expect(url != nil, "TranscriptionProvider \(provider.rawValue) has invalid base URL: \(provider.defaultBaseURL)")
+            if provider == .whisperKit {
+                #expect(provider.defaultBaseURL.isEmpty)
+            } else {
+                let url = URL(string: provider.defaultBaseURL)
+                #expect(url != nil, "TranscriptionProvider \(provider.rawValue) has invalid base URL: \(provider.defaultBaseURL)")
+            }
         }
     }
     
@@ -79,6 +83,7 @@ struct TranscriptionProviderTests {
     
     @Test("Native audio models identified correctly")
     func nativeAudioModels() {
+        #expect(TranscriptionProvider.whisperKit.isNativeAudioModel == true)
         #expect(TranscriptionProvider.gpt4oAudio.isNativeAudioModel == true)
         #expect(TranscriptionProvider.geminiAudio.isNativeAudioModel == true)
         #expect(TranscriptionProvider.openAIWhisper.isNativeAudioModel == false)
@@ -289,7 +294,7 @@ struct ReliabilityTests {
     
     @Test("Transcription provider defaults are HTTPS")
     func transcriptionHTTPS() {
-        for provider in TranscriptionProvider.allCases where provider != .localWhisper {
+        for provider in TranscriptionProvider.allCases where provider != .localWhisper && provider != .whisperKit {
             #expect(provider.defaultBaseURL.hasPrefix("https://"))
         }
     }
@@ -658,7 +663,7 @@ struct IntegrationSimulationTests {
         let twoCallProviders = TranscriptionProvider.allCases.filter { !$0.supportsRefinementInOneCall }
         
         #expect(oneCallProviders.count == 2)
-        #expect(twoCallProviders.count == 3)
+        #expect(twoCallProviders.count == 4)
     }
     
     @Test("Provider to refinement provider mapping")

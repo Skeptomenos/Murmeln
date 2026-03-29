@@ -115,8 +115,7 @@ final class WhisperKitService: ObservableObject {
     }
     
     private var modelsDirectory: URL {
-        let paths = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
-        let appSupportDir = paths[0].appendingPathComponent("Murmeln")
+        let appSupportDir = AppIdentity.appSupportDirectoryURL
         let modelsDir = appSupportDir.appendingPathComponent("Models")
         
         if !FileManager.default.fileExists(atPath: modelsDir.path) {
@@ -281,7 +280,7 @@ final class WhisperKitService: ObservableObject {
                 supressTokens: [-1],
                 noSpeechThreshold: 0.6,
                 concurrentWorkerCount: 4,
-                chunkingStrategy: .none
+                chunkingStrategy: ChunkingStrategy.none
             )
         case .balanced:
             decodingOptions = DecodingOptions(
@@ -296,7 +295,7 @@ final class WhisperKitService: ObservableObject {
                 suppressBlank: true,
                 supressTokens: [-1],
                 noSpeechThreshold: 0.6,
-                chunkingStrategy: .none
+                chunkingStrategy: ChunkingStrategy.none
             )
         case .accurate:
             decodingOptions = DecodingOptions(
@@ -321,7 +320,7 @@ final class WhisperKitService: ObservableObject {
                 usePrefillPrompt: settings.whisperKitPromptPrefill,
                 usePrefillCache: settings.whisperKitPromptPrefill,
                 withoutTimestamps: !settings.whisperKitEnableTimestamps,
-                chunkingStrategy: settings.whisperKitUseVAD ? .vad : .none
+                chunkingStrategy: settings.whisperKitUseVAD ? .vad : ChunkingStrategy.none
             )
         }
         

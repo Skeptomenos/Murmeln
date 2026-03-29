@@ -216,7 +216,9 @@ struct WhisperKitSetupView: View {
     
     private func selectAndDismiss() {
         AppSettings.shared.whisperKitModel = selectedVariant
-        AppSettings.shared.transcriptionModel = selectedVariant
+        if AppSettings.shared.transcriptionProvider == .whisperKit {
+            AppSettings.shared.transcriptionModel = selectedVariant
+        }
         
         // Trigger load
         Task {

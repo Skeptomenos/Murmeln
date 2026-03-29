@@ -1,5 +1,7 @@
 # Murmeln Implementation Plan
 
+> Historical implementation log for the v2.2.6-v2.7.0 backlog. This file is not the active roadmap for current Murmeln planning.
+
 **Generated:** 2026-01-11 (Verified: 2026-01-11 02:31 UTC)
 **Based on:** specs/README.md + Code Verification + Oracle Analysis + Explore Agent Verification
 **Status:** Phase 6 COMPLETE - v2.7.0 released - ALL SPECS COMPLETE 🎉

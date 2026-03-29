@@ -5,7 +5,7 @@
 <h1 align="center">Murmeln</h1>
 
 <p align="center">
-  <strong>Push-to-talk dictation for macOS — Bring Your Own API Key</strong>
+  <strong>Push-to-talk dictation for macOS — local-first on Apple Silicon, cloud when needed</strong>
 </p>
 
 <p align="center">
@@ -18,11 +18,20 @@
 ## Why Murmeln?
 
 Love the idea of voice dictation apps but want to:
+- **Run locally on Apple Silicon** instead of defaulting to cloud?
 - **Use your own API keys** instead of paying subscription fees?
-- **Choose your provider** — OpenAI, Groq, Gemini, or self-hosted?
+- **Choose your provider** — WhisperKit, OpenAI, Groq, Gemini, or self-hosted?
 - **Keep it simple** — no account, no cloud sync, just dictation?
 
-Murmeln is for you. It's the **BYOAPI** (Bring Your Own API) dictation tool.
+Murmeln is for you. It is a local-first dictation tool that still supports BYOAPI cloud workflows when you want them.
+
+---
+
+## Mission
+
+Murmeln turns spoken thought into pasted text with as little friction as possible. The product goal is to feel trustworthy, fast, and invisible in daily use: hold a key, speak, release, keep typing.
+
+The best Murmeln experience should be Apple-Silicon-local-first. Cloud and local-server backends remain supported, but they are extensions and fallback paths, not the center of the long-term product direction.
 
 ---
 
@@ -32,18 +41,28 @@ Murmeln is for you. It's the **BYOAPI** (Bring Your Own API) dictation tool.
 |---------|-------------|
 | **Push-to-Talk** | Hold Fn key to record, release to process |
 | **Lock Recording** | Double-tap Right Option for hands-free recording |
-| **Multiple Providers** | OpenAI Whisper, Groq, GPT-4o Audio, Gemini 2.0 Flash, Local Whisper, Ollama |
+| **Transcription Providers** | WhisperKit (On-Device), OpenAI Whisper, Groq, GPT-4o Audio, Gemini 2.0 Flash, or a compatible Local Whisper server |
+| **Refinement Providers** | OpenAI, Google, Groq, or Ollama for text cleanup after transcription |
 | **Prompt Presets** | Casual, Structured, Markdown, Verbatim, or Custom (editable) |
 | **Raw Mode** | Skip LLM refinement entirely for pure transcription |
 | **Smart VAD** | Skips empty recordings, trims silence for faster processing |
 | **Auto-Paste** | Transcribed text is pasted directly into your focused app |
 | **Visual Feedback** | Minimal line indicator under notch shows status |
-| **History Audit** | Parallel processing shows how every preset would refine your text |
+| **Parallel Audit** | Optional side-by-side history view of multiple preset refinements |
 | **Optimized Audio** | 16kHz recording for faster processing |
 | **Menu Bar App** | Quick access with direct history and restart options |
 | **Auto-Update Check** | Checks GitHub for new versions on launch |
 | **Personal Dictionary** | Teach the refiner how to spell names and terms |
-| **Prompt Injection Resistant** | Prompts resist hijacking attempts in dictated text |
+| **Prompt Safety Instructions** | Built-in presets tell the model to treat dictated content as text, not commands |
+
+---
+
+## Current Supported State
+
+- The installed `/Applications/Murmeln.app` currently supports WhisperKit on-device transcription, cloud transcription providers, and local-server workflows.
+- The checked-in repo does not yet cleanly reproduce the installed WhisperKit build path; `Local Whisper Server` is currently the most reproducible local transcription path from source.
+- Refinement remains optional. You can use cloud providers, Ollama, or skip refinement entirely with Raw Mode.
+- The app is actively used, but reliability and performance work is still ongoing. Short utterances can still lose words, and repo/build truth is still being reconciled with runtime truth.
 
 ---
 
@@ -53,9 +72,9 @@ Murmeln is for you. It's the **BYOAPI** (Bring Your Own API) dictation tool.
 
 **Download the latest release:**
 
-👉 [**Download Murmeln v2.3.0**](https://github.com/Skeptomenos/Murmeln/releases/latest)
+👉 [**Download the latest Murmeln release**](https://github.com/Skeptomenos/Murmeln/releases/latest)
 
-1. Download `Murmeln-v2.3.0.zip`
+1. Download the latest release zip
 2. Unzip and drag `Murmeln.app` to `/Applications`
 3. Right-click → **Open** (required for unsigned apps)
 
@@ -91,23 +110,36 @@ cp -r build/Build/Products/Release/Murmeln.app /Applications/
 
 **History & Audit Trail:**
 1. Click **Show History** in the menu bar
-2. See exactly what you said vs. what **every** preset produced in parallel
+2. When **Parallel Audit** is enabled, compare what multiple presets produced from the same transcript
 3. Click **Copy Full Audit Log** to get a formatted report of all variants for prompt tuning
 
 ---
 
-## Providers
+## Current Provider Model
 
-| Provider | Speed | Cost | One-Call Refinement |
-|----------|-------|------|---------------------|
-| **Gemini 2.0 Flash** | Fast | Free tier | ✅ Yes |
-| **Groq Whisper** | Very Fast | Free tier | ❌ No |
-| **OpenAI Whisper** | Fast | $0.006/min | ❌ No |
-| **GPT-4o Audio** | Fast | Higher | ✅ Yes |
-| **Local Whisper** | Varies | Free | ❌ No |
-| **Ollama (Local)** | Fast | Free | ❌ No |
+### Transcription Providers
 
-> **Tip:** For speed, use **Groq Whisper** with `whisper-large-v3-turbo` (5x faster than v3). For simplicity, use **Gemini 2.0 Flash** (one API call). For free local refinement, use **Ollama**. Enable **Raw Mode** to skip refinement entirely.
+| Provider | Type | Notes |
+|----------|------|-------|
+| **WhisperKit (On-Device)** | Local native | Active in the installed app; checked-in repo/build reconciliation is still in progress |
+| **Gemini 2.0 Flash** | Cloud | Transcription + refinement in one call |
+| **Groq Whisper** | Cloud | Fast transcription only |
+| **OpenAI Whisper** | Cloud | Transcription only |
+| **GPT-4o Audio** | Cloud | Transcription + refinement in one call |
+| **Local Whisper Server** | Local server | Expects a compatible server on `localhost:8080` |
+
+### Refinement Providers
+
+| Provider | Type | Notes |
+|----------|------|-------|
+| **OpenAI** | Cloud | Chat-model cleanup |
+| **Google AI** | Cloud | Gemini text cleanup |
+| **Groq** | Cloud | Fast chat-model cleanup |
+| **Ollama (Local)** | Local server | Local refinement only, not transcription |
+
+> **Current local note:** The installed app currently supports both WhisperKit on-device transcription and local-server workflows (`Local Whisper` and `Ollama`). The checked-in repo/build path for WhisperKit is still being reconciled, so the most reproducible local path from source today is `Local Whisper Server`.
+
+> **Tip:** For speed, use **Groq Whisper** with `whisper-large-v3-turbo`. For simplicity, use **Gemini 2.0 Flash** (one API call). For free local refinement, use **Ollama**. Enable **Raw Mode** to skip refinement entirely.
 
 ---
 
@@ -123,7 +155,7 @@ Choose how your dictation is refined:
 | **Verbatim** | Exact wording | Only removes filler words |
 | **Custom** | Your needs | Create your own presets |
 
-> **New in v2.3:** All presets now include few-shot examples, priority hierarchies, and prompt injection resistance. Create custom presets with the + button.
+> Built-in presets include few-shot examples, priority hierarchies, and safety instructions that tell the model to treat dictated content as text. Create custom presets with the + button.
 
 ### Raw Mode (Skip Refinement)
 
@@ -137,7 +169,7 @@ Enable **Skip Refinement** in Settings → Refinement to bypass LLM processing e
 Murmeln automatically:
 - **Skips empty recordings** — No more "thank you" or dots when you accidentally trigger recording
 - **Trims silence** — Removes silence from start/end of recordings for faster API processing (typically 20-50% smaller files)
-- **Tail buffer** — Captures trailing speech after key release to prevent last-word cutoff
+- **Tail buffer logic** — Attempts to capture trailing speech after key release, though short-utterance cutoff is still under investigation
 
 ### Personal Dictionary
 
@@ -241,12 +273,21 @@ monitoring keystrokes in sensitive fields.
 **Workaround:** Click outside the password field before using Murmeln, or use the 
 menu bar to manually trigger recording.
 
+### Short Utterances Can Still Lose Words
+
+Very short or fast dictation can still lose opening or ending words in some cases. This is an active reliability issue under investigation.
+
+### Local Transcription Build Caveat
+
+The installed app currently supports WhisperKit on-device transcription. The checked-in repo still reproduces the `Local Whisper Server` path more reliably than the WhisperKit build path, so local development and local runtime truth are not fully reconciled yet.
+
 ---
 
 ## Requirements
 
 - macOS 14.0 (Sonoma) or later
-- API key for your chosen provider (except Local Whisper)
+- API key for your chosen cloud provider, unless you use a local-server path
+- A compatible local server if you use `Local Whisper` or `Ollama`
 
 ---
 

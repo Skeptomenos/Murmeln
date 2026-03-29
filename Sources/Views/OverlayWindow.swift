@@ -177,15 +177,15 @@ struct MinimalLineIndicator: View {
     private var accessibilityStateLabel: String {
         switch controller.state {
         case .idle:
-            return "Murmeln status indicator"
+            return "\(AppIdentity.displayName) status indicator"
         case .waiting:
-            return "Murmeln waiting"
+            return "\(AppIdentity.displayName) waiting"
         case .listening:
-            return "Murmeln recording"
+            return "\(AppIdentity.displayName) recording"
         case .locked:
-            return "Murmeln recording, locked mode"
+            return "\(AppIdentity.displayName) recording, locked mode"
         case .processing:
-            return "Murmeln processing"
+            return "\(AppIdentity.displayName) processing"
         }
     }
     

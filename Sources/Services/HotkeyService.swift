@@ -10,6 +10,7 @@ final class HotkeyService {
     private var fnKeyIsDown = false
     private var fnDelayedStartTask: Task<Void, Never>?
     private var fnRecordingDidStart = false
+    private var fnPressTime: Date?
     
     private var rightOptionDown = false
     private var lastRightOptionTapTime: Date?
@@ -58,8 +59,13 @@ final class HotkeyService {
     
     private func handleFnPressed() {
         fnKeyIsDown = true
+        fnPressTime = Date()
+        logDiagnostics("hotkey.fn.press", [
+            "hold_threshold_ms": String(Int(holdThreshold * 1000))
+        ])
         
         if isLocked {
+            logDiagnostics("hotkey.fn.press_ignored_locked")
             return
         }
         
@@ -72,14 +78,23 @@ final class HotkeyService {
             guard !self.isLocked else { return }
             self.fnDelayedStartTask = nil
             self.fnRecordingDidStart = true
+            if let pressTime = self.fnPressTime {
+                let elapsedMs = Int(Date().timeIntervalSince(pressTime) * 1000)
+                self.logDiagnostics("hotkey.fn.threshold_met", ["elapsed_ms": String(elapsedMs)])
+            } else {
+                self.logDiagnostics("hotkey.fn.threshold_met")
+            }
             self.onKeyDown?()
         }
     }
     
     private func handleFnReleased() {
         fnKeyIsDown = false
+        let holdDurationMs = fnPressTime.map { Int(Date().timeIntervalSince($0) * 1000) }
+        fnPressTime = nil
         
         if isLocked {
+            logDiagnostics("hotkey.fn.release_ignored_locked", holdDurationMs.map { ["hold_ms": String($0)] } ?? [:])
             return
         }
         
@@ -88,14 +103,19 @@ final class HotkeyService {
             fnDelayedStartTask = nil
             
             if !fnRecordingDidStart {
+                logDiagnostics("hotkey.fn.release_before_threshold", holdDurationMs.map { ["hold_ms": String($0)] } ?? [:])
                 onHoldCancelled?()
             } else {
                 fnRecordingDidStart = false
+                logDiagnostics("hotkey.fn.release_stop", holdDurationMs.map { ["hold_ms": String($0)] } ?? [:])
                 onKeyUp?()
             }
         } else if fnRecordingDidStart {
             fnRecordingDidStart = false
+            logDiagnostics("hotkey.fn.release_stop_no_task", holdDurationMs.map { ["hold_ms": String($0)] } ?? [:])
             onKeyUp?()
+        } else {
+            logDiagnostics("hotkey.fn.release_noop", holdDurationMs.map { ["hold_ms": String($0)] } ?? [:])
         }
     }
     
@@ -118,6 +138,7 @@ final class HotkeyService {
     
     private func handleRightOptionPressed() {
         rightOptionDown = true
+        logDiagnostics("hotkey.lock.right_option_press")
     }
     
     private func handleRightOptionReleased() {
@@ -129,6 +150,7 @@ final class HotkeyService {
             isLocked = false
             fnRecordingDidStart = false
             lastRightOptionTapTime = nil
+            logDiagnostics("hotkey.lock.disengaged")
             onLockDisengaged?()
             onKeyUp?()
             return
@@ -144,10 +166,12 @@ final class HotkeyService {
             
             isLocked = true
             lastRightOptionTapTime = nil
+            logDiagnostics("hotkey.lock.engaged", ["double_tap_threshold_ms": String(Int(doubleTapThreshold * 1000))])
             onLockEngaged?()
             onKeyDown?()
         } else {
             lastRightOptionTapTime = now
+            logDiagnostics("hotkey.lock.tap_registered")
         }
     }
     
@@ -163,5 +187,13 @@ final class HotkeyService {
         rightOptionDown = false
         lastRightOptionTapTime = nil
         isLocked = false
+        fnPressTime = nil
+        logDiagnostics("hotkey.service_stopped")
+    }
+
+    private func logDiagnostics(_ event: String, _ metadata: [String: String] = [:]) {
+        Task {
+            await CaptureDiagnostics.shared.mark(event, metadata: metadata)
+        }
     }
 }

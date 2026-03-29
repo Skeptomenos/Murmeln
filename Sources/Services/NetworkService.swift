@@ -123,6 +123,8 @@ final class NetworkService: Sendable {
         systemPrompt: String
     ) async throws -> String {
         switch provider {
+        case .whisperKit:
+            return try await transcribeWhisperKit(audioURL: audioURL, model: model)
         case .openAIWhisper, .groqWhisper:
             return try await transcribeOpenAICompatible(audioURL: audioURL, apiKey: apiKey, baseURL: baseURL, model: model)
         case .localWhisper:
@@ -136,6 +138,19 @@ final class NetworkService: Sendable {
             let actualPrompt = systemPrompt.isEmpty ? defaultVerbatim : systemPrompt
             return try await transcribeAndRefineGeminiAudio(audioURL: audioURL, apiKey: apiKey, baseURL: baseURL, model: model, systemPrompt: actualPrompt)
         }
+    }
+
+    private func transcribeWhisperKit(audioURL: URL, model: String) async throws -> String {
+        let service = await MainActor.run { WhisperKitService.shared }
+
+        let currentState = await MainActor.run { service.modelState }
+        let currentModel = await MainActor.run { service.selectedModel }
+
+        if currentState != .ready || currentModel != model {
+            try await service.loadModel(model)
+        }
+
+        return try await service.transcribe(audioURL: audioURL)
     }
     
     /// Transcribes audio using OpenAI-compatible API with streaming file upload.

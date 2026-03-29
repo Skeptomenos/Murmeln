@@ -27,7 +27,7 @@ final class KeychainService: Sendable {
     static let shared = KeychainService()
     
     /// The service identifier for Keychain items
-    private let service = "com.murmeln.apikeys"
+    private let service = AppIdentity.keychainServiceName
     
     private init() {}
     

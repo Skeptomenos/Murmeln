@@ -1,5 +1,30 @@
 import SwiftUI
 
+enum WhisperKitProfile: String, CaseIterable, Codable {
+    case fast = "Fast"
+    case balanced = "Balanced"
+    case accurate = "Accurate"
+    case custom = "Custom"
+}
+
+enum WhisperKitLanguage: String, CaseIterable, Codable, Hashable {
+    case english = "English"
+    case german = "German"
+    case french = "French"
+    case spanish = "Spanish"
+    case italian = "Italian"
+
+    var code: String {
+        switch self {
+        case .english: return "en"
+        case .german: return "de"
+        case .french: return "fr"
+        case .spanish: return "es"
+        case .italian: return "it"
+        }
+    }
+}
+
 struct PromptPreset: Codable, Identifiable, Hashable {
     let id: UUID
     var name: String
@@ -169,6 +194,15 @@ final class AppSettings: ObservableObject {
     @AppStorage("transcriptionProvider") var transcriptionProviderRaw = TranscriptionProvider.openAIWhisper.rawValue
     @AppStorage("transcriptionBaseURL") var transcriptionBaseURL = "https://api.openai.com/v1"
     @AppStorage("transcriptionModel") var transcriptionModel = "whisper-1"
+
+    @AppStorage("whisperKitModel") var whisperKitModel = "openai_whisper-small"
+    @AppStorage("whisperKitProfileRaw") private var whisperKitProfileRaw = WhisperKitProfile.fast.rawValue
+    @AppStorage("whisperKitTemperature") var whisperKitTemperature = 0.0
+    @AppStorage("whisperKitPromptPrefill") var whisperKitPromptPrefill = true
+    @AppStorage("whisperKitEnableTimestamps") var whisperKitEnableTimestamps = false
+    @AppStorage("whisperKitUseVAD") var whisperKitUseVAD = false
+    @AppStorage("whisperKitLanguagesJSON") private var whisperKitLanguagesJSON = "[\"German\",\"English\"]"
+    @AppStorage("installedWhisperModelsJSON") private var installedWhisperModelsJSON = "[]"
     
     @AppStorage("refinementProvider") var refinementProviderRaw = Provider.openAI.rawValue
     @AppStorage("refinementBaseURL") var refinementBaseURL = "https://api.openai.com/v1"
@@ -235,6 +269,47 @@ final class AppSettings: ObservableObject {
     
     @Published var customPresets: [PromptPreset] = []
     @Published var presetOverrides: [UUID: String] = [:]
+
+    var installedWhisperModels: [String] {
+        get {
+            guard let data = installedWhisperModelsJSON.data(using: .utf8),
+                  let decoded = try? JSONDecoder().decode([String].self, from: data) else {
+                return []
+            }
+            return decoded
+        }
+        set {
+            if let data = try? JSONEncoder().encode(newValue),
+               let json = String(data: data, encoding: .utf8) {
+                installedWhisperModelsJSON = json
+            }
+        }
+    }
+
+    var whisperKitProfile: WhisperKitProfile {
+        get { WhisperKitProfile(rawValue: whisperKitProfileRaw) ?? .fast }
+        set {
+            whisperKitProfileRaw = newValue.rawValue
+            objectWillChange.send()
+        }
+    }
+
+    var whisperKitLanguages: [WhisperKitLanguage] {
+        get {
+            guard let data = whisperKitLanguagesJSON.data(using: .utf8),
+                  let decoded = try? JSONDecoder().decode([WhisperKitLanguage].self, from: data) else {
+                return [.german, .english]
+            }
+            return decoded
+        }
+        set {
+            if let data = try? JSONEncoder().encode(newValue),
+               let json = String(data: data, encoding: .utf8) {
+                whisperKitLanguagesJSON = json
+                objectWillChange.send()
+            }
+        }
+    }
     
     var allPresets: [PromptPreset] {
         PromptPreset.builtInPresets + customPresets

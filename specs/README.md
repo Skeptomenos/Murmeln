@@ -1,5 +1,7 @@
 # Murmeln Open Issues
 
+> Historical shipped-issues log for the v2.2.6-v2.7.0 backlog. This file is not the active roadmap for current Murmeln planning.
+
 **Generated:** 2026-01-11  
 **Source:** Comprehensive Code Review + Oracle Analysis  
 **Previous Specs:** Archived to `specs_archive/` (all implemented)

@@ -7,7 +7,7 @@ struct MurmelnApp: App {
     @StateObject private var appState = AppState.shared
     
     var body: some Scene {
-        MenuBarExtra("Murmeln", systemImage: iconName) {
+        MenuBarExtra(AppIdentity.menuBarTitle, systemImage: iconName) {
             MenuContent()
         }
         .menuBarExtraStyle(.menu)
@@ -139,7 +139,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         overlay.showAlways()
         
         Task {
-            await UpdateService.shared.checkForUpdates()
+            await UpdateService.shared.checkForUpdates(automatically: true)
             if UpdateService.shared.updateAvailable {
                 UpdateService.shared.showUpdateAlert()
             }

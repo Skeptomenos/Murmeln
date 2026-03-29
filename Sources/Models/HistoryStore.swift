@@ -19,7 +19,7 @@ struct HistoryStorage: Codable, Sendable {
 
 // MARK: - Logger (module-level for Sendable access)
 
-private let historyLogger = Logger(subsystem: "com.murmeln.app", category: "HistoryStore")
+private let historyLogger = Logger(subsystem: AppIdentity.loggerSubsystem, category: "HistoryStore")
 
 // MARK: - HistoryStore
 
@@ -34,9 +34,7 @@ final class HistoryStore: ObservableObject {
     
     /// File URL for history storage in Application Support
     private let fileURL: URL = {
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let murmelnDir = appSupport.appendingPathComponent("Murmeln", isDirectory: true)
-        try? FileManager.default.createDirectory(at: murmelnDir, withIntermediateDirectories: true)
+        let murmelnDir = AppIdentity.appSupportDirectoryURL
         return murmelnDir.appendingPathComponent("history.json")
     }()
     

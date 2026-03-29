@@ -25,7 +25,7 @@ final class HistoryWindowController: ObservableObject {
             defer: false
         )
         
-        window.title = "History & Prompt Audit"
+        window.title = AppIdentity.historyWindowTitle
         window.contentView = NSHostingView(rootView: contentView)
         window.center()
         window.isReleasedWhenClosed = false
@@ -357,7 +357,7 @@ struct HistoryCard: View {
     }
     
     private func copyFullAudit() {
-        var markdown = "# Murmeln Transcription Audit Trail\n"
+        var markdown = AppIdentity.auditTrailTitle + "\n"
         markdown += "**Date**: \(entry.formattedDate)\n"
         markdown += "**Selected Characteristic**: \(entry.safePresetName)\n\n"
         

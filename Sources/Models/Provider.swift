@@ -38,14 +38,25 @@ enum Provider: String, CaseIterable, Codable {
 }
 
 enum TranscriptionProvider: String, CaseIterable, Codable {
+    case whisperKit = "WhisperKit (On-Device)"
     case openAIWhisper = "OpenAI Whisper"
     case groqWhisper = "Groq Whisper"
     case gpt4oAudio = "GPT-4o Audio"
     case geminiAudio = "Gemini 2.0 Flash"
     case localWhisper = "Local Whisper"
+
+    var displayName: String {
+        switch self {
+        case .localWhisper:
+            return "Local Whisper Server"
+        default:
+            return rawValue
+        }
+    }
     
     var defaultBaseURL: String {
         switch self {
+        case .whisperKit: return ""
         case .openAIWhisper: return "https://api.openai.com/v1"
         case .groqWhisper: return "https://api.groq.com/openai/v1"
         case .gpt4oAudio: return "https://api.openai.com/v1"
@@ -56,14 +67,14 @@ enum TranscriptionProvider: String, CaseIterable, Codable {
     
     var requiresAPIKey: Bool {
         switch self {
-        case .localWhisper: return false
+        case .whisperKit, .localWhisper: return false
         default: return true
         }
     }
     
     var isNativeAudioModel: Bool {
         switch self {
-        case .gpt4oAudio, .geminiAudio: return true
+        case .whisperKit, .gpt4oAudio, .geminiAudio: return true
         default: return false
         }
     }
@@ -77,6 +88,7 @@ enum TranscriptionProvider: String, CaseIterable, Codable {
     
     var defaultModel: String {
         switch self {
+        case .whisperKit: return "openai_whisper-small"
         case .openAIWhisper: return "whisper-1"
         case .groqWhisper: return "whisper-large-v3-turbo"
         case .gpt4oAudio: return "gpt-4o-audio-preview"

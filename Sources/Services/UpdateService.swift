@@ -22,7 +22,11 @@ final class UpdateService: ObservableObject {
         Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "0"
     }
     
-    func checkForUpdates() async {
+    func checkForUpdates(automatically: Bool = false) async {
+        guard !automatically || AppIdentity.updateChecksEnabled else {
+            return
+        }
+
         isChecking = true
         defer { isChecking = false }
         
@@ -54,7 +58,7 @@ final class UpdateService: ObservableObject {
             if updateAvailable {
                 print("🆕 Update available: \(currentVersion) → \(latestVersionClean)")
             } else {
-                print("✅ Murmeln is up to date (\(currentVersion))")
+                print("✅ \(AppIdentity.displayName) is up to date (\(currentVersion))")
             }
             #endif
         } catch {
@@ -89,7 +93,7 @@ final class UpdateService: ObservableObject {
         
         let alert = NSAlert()
         alert.messageText = "Update Available"
-        alert.informativeText = "Murmeln \(version) is available. You have \(currentVersion).\n\nWould you like to download it?"
+        alert.informativeText = "\(AppIdentity.displayName) \(version) is available. You have \(currentVersion).\n\nWould you like to download it?"
         alert.alertStyle = .informational
         alert.addButton(withTitle: "Download")
         alert.addButton(withTitle: "Later")
@@ -114,7 +118,7 @@ final class UpdateService: ObservableObject {
     func showUpToDateAlert() {
         let alert = NSAlert()
         alert.messageText = "You're Up to Date"
-        alert.informativeText = "Murmeln \(currentVersion) is the latest version."
+        alert.informativeText = "\(AppIdentity.displayName) \(currentVersion) is the latest version."
         alert.alertStyle = .informational
         alert.addButton(withTitle: "OK")
         alert.runModal()

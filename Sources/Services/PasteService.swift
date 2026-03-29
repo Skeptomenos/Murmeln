@@ -138,43 +138,78 @@ struct SavedClipboardItem: Sendable {
     let dataByType: [NSPasteboard.PasteboardType: Data]
 }
 
+struct PasteTiming: Sendable {
+    let succeeded: Bool
+    let commandSentElapsedMs: UInt64
+    let totalElapsedMs: UInt64
+}
+
 final class PasteService: Sendable {
     @MainActor static let shared = PasteService()
     
     /// Pastes text and restores the original clipboard contents afterward
-    func paste(text: String) {
+    func paste(text: String, captureID: String? = nil) {
+        Task { @MainActor in
+            _ = await self.pasteAndRestore(text: text, captureID: captureID)
+        }
+    }
+
+    @MainActor
+    func pasteAndRestore(text: String, captureID: String? = nil) async -> PasteTiming {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             #if DEBUG
             print("⚠️ Skipping paste: text is empty")
             #endif
-            return
+            logDiagnostics("paste.skipped_empty", captureID: captureID)
+            return PasteTiming(succeeded: false, commandSentElapsedMs: 0, totalElapsedMs: 0)
         }
-        
-        Task { @MainActor in
-            let pasteboard = NSPasteboard.general
-            
-            // Save current clipboard contents before clearing
-            let savedItems = saveClipboard(from: pasteboard)
-            #if DEBUG
-            print("📋 Saved \(savedItems.count) clipboard item(s) with \(savedItems.flatMap { $0.types }.count) type(s)")
-            #endif
-            
-            // Set new content
-            pasteboard.clearContents()
-            pasteboard.setString(text, forType: .string)
-            
-            // Wait for clipboard to settle, then simulate paste
-            try? await Task.sleep(for: .milliseconds(100))
-            self.simulatePaste()
-            
-            // Wait for paste to complete, then restore original clipboard
-            try? await Task.sleep(for: .milliseconds(200))
-            restoreClipboard(savedItems, to: pasteboard)
-            #if DEBUG
-            print("📋 Restored \(savedItems.count) clipboard item(s)")
-            #endif
-        }
+
+        let pasteStartNs = DispatchTime.now().uptimeNanoseconds
+        logDiagnostics("paste.start", captureID: captureID, metadata: [
+            "text_chars": String(text.count)
+        ])
+
+        let pasteboard = NSPasteboard.general
+
+        // Save current clipboard contents before clearing
+        let savedItems = saveClipboard(from: pasteboard)
+        #if DEBUG
+        print("📋 Saved \(savedItems.count) clipboard item(s) with \(savedItems.flatMap { $0.types }.count) type(s)")
+        #endif
+
+        // Set new content
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
+
+        // Wait for clipboard to settle, then simulate paste
+        try? await Task.sleep(for: .milliseconds(100))
+        self.simulatePaste()
+        let pasteTriggeredNs = DispatchTime.now().uptimeNanoseconds
+        let commandElapsedMs = (pasteTriggeredNs - pasteStartNs) / 1_000_000
+        logDiagnostics("paste.command_sent", captureID: captureID, metadata: [
+            "elapsed_ms": String(commandElapsedMs)
+        ])
+
+        // Wait for paste to complete, then restore original clipboard
+        try? await Task.sleep(for: .milliseconds(200))
+        restoreClipboard(savedItems, to: pasteboard)
+        #if DEBUG
+        print("📋 Restored \(savedItems.count) clipboard item(s)")
+        #endif
+
+        let pasteEndNs = DispatchTime.now().uptimeNanoseconds
+        let totalElapsedMs = (pasteEndNs - pasteStartNs) / 1_000_000
+        logDiagnostics("paste.complete", captureID: captureID, metadata: [
+            "elapsed_ms": String(totalElapsedMs),
+            "restored_items": String(savedItems.count)
+        ])
+
+        return PasteTiming(
+            succeeded: true,
+            commandSentElapsedMs: commandElapsedMs,
+            totalElapsedMs: totalElapsedMs
+        )
     }
     
     // MARK: - Clipboard Save/Restore
@@ -253,6 +288,12 @@ final class PasteService: Sendable {
         
         cmdVDown?.post(tap: .cgSessionEventTap)
         cmdVUp?.post(tap: .cgSessionEventTap)
+    }
+
+    private func logDiagnostics(_ event: String, captureID: String?, metadata: [String: String] = [:]) {
+        Task {
+            await CaptureDiagnostics.shared.mark(event, captureID: captureID, metadata: metadata)
+        }
     }
     
     /// AppleScript fallback for paste - slower but layout-agnostic.
