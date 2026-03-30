@@ -29,14 +29,19 @@ AppState ----------------------> OverlayWindowController
 AudioRecorder
     |
     v
-Transcription Backend -----------------> Optional Refinement Backend
-    |                                            |
-    +----------------------------+---------------+
-                                 v
-                            PasteService
-                                 |
-                                 v
-                             HistoryStore
+TranscriptionPipelineService
+    |
+    +--> WhisperKitTranscriptionBackend (first-class local-native)
+    +--> LegacyCloudMultipartTranscriptionBackend
+    +--> LegacyLocalWhisperServerBackend
+    +--> LegacyCloudAudioInputBackend
+    +--> TextRefinementBackend (optional)
+    |
+    v
+PasteService
+    |
+    v
+HistoryStore
 
 Shared configuration: AppSettings
 Supporting services: PermissionService, ModelDiscoveryService, UpdateService
@@ -47,8 +52,16 @@ Supporting services: PermissionService, ModelDiscoveryService, UpdateService
 ### AppState
 
 - Owns the main recording state machine.
-- Coordinates warm-up, recording, transcription, optional refinement, paste, history, and cleanup.
-- Acts as the main orchestration layer and is currently larger than ideal.
+- Coordinates warm-up, recording, overlay state, paste, history, and cleanup.
+- Calls `TranscriptionPipelineService` for backend-family execution and run-context attribution.
+- Still owns the temporary parallel refinement fan-out path for multi-preset audit variants.
+
+### TranscriptionPipelineService
+
+- Owns transcription backend-family dispatch and selected-path refinement execution.
+- Encodes support-tier and backend-kind distinctions through `TranscriptionBackendDescriptor`.
+- Decides pipeline mode (`transcribe_only`, `one_call_transcription_refinement`, `two_call_refinement`).
+- Emits backend run context used by canonical per-capture telemetry summary events.
 
 ### HotkeyService
 
@@ -65,8 +78,9 @@ Supporting services: PermissionService, ModelDiscoveryService, UpdateService
 
 ### Transcription Backends
 
-- Current checked-in code models cloud and local-server transcription through `TranscriptionProvider` and `NetworkService`.
-- The installed app also includes a WhisperKit on-device path, but repo/build truth for that path is still being reconciled.
+- First-class local-native path: `WhisperKitTranscriptionBackend`.
+- Legacy compatibility paths: cloud multipart, local-server, and one-call cloud audio-input adapters.
+- Refinement remains separate and optional; one-call providers can still return final text without a second refinement call.
 
 ### Refinement Backends
 
@@ -96,10 +110,21 @@ Supporting services: PermissionService, ModelDiscoveryService, UpdateService
 
 Murmeln currently has two relevant truths:
 
-- **Runtime truth:** the installed app actively uses WhisperKit on-device transcription.
-- **Repo/build truth:** the checked-in source and SwiftPM path do not yet cleanly reproduce that runtime behavior.
+- **Runtime and checked-in Xcode truth:** WhisperKit local-native transcription is the current first-class path.
+- **Phase 3 progress:** backend-family seams and telemetry contracts are now explicit in dedicated pipeline models/services, with remaining full coordinator decomposition deferred to Phase 3B.
 
 Until those are reconciled, treat this document plus `_planning/` as the current top-layer truth. Use the deeper docs as supporting references rather than perfect ground truth.
+
+## Phase 3B Handoff Boundary
+
+If Phase 3B is promoted, the coordinator split should target only the remaining orchestration coupling:
+
+- Keep in `AppState`: recording phase transitions, overlay/window coordination, and user-facing error state.
+- Keep temporarily in `AppState` until extracted: parallel multi-preset refinement fan-out and variant assembly for history.
+- Move in Phase 3B: end-to-end runtime coordinator responsibilities that still mix capture/runtime transitions with post-capture orchestration.
+- Move in Phase 3B: explicit refinement-audit orchestration service if parallel variant logic remains shipped and grows further.
+
+Phase 3B should avoid re-litigating backend-family seams; those are now owned by `TranscriptionPipelineService` and backend descriptors.
 
 ## Deep References
 

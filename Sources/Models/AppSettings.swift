@@ -190,6 +190,7 @@ Transcript:
 @MainActor
 final class AppSettings: ObservableObject {
     static let shared = AppSettings()
+    nonisolated static let whisperKitAutoDetectLanguageSelection = "Auto Detect"
     
     @AppStorage("transcriptionProvider") var transcriptionProviderRaw = TranscriptionProvider.openAIWhisper.rawValue
     @AppStorage("transcriptionBaseURL") var transcriptionBaseURL = "https://api.openai.com/v1"
@@ -310,6 +311,13 @@ final class AppSettings: ObservableObject {
             }
         }
     }
+
+    var whisperKitLanguageSelectionRaw: String {
+        get { Self.whisperKitLanguageSelectionRaw(for: whisperKitLanguages) }
+        set {
+            whisperKitLanguages = Self.whisperKitLanguages(forSelectionRaw: newValue)
+        }
+    }
     
     var allPresets: [PromptPreset] {
         PromptPreset.builtInPresets + customPresets
@@ -366,11 +374,20 @@ final class AppSettings: ObservableObject {
         presetOverrides[preset.id] != nil
     }
     
-    func addCustomPreset(name: String, description: String, icon: String, prompt: String) {
-        let preset = PromptPreset(name: name, description: description, icon: icon, prompt: prompt, isBuiltIn: false)
+    @discardableResult
+    func addCustomPreset(name: String, description: String, icon: String, prompt: String) -> Bool {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty,
+              Self.isPresetNameAvailable(trimmedName, among: allPresets) else {
+            return false
+        }
+
+        let preset = PromptPreset(name: trimmedName, description: description, icon: icon, prompt: prompt, isBuiltIn: false)
         customPresets.append(preset)
         saveCustomPresets()
         selectedPresetId = preset.id
+        objectWillChange.send()
+        return true
     }
     
     func deleteCustomPreset(_ preset: PromptPreset) {
@@ -400,7 +417,7 @@ final class AppSettings: ObservableObject {
         set {
             transcriptionProviderRaw = newValue.rawValue
             transcriptionBaseURL = newValue.defaultBaseURL
-            transcriptionModel = newValue.defaultModel
+            transcriptionModel = newValue == .whisperKit ? whisperKitModel : newValue.defaultModel
             objectWillChange.send()
         }
     }
@@ -459,7 +476,11 @@ final class AppSettings: ObservableObject {
     private func loadCustomPresets() {
         if let data = UserDefaults.standard.data(forKey: "customPresets"),
            let presets = try? JSONDecoder().decode([PromptPreset].self, from: data) {
-            customPresets = presets
+            let normalizedPresets = Self.normalizedCustomPresetNames(presets)
+            customPresets = normalizedPresets
+            if normalizedPresets != presets {
+                saveCustomPresets()
+            }
         }
     }
     
@@ -484,6 +505,58 @@ final class AppSettings: ObservableObject {
         loadCustomPresets()
         loadPresetOverrides()
         migrateAPIKeysToKeychain()
+    }
+
+    nonisolated static func whisperKitLanguageSelectionRaw(for languages: [WhisperKitLanguage]) -> String {
+        guard languages.count == 1, let language = languages.first else {
+            return whisperKitAutoDetectLanguageSelection
+        }
+        return language.rawValue
+    }
+
+    nonisolated static func whisperKitLanguages(forSelectionRaw rawValue: String) -> [WhisperKitLanguage] {
+        guard rawValue != whisperKitAutoDetectLanguageSelection,
+              let language = WhisperKitLanguage(rawValue: rawValue) else {
+            return []
+        }
+        return [language]
+    }
+
+    nonisolated static func normalizedPresetName(_ name: String) -> String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    nonisolated static func isPresetNameAvailable(_ candidate: String, among presets: [PromptPreset], excluding presetID: UUID? = nil) -> Bool {
+        let normalizedCandidate = normalizedPresetName(candidate)
+        guard !normalizedCandidate.isEmpty else { return false }
+
+        return !presets.contains { preset in
+            if let presetID, preset.id == presetID {
+                return false
+            }
+            return normalizedPresetName(preset.name) == normalizedCandidate
+        }
+    }
+
+    nonisolated static func normalizedCustomPresetNames(_ presets: [PromptPreset]) -> [PromptPreset] {
+        var reservedNames = Set(PromptPreset.builtInPresets.map { normalizedPresetName($0.name) })
+
+        return presets.map { preset in
+            var normalizedPreset = preset
+            let trimmedBaseName = preset.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            let baseName = trimmedBaseName.isEmpty ? "Custom Preset" : trimmedBaseName
+            var candidateName = baseName
+            var suffix = 2
+
+            while reservedNames.contains(normalizedPresetName(candidateName)) {
+                candidateName = "\(baseName) \(suffix)"
+                suffix += 1
+            }
+
+            normalizedPreset.name = candidateName
+            reservedNames.insert(normalizedPresetName(candidateName))
+            return normalizedPreset
+        }
     }
     
     /// Migrate API keys from UserDefaults to Keychain (one-time migration)

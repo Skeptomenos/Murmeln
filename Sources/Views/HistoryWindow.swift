@@ -164,7 +164,9 @@ struct HistoryCard: View {
             header
             
             VStack(alignment: .leading, spacing: 20) {
-                originalBlock
+                if entry.hasDistinctOriginalBaseline {
+                    originalBlock
+                }
                 
                 variantsGrid
             }
@@ -180,7 +182,7 @@ struct HistoryCard: View {
         )
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Transcription from \(entry.formattedDate)")
-        .accessibilityHint("Contains raw transcription and \(entry.variants?.count ?? 1) refinement variants. Press Command C to copy.")
+        .accessibilityHint("Contains \(entry.hasDistinctOriginalBaseline ? "baseline transcription and " : "")\(entry.variants?.count ?? 1) visible result block\(entry.variants?.count == 1 ? "" : "s"). Press Command C to copy.")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
     
@@ -203,7 +205,7 @@ struct HistoryCard: View {
             Spacer()
             
             HStack(spacing: 8) {
-                if entry.variants != nil {
+                if entry.hasParallelAuditTrail {
                     Text("Parallel Audit Trail")
                         .font(.caption2.weight(.bold))
                         .padding(.horizontal, 8)
@@ -252,7 +254,7 @@ struct HistoryCard: View {
     
     private var variantsGrid: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("CHARACTERISTIC VARIANTS")
+            Text(entry.hasParallelAuditTrail ? "CHARACTERISTIC VARIANTS" : "FINAL RESULT")
                 .font(.caption2.weight(.black))
                 .foregroundColor(.green)
             
@@ -262,13 +264,13 @@ struct HistoryCard: View {
             // Show variants in a grid
             LazyVGrid(columns: [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)], spacing: 16) {
                 ForEach(sortedNames, id: \.self) { name in
-                    variantCard(name: name, text: variants[name] ?? "", prompt: entry.variantPrompts?[name] ?? "")
+                    variantCard(name: name, text: variants[name] ?? "", provenance: entry.promptProvenance(for: name))
                 }
             }
         }
     }
     
-    private func variantCard(name: String, text: String, prompt: String) -> some View {
+    private func variantCard(name: String, text: String, provenance: HistoryEntry.PromptProvenance) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text(name.uppercased())
@@ -295,14 +297,30 @@ struct HistoryCard: View {
                 .accessibilityHint("Copies this variant's text to clipboard")
             }
             
-            if !prompt.isEmpty {
-                Text(prompt)
+            if let effectivePrompt = provenance.effectivePrompt {
+                Text(effectivePrompt)
                     .font(.caption2.monospaced())
                     .foregroundColor(.secondary.opacity(0.7))
                     .padding(6)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Color.secondary.opacity(0.05))
                     .cornerRadius(4)
+            }
+
+            if provenance.showsBasePromptSeparately, let basePrompt = provenance.basePrompt {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Base Prompt")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundColor(.secondary)
+
+                    Text(basePrompt)
+                        .font(.caption2.monospaced())
+                        .foregroundColor(.secondary.opacity(0.7))
+                        .padding(6)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.secondary.opacity(0.04))
+                        .cornerRadius(4)
+                }
             }
             
             Text(text)
@@ -360,20 +378,26 @@ struct HistoryCard: View {
         var markdown = AppIdentity.auditTrailTitle + "\n"
         markdown += "**Date**: \(entry.formattedDate)\n"
         markdown += "**Selected Characteristic**: \(entry.safePresetName)\n\n"
-        
-        markdown += "## 1. Raw Transcription (Baseline)\n"
-        markdown += "> \(entry.original)\n\n"
-        
-        markdown += "## 2. Refinement Variants\n\n"
+
+        if entry.hasDistinctOriginalBaseline {
+            markdown += "## 1. Raw Transcription (Baseline)\n"
+            markdown += "> \(entry.original)\n\n"
+            markdown += "## 2. \(entry.hasParallelAuditTrail ? "Refinement Variants" : "Final Result")\n\n"
+        } else {
+            markdown += "## 1. Final Result\n\n"
+        }
         
         let variants = entry.variants ?? [entry.safePresetName: entry.refined]
         for name in variants.keys.sorted() {
             let text = variants[name] ?? ""
-            let prompt = entry.variantPrompts?[name] ?? ""
+            let provenance = entry.promptProvenance(for: name)
             
             markdown += "### Variant: \(name)\(name == entry.safePresetName ? " (SELECTED)" : "")\n"
-            if !prompt.isEmpty {
-                markdown += "**System Prompt**:\n```\n\(prompt)\n```\n\n"
+            if let effectivePrompt = provenance.effectivePrompt {
+                markdown += "**Effective System Prompt**:\n```\n\(effectivePrompt)\n```\n\n"
+            }
+            if provenance.showsBasePromptSeparately, let basePrompt = provenance.basePrompt {
+                markdown += "**Base System Prompt**:\n```\n\(basePrompt)\n```\n\n"
             }
             markdown += "**Result**:\n\(text)\n\n"
             markdown += "---\n\n"

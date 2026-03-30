@@ -25,6 +25,11 @@ final class NetworkService: Sendable {
         config.timeoutIntervalForResource = 120
         return URLSession(configuration: config)
     }()
+
+    private struct MultipartUploadPreparation: Sendable {
+        let request: URLRequest
+        let bodyFileURL: URL
+    }
     
     // MARK: - Streaming Multipart Upload Helper
     
@@ -129,14 +134,15 @@ final class NetworkService: Sendable {
             return try await transcribeOpenAICompatible(audioURL: audioURL, apiKey: apiKey, baseURL: baseURL, model: model)
         case .localWhisper:
             return try await transcribeLocalWhisper(audioURL: audioURL, baseURL: baseURL)
-        case .gpt4oAudio:
-            let defaultVerbatim = "You are a professional transcription service. Transcribe the audio exactly as heard, including all filler words, repetitions, and pauses. Do not summarize, refine, or correct grammar. Output ONLY the transcribed text, nothing else."
-            let actualPrompt = systemPrompt.isEmpty ? defaultVerbatim : systemPrompt
-            return try await transcribeAndRefineGPT4oAudio(audioURL: audioURL, apiKey: apiKey, baseURL: baseURL, model: model, systemPrompt: actualPrompt)
-        case .geminiAudio:
-            let defaultVerbatim = "You are a professional transcription service. Transcribe the audio exactly as heard, including all filler words, repetitions, and pauses. Do not summarize, refine, or correct grammar. Output ONLY the transcribed text, nothing else."
-            let actualPrompt = systemPrompt.isEmpty ? defaultVerbatim : systemPrompt
-            return try await transcribeAndRefineGeminiAudio(audioURL: audioURL, apiKey: apiKey, baseURL: baseURL, model: model, systemPrompt: actualPrompt)
+        case .gpt4oAudio, .geminiAudio:
+            return try await transcribeCloudAudioInput(
+                audioURL: audioURL,
+                provider: provider,
+                apiKey: apiKey,
+                baseURL: baseURL,
+                model: model,
+                systemPrompt: systemPrompt
+            )
         }
     }
 
@@ -155,31 +161,22 @@ final class NetworkService: Sendable {
     
     /// Transcribes audio using OpenAI-compatible API with streaming file upload.
     /// Uses file-based multipart body to avoid loading entire audio into memory.
-    private func transcribeOpenAICompatible(audioURL: URL, apiKey: String, baseURL: String, model: String) async throws -> String {
-        guard let url = URL(string: baseURL + "/audio/transcriptions") else {
-            throw NetworkError.invalidURL
-        }
-        
-        let boundary = UUID().uuidString
-        
-        // Create multipart body file (streams audio content, doesn't load into memory)
-        let bodyFileURL = try createMultipartBodyFile(
-            audioURL: audioURL,
-            boundary: boundary,
-            additionalFields: ["model": model]
-        )
-        
+    func transcribeOpenAICompatible(audioURL: URL, apiKey: String, baseURL: String, model: String) async throws -> String {
+        let preparation = try await Task.detached(priority: .userInitiated) { [self] in
+            try prepareMultipartUpload(
+                endpoint: baseURL + "/audio/transcriptions",
+                authorizationHeader: "Bearer \(apiKey)",
+                audioURL: audioURL,
+                additionalFields: ["model": model]
+            )
+        }.value
+
         defer {
-            cleanupMultipartBodyFile(bodyFileURL)
+            cleanupMultipartBodyFile(preparation.bodyFileURL)
         }
-        
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-        
+
         // Use file-based upload to stream the body without loading into memory
-        let (data, response) = try await session.upload(for: request, fromFile: bodyFileURL)
+        let (data, response) = try await session.upload(for: preparation.request, fromFile: preparation.bodyFileURL)
         
         guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
             throw NetworkError.apiError(sanitizeErrorMessage(from: data))
@@ -191,30 +188,22 @@ final class NetworkService: Sendable {
     
     /// Transcribes audio using local Whisper server with streaming file upload.
     /// Uses file-based multipart body to avoid loading entire audio into memory.
-    private func transcribeLocalWhisper(audioURL: URL, baseURL: String) async throws -> String {
-        guard let url = URL(string: baseURL + "/inference") else {
-            throw NetworkError.invalidURL
-        }
-        
-        let boundary = UUID().uuidString
-        
-        // Create multipart body file (streams audio content, doesn't load into memory)
-        let bodyFileURL = try createMultipartBodyFile(
-            audioURL: audioURL,
-            boundary: boundary,
-            additionalFields: [:]  // Local Whisper doesn't need model field
-        )
-        
+    func transcribeLocalWhisper(audioURL: URL, baseURL: String) async throws -> String {
+        let preparation = try await Task.detached(priority: .userInitiated) { [self] in
+            try prepareMultipartUpload(
+                endpoint: baseURL + "/inference",
+                authorizationHeader: nil,
+                audioURL: audioURL,
+                additionalFields: [:]
+            )
+        }.value
+
         defer {
-            cleanupMultipartBodyFile(bodyFileURL)
+            cleanupMultipartBodyFile(preparation.bodyFileURL)
         }
-        
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-        
+
         // Use file-based upload to stream the body without loading into memory
-        let (data, response) = try await session.upload(for: request, fromFile: bodyFileURL)
+        let (data, response) = try await session.upload(for: preparation.request, fromFile: preparation.bodyFileURL)
         
         guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
             throw NetworkError.apiError(sanitizeErrorMessage(from: data))
@@ -228,34 +217,38 @@ final class NetworkService: Sendable {
         guard let url = URL(string: baseURL + "/chat/completions") else {
             throw NetworkError.invalidURL
         }
-        
-        let audioData = try Data(contentsOf: audioURL)
-        let base64Audio = audioData.base64EncodedString()
+
+        let bodyData = try await Task.detached(priority: .userInitiated) {
+            let audioData = try Data(contentsOf: audioURL)
+            let base64Audio = audioData.base64EncodedString()
+
+            let body: [String: Any] = [
+                "model": model,
+                "modalities": ["text"],
+                "messages": [
+                    ["role": "system", "content": systemPrompt],
+                    ["role": "user", "content": [
+                        [
+                            "type": "input_audio",
+                            "input_audio": [
+                                "data": base64Audio,
+                                "format": "wav"
+                            ]
+                        ]
+                    ]]
+                ],
+                "temperature": 0.0
+            ]
+
+            return try JSONSerialization.data(withJSONObject: body)
+        }.value
         
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        
-        let body: [String: Any] = [
-            "model": model,
-            "modalities": ["text"],
-            "messages": [
-                ["role": "system", "content": systemPrompt],
-                ["role": "user", "content": [
-                    [
-                        "type": "input_audio",
-                        "input_audio": [
-                            "data": base64Audio,
-                            "format": "wav"
-                        ]
-                    ]
-                ]]
-            ],
-            "temperature": 0.0
-        ]
-        
-        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        request.httpBody = bodyData
         
         let (data, response) = try await session.data(for: request)
         
@@ -271,43 +264,47 @@ final class NetworkService: Sendable {
         guard let url = URL(string: "\(baseURL)/models/\(model):generateContent") else {
             throw NetworkError.invalidURL
         }
-        
-        let audioData = try Data(contentsOf: audioURL)
-        let base64Audio = audioData.base64EncodedString()
+
+        let bodyData = try await Task.detached(priority: .userInitiated) {
+            let audioData = try Data(contentsOf: audioURL)
+            let base64Audio = audioData.base64EncodedString()
+
+            let body: [String: Any] = [
+                "systemInstruction": [
+                    "parts": [
+                        ["text": systemPrompt]
+                    ]
+                ],
+                "contents": [
+                    [
+                        "role": "user",
+                        "parts": [
+                            [
+                                "inline_data": [
+                                    "mime_type": "audio/wav",
+                                    "data": base64Audio
+                                ]
+                            ],
+                            [
+                                "text": "Transcribe and refine this audio."
+                            ]
+                        ]
+                    ]
+                ],
+                "generationConfig": [
+                    "temperature": 0.0
+                ]
+            ]
+
+            return try JSONSerialization.data(withJSONObject: body)
+        }.value
         
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
-        
-        let body: [String: Any] = [
-            "systemInstruction": [
-                "parts": [
-                    ["text": systemPrompt]
-                ]
-            ],
-            "contents": [
-                [
-                    "role": "user",
-                    "parts": [
-                        [
-                            "inline_data": [
-                                "mime_type": "audio/wav",
-                                "data": base64Audio
-                            ]
-                        ],
-                        [
-                            "text": "Transcribe and refine this audio."
-                        ]
-                    ]
-                ]
-            ],
-            "generationConfig": [
-                "temperature": 0.0
-            ]
-        ]
-        
-        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        request.httpBody = bodyData
         
         let (data, response) = try await session.data(for: request)
         
@@ -367,6 +364,33 @@ final class NetworkService: Sendable {
         let result = try JSONDecoder().decode(ChatCompletionResponse.self, from: data)
         return result.choices.first?.message.content ?? ""
     }
+
+    private func prepareMultipartUpload(
+        endpoint: String,
+        authorizationHeader: String?,
+        audioURL: URL,
+        additionalFields: [String: String]
+    ) throws -> MultipartUploadPreparation {
+        guard let url = URL(string: endpoint) else {
+            throw NetworkError.invalidURL
+        }
+
+        let boundary = UUID().uuidString
+        let bodyFileURL = try createMultipartBodyFile(
+            audioURL: audioURL,
+            boundary: boundary,
+            additionalFields: additionalFields
+        )
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        if let authorizationHeader {
+            request.setValue(authorizationHeader, forHTTPHeaderField: "Authorization")
+        }
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+
+        return MultipartUploadPreparation(request: request, bodyFileURL: bodyFileURL)
+    }
     
     private func refineGoogle(text: String, apiKey: String, baseURL: String, model: String, systemPrompt: String) async throws -> String {
         guard let url = URL(string: "\(baseURL)/models/\(model):generateContent") else {
@@ -397,6 +421,39 @@ final class NetworkService: Sendable {
         
         let result = try JSONDecoder().decode(GoogleGenerateResponse.self, from: data)
         return result.candidates?.first?.content.parts.first?.text ?? ""
+    }
+
+    func transcribeCloudAudioInput(
+        audioURL: URL,
+        provider: TranscriptionProvider,
+        apiKey: String,
+        baseURL: String,
+        model: String,
+        systemPrompt: String
+    ) async throws -> String {
+        let defaultVerbatim = "You are a professional transcription service. Transcribe the audio exactly as heard, including all filler words, repetitions, and pauses. Do not summarize, refine, or correct grammar. Output ONLY the transcribed text, nothing else."
+        let actualPrompt = systemPrompt.isEmpty ? defaultVerbatim : systemPrompt
+
+        switch provider {
+        case .gpt4oAudio:
+            return try await transcribeAndRefineGPT4oAudio(
+                audioURL: audioURL,
+                apiKey: apiKey,
+                baseURL: baseURL,
+                model: model,
+                systemPrompt: actualPrompt
+            )
+        case .geminiAudio:
+            return try await transcribeAndRefineGeminiAudio(
+                audioURL: audioURL,
+                apiKey: apiKey,
+                baseURL: baseURL,
+                model: model,
+                systemPrompt: actualPrompt
+            )
+        default:
+            throw NetworkError.apiError("Cloud audio-input transcription is not supported for \(provider.rawValue)")
+        }
     }
 }
 

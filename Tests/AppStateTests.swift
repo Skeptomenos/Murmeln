@@ -305,18 +305,32 @@ struct AppStateTests {
         #expect(finalResult == "Structured result")
     }
     
-    @Test("Final result falls back to original if variant missing")
-    func finalResultFallsBackToOriginal() {
-        let selectedPreset = "Custom"
-        let variants = [
-            "Casual": "Casual result",
-            "Structured": "Structured result"
-        ]
-        let originalText = "original"
-        
-        let finalResult = variants[selectedPreset] ?? originalText
-        
-        #expect(finalResult == "original")
+    @Test("Selected preset failure no longer degrades silently to raw output")
+    func selectedPresetFailureIsExplicit() async {
+        let casualID = UUID(uuidString: "00000000-0000-0000-0000-00000000B001")!
+        let structuredID = UUID(uuidString: "00000000-0000-0000-0000-00000000B002")!
+        let runner = ParallelRefinementAuditRunner(
+            selectedPresetID: structuredID,
+            selectedPresetName: "Structured",
+            presets: [
+                RefinementVariantPlan(presetID: casualID, name: "Casual", basePrompt: "Casual", effectivePrompt: "Casual + dict"),
+                RefinementVariantPlan(presetID: structuredID, name: "Structured", basePrompt: "Structured", effectivePrompt: "Structured + dict")
+            ],
+            now: { 100 }
+        )
+
+        await #expect(throws: ParallelRefinementError.self) {
+            try await runner.run { plan in
+                if plan.name == "Structured" {
+                    throw NSError(domain: "AppStateTests", code: 1, userInfo: [NSLocalizedDescriptionKey: "selected failed"])
+                }
+
+                return RefinementExecutionResult(
+                    text: "casual result",
+                    timing: StageTiming(startedAt: 120, finishedAt: 220)
+                )
+            }
+        }
     }
     
     // MARK: - File Cleanup Tests

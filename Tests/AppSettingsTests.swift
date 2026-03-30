@@ -236,7 +236,41 @@ struct AppSettingsTests {
         #expect(allPresets.count == builtIn.count + 1)
         #expect(allPresets.last?.name == "Custom1")
     }
-    
+
+    @Test("Custom preset names must be unique after normalization")
+    func customPresetNamesMustBeUniqueAfterNormalization() {
+        let presets = PromptPreset.builtInPresets + [
+            PromptPreset(name: "Project Notes", description: "Desc", icon: "star", prompt: "Prompt")
+        ]
+
+        #expect(AppSettings.isPresetNameAvailable("Fresh Preset", among: presets) == true)
+        #expect(AppSettings.isPresetNameAvailable(" project notes ", among: presets) == false)
+        #expect(AppSettings.isPresetNameAvailable("casual", among: presets) == false)
+    }
+
+    @Test("WhisperKit language selection exposes auto detect explicitly")
+    func whisperKitLanguageSelectionExposesAutoDetect() {
+        let autoDetectLanguages: [WhisperKitLanguage] = [.german, .english]
+        let germanOnly: [WhisperKitLanguage] = [.german]
+
+        #expect(
+            AppSettings.whisperKitLanguageSelectionRaw(for: autoDetectLanguages) ==
+            AppSettings.whisperKitAutoDetectLanguageSelection
+        )
+        #expect(
+            AppSettings.whisperKitLanguageSelectionRaw(for: []) ==
+            AppSettings.whisperKitAutoDetectLanguageSelection
+        )
+        #expect(AppSettings.whisperKitLanguageSelectionRaw(for: germanOnly) == WhisperKitLanguage.german.rawValue)
+
+        #expect(
+            AppSettings.whisperKitLanguages(forSelectionRaw: AppSettings.whisperKitAutoDetectLanguageSelection) == []
+        )
+        #expect(
+            AppSettings.whisperKitLanguages(forSelectionRaw: WhisperKitLanguage.english.rawValue) == [WhisperKitLanguage.english]
+        )
+    }
+     
     @Test("Deleting custom preset removes from array")
     func deletingCustomPresetRemoves() {
         var customPresets = [
@@ -255,11 +289,28 @@ struct AppSettingsTests {
     
     @Test("TranscriptionProvider raw values are stable")
     func transcriptionProviderRawValues() {
+        #expect(TranscriptionProvider.whisperKit.rawValue == "WhisperKit (On-Device)")
         #expect(TranscriptionProvider.openAIWhisper.rawValue == "OpenAI Whisper")
         #expect(TranscriptionProvider.groqWhisper.rawValue == "Groq Whisper")
         #expect(TranscriptionProvider.gpt4oAudio.rawValue == "GPT-4o Audio")
         #expect(TranscriptionProvider.geminiAudio.rawValue == "Gemini 2.0 Flash")
         #expect(TranscriptionProvider.localWhisper.rawValue == "Local Whisper")
+    }
+
+    @Test("Persisted transcription provider identifiers still decode")
+    func transcriptionProviderCompatibilityMap() {
+        let persistedValues = [
+            "WhisperKit (On-Device)",
+            "OpenAI Whisper",
+            "Groq Whisper",
+            "GPT-4o Audio",
+            "Gemini 2.0 Flash",
+            "Local Whisper"
+        ]
+
+        for raw in persistedValues {
+            #expect(TranscriptionProvider(rawValue: raw) != nil)
+        }
     }
     
     @Test("Provider raw values are stable")
@@ -292,6 +343,37 @@ struct AppSettingsTests {
         #expect(refinementKey.hasPrefix("refinement"))
         #expect(transcriptionKey.contains("_"))
         #expect(refinementKey.contains("_"))
+    }
+
+    @Test("API key storage key remains provider-raw keyed")
+    func apiKeyStorageProviderRawCompatibility() {
+        let transcriptionKey = "transcriptionAPIKey_\(TranscriptionProvider.gpt4oAudio.rawValue)"
+        let refinementKey = "refinementAPIKey_\(Provider.ollama.rawValue)"
+
+        #expect(transcriptionKey == "transcriptionAPIKey_GPT-4o Audio")
+        #expect(refinementKey == "refinementAPIKey_Ollama (Local)")
+    }
+
+    @MainActor
+    @Test("Pipeline snapshot uses whisperKitModel when WhisperKit is selected")
+    func pipelineSnapshotUsesWhisperKitModel() {
+        let settings = AppSettings.shared
+        let originalProviderRaw = settings.transcriptionProviderRaw
+        let originalTranscriptionModel = settings.transcriptionModel
+        let originalWhisperKitModel = settings.whisperKitModel
+
+        defer {
+            settings.transcriptionProviderRaw = originalProviderRaw
+            settings.transcriptionModel = originalTranscriptionModel
+            settings.whisperKitModel = originalWhisperKitModel
+        }
+
+        settings.transcriptionProviderRaw = TranscriptionProvider.whisperKit.rawValue
+        settings.transcriptionModel = "whisper-1"
+        settings.whisperKitModel = "openai_whisper-medium"
+
+        let snapshot = settings.pipelineSettingsSnapshot()
+        #expect(snapshot.transcriptionModel == "openai_whisper-medium")
     }
     
     // MARK: - Settings Defaults Tests

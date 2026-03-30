@@ -1,6 +1,6 @@
 # Murmeln Index
 
-> Last updated: 2026-03-29
+> Last updated: 2026-03-31
 
 ## Project
 
@@ -9,9 +9,9 @@
 - **README:** `README.md`
 - **Active roadmap Linear:** `DEV-33` — Murmeln truth pass and improvement roadmap
 - **Active phase Linear:** none currently active
-- **Last completed phase Linear:** `DEV-38` — Phase 2: Murmeln capture correctness and stability
+- **Last completed phase Linear:** `DEV-39` — Phase 3: Murmeln local-first architecture foundation
 - **Active phase plan:** none currently active
-- **Last completed phase plan:** `_planning/plans/2026-03-29-murmeln-phase-2-capture-correctness-and-stability.md`
+- **Last completed phase plan:** `_planning/plans/2026-03-29-murmeln-phase-3-local-first-architecture-foundation.md`
 - **Recommended execution branch:** none until the next phase is promoted
 
 ## Commands
@@ -76,11 +76,12 @@ Use a lightweight router-plus-layers model.
 | Router | `index.md` | Points to the currently active planning files | Active file changes |
 | Roadmap | `_planning/plans/2026-03-28-murmeln-plan.md` | Strategy, phases, priorities, directives | Scope or priority changes |
 | Findings | `_planning/plans/2026-03-28-murmeln-findings.md` | Durable discoveries, evidence, and investigation notes | After investigation work |
-| Phase Plan | `none currently active` (last completed: `_planning/plans/2026-03-29-murmeln-phase-2-capture-correctness-and-stability.md`) | Execution-ready plan for the current phase | When the active phase changes |
+| Phase Plan | `none currently active` (last completed: `_planning/plans/2026-03-29-murmeln-phase-3-local-first-architecture-foundation.md`) | Execution-ready plan for the current phase | When the active phase changes |
 
 External tracker:
 
 - `DEV-33` — umbrella roadmap tracking in Linear
+- `DEV-39` — completed Phase 3 execution tracking in Linear
 - `DEV-38` — completed Phase 2 execution tracking in Linear
 - `DEV-37` — completed Phase 1 execution tracking in Linear
 

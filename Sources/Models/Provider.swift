@@ -1,6 +1,6 @@
 import Foundation
 
-enum Provider: String, CaseIterable, Codable {
+enum Provider: String, CaseIterable, Codable, Sendable {
     case openAI = "OpenAI"
     case google = "Google AI"
     case groq = "Groq"
@@ -37,7 +37,7 @@ enum Provider: String, CaseIterable, Codable {
     }
 }
 
-enum TranscriptionProvider: String, CaseIterable, Codable {
+enum TranscriptionProvider: String, CaseIterable, Codable, Sendable {
     case whisperKit = "WhisperKit (On-Device)"
     case openAIWhisper = "OpenAI Whisper"
     case groqWhisper = "Groq Whisper"
@@ -72,11 +72,23 @@ enum TranscriptionProvider: String, CaseIterable, Codable {
         }
     }
     
-    var isNativeAudioModel: Bool {
+    var isLocalNativeProvider: Bool {
         switch self {
-        case .whisperKit, .gpt4oAudio, .geminiAudio: return true
+        case .whisperKit: return true
         default: return false
         }
+    }
+
+    var isLegacyCloudAudioInputProvider: Bool {
+        switch self {
+        case .gpt4oAudio, .geminiAudio: return true
+        default: return false
+        }
+    }
+
+    @available(*, deprecated, message: "Use isLocalNativeProvider or isLegacyCloudAudioInputProvider.")
+    var isNativeAudioModel: Bool {
+        isLocalNativeProvider || isLegacyCloudAudioInputProvider
     }
     
     var supportsRefinementInOneCall: Bool {

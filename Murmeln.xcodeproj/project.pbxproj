@@ -29,6 +29,9 @@
 		APP021 /* KeychainService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC021 /* KeychainService.swift */; };
 		APP023 /* WhisperKitService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC023 /* WhisperKitService.swift */; };
 		APP024 /* WhisperKitSetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC024 /* WhisperKitSetupView.swift */; };
+		APP025 /* TranscriptionPipelineModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC025 /* TranscriptionPipelineModels.swift */; };
+		APP026 /* TranscriptionPipelineService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC026 /* TranscriptionPipelineService.swift */; };
+		APP027 /* BackendSettingsSections.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC027 /* BackendSettingsSections.swift */; };
 		RES001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F2B02ABB2F0409FC00DD12FC /* Assets.xcassets */; };
 		PKG001 /* KeyboardShortcuts in Frameworks */ = {isa = PBXBuildFile; productRef = PKG002 /* KeyboardShortcuts */; };
 		PKG004 /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = PKG005 /* WhisperKit */; };
@@ -60,6 +63,9 @@
 		SRC021 /* KeychainService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainService.swift; sourceTree = "<group>"; };
 		SRC023 /* WhisperKitService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperKitService.swift; sourceTree = "<group>"; };
 		SRC024 /* WhisperKitSetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperKitSetupView.swift; sourceTree = "<group>"; };
+		SRC025 /* TranscriptionPipelineModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionPipelineModels.swift; sourceTree = "<group>"; };
+		SRC026 /* TranscriptionPipelineService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionPipelineService.swift; sourceTree = "<group>"; };
+		SRC027 /* BackendSettingsSections.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackendSettingsSections.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -103,6 +109,7 @@
 				SRC002 /* AppSettings.swift */,
 				SRC003 /* AppState.swift */,
 				SRC022 /* AppIdentity.swift */,
+				SRC025 /* TranscriptionPipelineModels.swift */,
 				SRC011 /* Provider.swift */,
 				SRC016 /* HistoryEntry.swift */,
 				SRC017 /* HistoryStore.swift */,
@@ -123,6 +130,7 @@
 				SRC020 /* UpdateService.swift */,
 				SRC021 /* KeychainService.swift */,
 				SRC023 /* WhisperKitService.swift */,
+				SRC026 /* TranscriptionPipelineService.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -135,6 +143,7 @@
 				SRC015 /* SettingsWindowController.swift */,
 				SRC018 /* HistoryWindow.swift */,
 				SRC024 /* WhisperKitSetupView.swift */,
+				SRC027 /* BackendSettingsSections.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -246,6 +255,9 @@
 				APP021 /* KeychainService.swift in Sources */,
 				APP023 /* WhisperKitService.swift in Sources */,
 				APP024 /* WhisperKitSetupView.swift in Sources */,
+				APP025 /* TranscriptionPipelineModels.swift in Sources */,
+				APP026 /* TranscriptionPipelineService.swift in Sources */,
+				APP027 /* BackendSettingsSections.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

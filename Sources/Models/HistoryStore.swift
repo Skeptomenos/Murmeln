@@ -50,16 +50,20 @@ final class HistoryStore: ObservableObject {
         refined: String, 
         presetName: String, 
         systemPrompt: String, 
+        effectiveSystemPrompt: String? = nil,
         variants: [String: String]? = nil,
-        variantPrompts: [String: String]? = nil
+        variantPrompts: [String: String]? = nil,
+        effectiveVariantPrompts: [String: String]? = nil
     ) {
         let entry = HistoryEntry(
             original: original, 
             refined: refined, 
             presetName: presetName, 
             systemPrompt: systemPrompt, 
+            effectiveSystemPrompt: effectiveSystemPrompt,
             variants: variants,
-            variantPrompts: variantPrompts
+            variantPrompts: variantPrompts,
+            effectiveVariantPrompts: effectiveVariantPrompts
         )
         entries.insert(entry, at: 0)
         

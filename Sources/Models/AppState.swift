@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 import AppKit
+import AVFoundation
 import os.log
 
 actor CaptureDiagnostics {
@@ -94,13 +95,15 @@ final class AppState: ObservableObject {
     }
     
     private let audioRecorder = AudioRecorder()
+    private let pipelineService = TranscriptionPipelineService.shared
     private let overlay = OverlayWindowController.shared
     private var recordingTask: Task<Void, Never>?
     private var warmUpTask: Task<Void, Never>?
     
+    private var capturedPresetID: UUID = PromptPreset.builtInPresets[0].id
     private var capturedPresetName: String = ""
     private var capturedSystemPrompt: String = ""
-    private var capturedPresetsWithPrompts: [(name: String, prompt: String)] = []
+    private var capturedPresetsWithPrompts: [(id: UUID, name: String, prompt: String)] = []
     private var activeCaptureID: String?
     
     private init() {}
@@ -138,28 +141,25 @@ final class AppState: ObservableObject {
         }
     }
 
-    private func logLatencySummary(
-        captureID: String,
-        path: String,
-        transcriptionElapsedMs: UInt64,
-        stopToPasteCommandMs: UInt64,
-        stopToPasteCompleteMs: UInt64,
-        pasteSucceeded: Bool
-    ) {
-        logDiagnostics("app.stop_to_paste", captureID: captureID, metadata: [
-            "command_elapsed_ms": String(stopToPasteCommandMs),
-            "complete_elapsed_ms": String(stopToPasteCompleteMs),
-            "path": path,
-            "paste_succeeded": String(pasteSucceeded)
-        ])
+    private func logCaptureSummary(captureID: String, context: TranscriptionRunContext, timeline: CaptureStageTimeline) {
+        let summary = CaptureTelemetrySummary(
+            captureID: captureID,
+            context: context,
+            timeline: timeline
+        )
+        logDiagnostics("capture.summary", captureID: captureID, metadata: summary.metadata)
+    }
 
-        logDiagnostics("app.latency.summary", captureID: captureID, metadata: [
-            "transcription_elapsed_ms": String(transcriptionElapsedMs),
-            "stop_to_paste_command_ms": String(stopToPasteCommandMs),
-            "stop_to_paste_complete_ms": String(stopToPasteCompleteMs),
-            "path": path,
-            "paste_succeeded": String(pasteSucceeded)
-        ])
+    private func audioDurationMs(for audioURL: URL) -> UInt64 {
+        do {
+            let audioFile = try AVAudioFile(forReading: audioURL)
+            let sampleRate = audioFile.fileFormat.sampleRate
+            guard sampleRate > 0 else { return 0 }
+            let durationSeconds = Double(audioFile.length) / sampleRate
+            return UInt64((durationSeconds * 1000).rounded())
+        } catch {
+            return 0
+        }
     }
     
     private func announceForAccessibility(_ message: String) {
@@ -270,12 +270,13 @@ final class AppState: ObservableObject {
         logDiagnostics("app.recording.begin", captureID: captureID)
         
         let settings = AppSettings.shared
+        capturedPresetID = settings.selectedPreset?.id ?? PromptPreset.builtInPresets[0].id
         capturedPresetName = settings.selectedPreset?.name ?? "Custom"
         capturedSystemPrompt = settings.systemPrompt
         
         // Capture all presets and their CURRENT prompts at the moment recording starts
         capturedPresetsWithPrompts = settings.allPresets.map { preset in
-            (name: preset.name, prompt: settings.promptForPreset(preset))
+            (id: preset.id, name: preset.name, prompt: settings.promptForPreset(preset))
         }
         
         recordingPhase = .recording
@@ -314,12 +315,13 @@ final class AppState: ObservableObject {
         logDiagnostics("app.recording.legacy_start", captureID: captureID)
         
         let settings = AppSettings.shared
+        capturedPresetID = settings.selectedPreset?.id ?? PromptPreset.builtInPresets[0].id
         capturedPresetName = settings.selectedPreset?.name ?? "Custom"
         capturedSystemPrompt = settings.systemPrompt
         
         // Capture all presets and their CURRENT prompts at the moment recording starts
         capturedPresetsWithPrompts = settings.allPresets.map { preset in
-            (name: preset.name, prompt: settings.promptForPreset(preset))
+            (id: preset.id, name: preset.name, prompt: settings.promptForPreset(preset))
         }
         
         // Set state SYNCHRONOUSLY before any async work to prevent race conditions
@@ -479,166 +481,266 @@ final class AppState: ObservableObject {
                 logDiagnostics("app.trim.skipped", captureID: captureID)
             }
             
+            let pipelineSettings = settings.pipelineSettingsSnapshot()
+            let selectedPipelineMode = pipelineService.pipelineMode(for: pipelineSettings)
+            let audioDurationMs = audioDurationMs(for: audioToProcess)
+            let audioReadyNs = DispatchTime.now().uptimeNanoseconds
+
             recordingPhase = .processing
             overlay.setProcessing()
             announceForAccessibility("Processing speech")
-            logDiagnostics("app.processing.started", captureID: captureID)
+            logDiagnostics("app.processing.started", captureID: captureID, metadata: [
+                "pipeline_mode": selectedPipelineMode.rawValue,
+                "audio_duration_ms": String(audioDurationMs)
+            ])
             
             do {
                 #if DEBUG
                 print("🚀 Starting transcription phase...")
                 #endif
-                let settings = AppSettings.shared
-                let transcriptionStartNs = DispatchTime.now().uptimeNanoseconds
-                
-                // For native audio models (GPT-4o/Gemini), provide a dictionary-enhanced verbatim prompt
-                // even for the baseline transcription. This improves accuracy for names/terms.
-                let baselinePrompt = settings.transcriptionProvider.isNativeAudioModel 
-                    ? self.promptWithDictionary("") 
+                let baselinePrompt = selectedPipelineMode == .oneCallTranscriptionAndRefinement
+                    ? promptWithDictionary(capturedSystemPrompt)
                     : ""
-                
-                let originalText = try await NetworkService.shared.transcribeAndRefine(
-                    audioURL: audioToProcess,
-                    provider: settings.transcriptionProvider,
-                    apiKey: settings.transcriptionAPIKey,
-                    baseURL: settings.transcriptionBaseURL,
-                    model: settings.transcriptionModel,
-                    systemPrompt: baselinePrompt
+
+                let transcriptionResult = try await pipelineService.executeTranscription(
+                    request: TranscriptionRequest(
+                        captureID: captureID,
+                        audioURL: audioToProcess,
+                        audioDurationMs: audioDurationMs,
+                        baselinePrompt: baselinePrompt,
+                        settings: pipelineSettings
+                    )
                 )
+                let originalText = transcriptionResult.text
                 
                 #if DEBUG
                 print("✅ Baseline obtained: '\(originalText)'")
                 #endif
-                let transcriptionElapsedMs = (DispatchTime.now().uptimeNanoseconds - transcriptionStartNs) / 1_000_000
+                let transcriptionElapsedMs = transcriptionResult.transcriptionTiming.elapsedMs
                 logDiagnostics("app.transcription.completed", captureID: captureID, metadata: [
                     "elapsed_ms": String(transcriptionElapsedMs),
-                    "characters": String(originalText.count)
+                    "characters": String(originalText.count),
+                    "provider": transcriptionResult.runContext.provider,
+                    "backend_kind": transcriptionResult.runContext.backendKind.rawValue,
+                    "support_tier": transcriptionResult.runContext.supportTier.rawValue,
+                    "pipeline_mode": transcriptionResult.runContext.pipelineMode.rawValue,
+                    "model": transcriptionResult.runContext.model,
+                    "warm_state": transcriptionResult.runContext.warmState.rawValue
                 ])
-                
-                // 2. Check if refinement is skipped (Raw Mode)
-                if settings.skipRefinement {
-                    #if DEBUG
-                    print("📋 Skip refinement enabled - using raw transcript")
-                    #endif
-                    let pasteStartNs = DispatchTime.now().uptimeNanoseconds
-                    let pasteTiming = await PasteService.shared.pasteAndRestore(text: originalText, captureID: captureID)
-                    announceForAccessibility("Text pasted")
-                    let elapsedBeforePasteMs = (pasteStartNs - stopRequestedNs) / 1_000_000
-                    let stopToPasteCommandMs = elapsedBeforePasteMs + pasteTiming.commandSentElapsedMs
-                    let stopToPasteCompleteMs = elapsedBeforePasteMs + pasteTiming.totalElapsedMs
-                    logLatencySummary(
-                        captureID: captureID,
-                        path: "raw",
-                        transcriptionElapsedMs: transcriptionElapsedMs,
-                        stopToPasteCommandMs: stopToPasteCommandMs,
-                        stopToPasteCompleteMs: stopToPasteCompleteMs,
-                        pasteSucceeded: pasteTiming.succeeded
-                    )
-                    
-                    HistoryStore.shared.add(
-                        original: originalText,
-                        refined: originalText,
-                        presetName: "Raw (No Refinement)",
-                        systemPrompt: "",
-                        variants: [:],
-                        variantPrompts: [:]
-                    )
-                } else {
-                    // 3. Process all captured presets in parallel (if enabled)
-                    var variants: [String: String] = [:]
-                    var variantPrompts: [String: String] = [:]
-                    
-                    // Capture these for the closure
-                    let refinementProvider = settings.refinementProvider
-                    let refinementAPIKey = settings.refinementAPIKey
-                    let refinementBaseURL = settings.refinementBaseURL
-                    let refinementModel = settings.refinementModel
+
+                var variants: [String: String] = [:]
+                var variantPrompts: [String: String] = [:]
+                var effectiveVariantPrompts: [String: String] = [:]
+                var aggregateRefinementTiming: StageTiming?
+                var selectedResultReadyAtNs: UInt64?
+                var auditFanoutFinishedAtNs: UInt64?
+                var auditVariantSuccessCount = 0
+                var auditVariantFailureCount = 0
+                var finalResult = originalText
+                var finalPresetName = capturedPresetName
+                var finalSystemPrompt = capturedSystemPrompt
+                var effectiveSystemPrompt = capturedSystemPrompt
+
+                switch transcriptionResult.runContext.pipelineMode {
+                case .transcribeOnly:
+                    finalPresetName = "Raw (No Refinement)"
+                    finalSystemPrompt = ""
+                    effectiveSystemPrompt = ""
+
+                case .oneCallTranscriptionAndRefinement:
+                    // Final text already returned by the transcription backend.
+                    effectiveSystemPrompt = baselinePrompt
+                    break
+
+                case .twoCallRefinement:
                     let presets = capturedPresetsWithPrompts
-                    let refinementStartNs = DispatchTime.now().uptimeNanoseconds
-                    
-                    if settings.parallelRefinementEnabled {
-                        await withTaskGroup(of: (String, String, String)?.self) { group in
-                            for p in presets {
-                                let enhancedPrompt = self.promptWithDictionary(p.prompt)
-                                group.addTask {
-                                    do {
-                                        let refined = try await NetworkService.shared.refine(
-                                            text: originalText,
-                                            provider: refinementProvider,
-                                            apiKey: refinementAPIKey,
-                                            baseURL: refinementBaseURL,
-                                            model: refinementModel,
-                                            systemPrompt: enhancedPrompt
-                                        )
-                                        return (p.name, refined, p.prompt)
-                                    } catch {
-                                        #if DEBUG
-                                        print("⚠️ Variant \(p.name) failed: \(error.localizedDescription)")
-                                        #endif
-                                        return nil
-                                    }
-                                }
+
+                    if pipelineSettings.parallelRefinementEnabled {
+                        let refinementPlans = presets.map {
+                            RefinementVariantPlan(
+                                presetID: $0.id,
+                                name: $0.name,
+                                basePrompt: $0.prompt,
+                                effectivePrompt: promptWithDictionary($0.prompt)
+                            )
+                        }
+                        let pipelineService = self.pipelineService
+                        do {
+                            let auditResult = try await ParallelRefinementAuditRunner(
+                                selectedPresetID: capturedPresetID,
+                                selectedPresetName: capturedPresetName,
+                                presets: refinementPlans
+                            ).run { plan in
+                                try await pipelineService.executeRefinement(
+                                    request: RefinementRequest(
+                                        captureID: captureID,
+                                        text: originalText,
+                                        systemPrompt: plan.effectivePrompt,
+                                        settings: pipelineSettings
+                                    )
+                                )
                             }
-                            
-                            for await result in group {
-                                if let (name, text, prompt) = result {
-                                    variants[name] = text
-                                    variantPrompts[name] = prompt
+
+                            let variantResults = auditResult.variantsByPresetID.values.sorted { lhs, rhs in
+                                if lhs.name == rhs.name {
+                                    return lhs.presetID.uuidString < rhs.presetID.uuidString
                                 }
+                                return lhs.name < rhs.name
                             }
+                            variants = Dictionary(uniqueKeysWithValues: variantResults.map { ($0.name, $0.text) })
+                            variantPrompts = Dictionary(uniqueKeysWithValues: variantResults.map { ($0.name, $0.basePrompt) })
+                            effectiveVariantPrompts = Dictionary(uniqueKeysWithValues: variantResults.map { ($0.name, $0.effectivePrompt) })
+                            aggregateRefinementTiming = auditResult.refinementTiming
+                            selectedResultReadyAtNs = auditResult.selectedResultReadyAt
+                            auditFanoutFinishedAtNs = auditResult.auditFanoutFinishedAt
+                            auditVariantSuccessCount = auditResult.successCount
+                            auditVariantFailureCount = auditResult.failureCount
+                            finalResult = auditResult.selectedVariant.text
+                            finalSystemPrompt = auditResult.selectedVariant.basePrompt
+                            effectiveSystemPrompt = auditResult.selectedVariant.effectivePrompt
+
+                            if auditResult.selectedRecoveredByRetry {
+                                logDiagnostics("app.refinement.selected_retry_succeeded", captureID: captureID, metadata: [
+                                    "preset": capturedPresetName,
+                                    "preset_id": capturedPresetID.uuidString
+                                ])
+                            }
+
+                            for failure in auditResult.failures {
+                                #if DEBUG
+                                print("⚠️ Variant \(failure.presetName) failed: \(failure.message)")
+                                #endif
+                                logDiagnostics("app.refinement.variant_failed", captureID: captureID, metadata: [
+                                    "preset": failure.presetName,
+                                    "preset_id": failure.presetID.uuidString,
+                                    "error": failure.message
+                                ])
+                            }
+                        } catch let error as ParallelRefinementError {
+                            logDiagnostics("app.refinement.selected_failed", captureID: captureID, metadata: [
+                                "preset": capturedPresetName,
+                                "preset_id": capturedPresetID.uuidString,
+                                "error": error.localizedDescription
+                            ])
+                            throw error
                         }
                     } else {
-                        // Only process the selected preset
                         let enhancedPrompt = promptWithDictionary(capturedSystemPrompt)
-                        let refined = try await NetworkService.shared.refine(
-                            text: originalText,
-                            provider: refinementProvider,
-                            apiKey: refinementAPIKey,
-                            baseURL: refinementBaseURL,
-                            model: refinementModel,
-                            systemPrompt: enhancedPrompt
+                        let refinementResult = try await pipelineService.executeRefinement(
+                            request: RefinementRequest(
+                                captureID: captureID,
+                                text: originalText,
+                                systemPrompt: enhancedPrompt,
+                                settings: pipelineSettings
+                            )
                         )
-                        variants[capturedPresetName] = refined
-                        variantPrompts[capturedPresetName] = capturedSystemPrompt
+                        aggregateRefinementTiming = refinementResult.timing
+                        selectedResultReadyAtNs = refinementResult.timing.finishedAt
+                        auditFanoutFinishedAtNs = refinementResult.timing.finishedAt
+                        auditVariantSuccessCount = 1
+                        auditVariantFailureCount = 0
+                        finalResult = refinementResult.text
+                        finalSystemPrompt = capturedSystemPrompt
+                        effectiveSystemPrompt = enhancedPrompt
                     }
 
-                    let refinementElapsedMs = (DispatchTime.now().uptimeNanoseconds - refinementStartNs) / 1_000_000
+                    let refinementElapsedMs = aggregateRefinementTiming?.elapsedMs ?? 0
                     logDiagnostics("app.refinement.completed", captureID: captureID, metadata: [
                         "elapsed_ms": String(refinementElapsedMs),
-                        "parallel_enabled": String(settings.parallelRefinementEnabled),
-                        "variant_count": String(variants.count)
+                        "parallel_enabled": String(pipelineSettings.parallelRefinementEnabled),
+                        "variant_count": String(variants.count),
+                        "variant_success_count": String(auditVariantSuccessCount),
+                        "variant_failure_count": String(auditVariantFailureCount)
                     ])
-                    
-                    // 4. Paste the result of the SELECTED preset
-                    let finalResult = variants[capturedPresetName] ?? originalText
-                    #if DEBUG
-                    print("📋 Pasting result for \(capturedPresetName)...")
-                    #endif
-                    let pasteStartNs = DispatchTime.now().uptimeNanoseconds
-                    let pasteTiming = await PasteService.shared.pasteAndRestore(text: finalResult, captureID: captureID)
-                    announceForAccessibility("Text pasted")
-                    let elapsedBeforePasteMs = (pasteStartNs - stopRequestedNs) / 1_000_000
-                    let stopToPasteCommandMs = elapsedBeforePasteMs + pasteTiming.commandSentElapsedMs
-                    let stopToPasteCompleteMs = elapsedBeforePasteMs + pasteTiming.totalElapsedMs
-                    logLatencySummary(
-                        captureID: captureID,
-                        path: "refined",
-                        transcriptionElapsedMs: transcriptionElapsedMs,
-                        stopToPasteCommandMs: stopToPasteCommandMs,
-                        stopToPasteCompleteMs: stopToPasteCompleteMs,
+                }
+
+                #if DEBUG
+                print("📋 Pasting result for \(finalPresetName)...")
+                #endif
+
+                let finalResultReadyAtNs: UInt64
+                switch transcriptionResult.runContext.pipelineMode {
+                case .transcribeOnly, .oneCallTranscriptionAndRefinement:
+                    finalResultReadyAtNs = transcriptionResult.transcriptionTiming.finishedAt
+                case .twoCallRefinement:
+                    finalResultReadyAtNs = auditFanoutFinishedAtNs
+                        ?? aggregateRefinementTiming?.finishedAt
+                        ?? selectedResultReadyAtNs
+                        ?? transcriptionResult.transcriptionTiming.finishedAt
+                }
+
+                let pasteStartNs = DispatchTime.now().uptimeNanoseconds
+                let pasteTiming = await PasteService.shared.pasteAndRestore(text: finalResult, captureID: captureID)
+                announceForAccessibility("Text pasted")
+
+                let pasteCommandSentAtNs = pasteStartNs + (pasteTiming.commandSentElapsedMs * 1_000_000)
+                let pasteCompletedAtNs = pasteStartNs + (pasteTiming.totalElapsedMs * 1_000_000)
+
+                let stopToPasteCommandMs = pasteCommandSentAtNs >= stopRequestedNs
+                    ? (pasteCommandSentAtNs - stopRequestedNs) / 1_000_000
+                    : 0
+                let stopToPasteCompleteMs = pasteCompletedAtNs >= stopRequestedNs
+                    ? (pasteCompletedAtNs - stopRequestedNs) / 1_000_000
+                    : 0
+
+                let pathLabel: String
+                switch transcriptionResult.runContext.pipelineMode {
+                case .transcribeOnly:
+                    pathLabel = "raw"
+                case .oneCallTranscriptionAndRefinement:
+                    pathLabel = "one_call"
+                case .twoCallRefinement:
+                    pathLabel = "refined"
+                }
+
+                logDiagnostics("app.stop_to_paste", captureID: captureID, metadata: [
+                    "command_elapsed_ms": String(stopToPasteCommandMs),
+                    "complete_elapsed_ms": String(stopToPasteCompleteMs),
+                    "path": pathLabel,
+                    "paste_succeeded": String(pasteTiming.succeeded)
+                ])
+
+                logDiagnostics("app.latency.summary", captureID: captureID, metadata: [
+                    "transcription_elapsed_ms": String(transcriptionElapsedMs),
+                    "stop_to_paste_command_ms": String(stopToPasteCommandMs),
+                    "stop_to_paste_complete_ms": String(stopToPasteCompleteMs),
+                    "path": pathLabel,
+                    "paste_succeeded": String(pasteTiming.succeeded)
+                ])
+
+                logCaptureSummary(
+                    captureID: captureID,
+                    context: transcriptionResult.runContext,
+                    timeline: CaptureStageTimeline(
+                        stopRequestedAt: stopRequestedNs,
+                        audioReadyAt: audioReadyNs,
+                        backendLoadStartedAt: transcriptionResult.backendLoadTiming?.startedAt,
+                        backendLoadFinishedAt: transcriptionResult.backendLoadTiming?.finishedAt,
+                        transcriptionStartedAt: transcriptionResult.transcriptionTiming.startedAt,
+                        transcriptionFinishedAt: transcriptionResult.transcriptionTiming.finishedAt,
+                        refinementStartedAt: aggregateRefinementTiming?.startedAt,
+                        refinementFinishedAt: aggregateRefinementTiming?.finishedAt,
+                        selectedResultReadyAt: selectedResultReadyAtNs,
+                        auditFanoutFinishedAt: auditFanoutFinishedAtNs,
+                        auditVariantSuccessCount: auditVariantSuccessCount,
+                        auditVariantFailureCount: auditVariantFailureCount,
+                        finalResultReadyAt: finalResultReadyAtNs,
+                        pasteCommandSentAt: pasteCommandSentAtNs,
+                        pasteCompletedAt: pasteCompletedAtNs,
                         pasteSucceeded: pasteTiming.succeeded
                     )
-                    
-                    // 5. Save to history with all variants and their respective prompts
-                    HistoryStore.shared.add(
-                        original: originalText,
-                        refined: finalResult,
-                        presetName: capturedPresetName,
-                        systemPrompt: capturedSystemPrompt,
-                        variants: variants,
-                        variantPrompts: variantPrompts
-                    )
-                }
+                )
+
+                HistoryStore.shared.add(
+                    original: originalText,
+                    refined: finalResult,
+                    presetName: finalPresetName,
+                    systemPrompt: finalSystemPrompt,
+                    effectiveSystemPrompt: effectiveSystemPrompt,
+                    variants: variants.isEmpty ? nil : variants,
+                    variantPrompts: variantPrompts.isEmpty ? nil : variantPrompts,
+                    effectiveVariantPrompts: effectiveVariantPrompts.isEmpty ? nil : effectiveVariantPrompts
+                )
                 
                 lastError = nil
             } catch {

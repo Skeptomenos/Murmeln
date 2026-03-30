@@ -187,6 +187,28 @@ struct HistoryStoreTests {
         #expect(decoded.variants?["Markdown"] == "## Hello\n\nWorld")
         #expect(decoded.variantPrompts?["Verbatim"] == "Verbatim prompt")
     }
+
+    @Test("Selected and variant effective prompt provenance persist separately")
+    func effectivePromptProvenancePersistence() throws {
+        let entry = HistoryEntry(
+            original: "hello world",
+            refined: "Hello, world.",
+            presetName: "Casual",
+            systemPrompt: "Base prompt",
+            effectiveSystemPrompt: "Base prompt with dictionary",
+            variants: ["Casual": "Hello, world."],
+            variantPrompts: ["Casual": "Variant base prompt"],
+            effectiveVariantPrompts: ["Casual": "Variant base prompt with dictionary"]
+        )
+
+        let encoded = try JSONEncoder().encode(entry)
+        let decoded = try JSONDecoder().decode(HistoryEntry.self, from: encoded)
+
+        #expect(decoded.systemPrompt == "Base prompt")
+        #expect(decoded.effectiveSystemPrompt == "Base prompt with dictionary")
+        #expect(decoded.variantPrompts?["Casual"] == "Variant base prompt")
+        #expect(decoded.effectiveVariantPrompts?["Casual"] == "Variant base prompt with dictionary")
+    }
     
     // MARK: - Edge Cases
     

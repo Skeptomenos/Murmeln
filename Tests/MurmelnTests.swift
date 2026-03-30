@@ -81,14 +81,15 @@ struct TranscriptionProviderTests {
         #expect(TranscriptionProvider.geminiAudio.requiresAPIKey == true)
     }
     
-    @Test("Native audio models identified correctly")
-    func nativeAudioModels() {
-        #expect(TranscriptionProvider.whisperKit.isNativeAudioModel == true)
-        #expect(TranscriptionProvider.gpt4oAudio.isNativeAudioModel == true)
-        #expect(TranscriptionProvider.geminiAudio.isNativeAudioModel == true)
-        #expect(TranscriptionProvider.openAIWhisper.isNativeAudioModel == false)
-        #expect(TranscriptionProvider.groqWhisper.isNativeAudioModel == false)
-        #expect(TranscriptionProvider.localWhisper.isNativeAudioModel == false)
+    @Test("Local-native and legacy cloud audio-input providers are identified")
+    func providerTypeFlags() {
+        #expect(TranscriptionProvider.whisperKit.isLocalNativeProvider == true)
+        #expect(TranscriptionProvider.gpt4oAudio.isLegacyCloudAudioInputProvider == true)
+        #expect(TranscriptionProvider.geminiAudio.isLegacyCloudAudioInputProvider == true)
+        #expect(TranscriptionProvider.openAIWhisper.isLocalNativeProvider == false)
+        #expect(TranscriptionProvider.openAIWhisper.isLegacyCloudAudioInputProvider == false)
+        #expect(TranscriptionProvider.groqWhisper.isLegacyCloudAudioInputProvider == false)
+        #expect(TranscriptionProvider.localWhisper.isLegacyCloudAudioInputProvider == false)
     }
     
     @Test("One-call refinement support")
@@ -277,6 +278,15 @@ struct URLConstructionTests {
         
         #expect(request.value(forHTTPHeaderField: "x-goog-api-key") == apiKey)
         #expect(request.url?.query == nil)
+    }
+
+    @Test("Legacy local-server transcription endpoint remains /inference")
+    func localWhisperEndpointFormat() {
+        let base = TranscriptionProvider.localWhisper.defaultBaseURL
+        let url = URL(string: base + "/inference")
+
+        #expect(base == "http://localhost:8080")
+        #expect(url?.absoluteString == "http://localhost:8080/inference")
     }
 }
 
@@ -748,6 +758,104 @@ struct HistoryEntryTests {
         set.insert(entry2)
         
         #expect(set.count == 2)
+    }
+
+    @Test("Empty variants are normalized away")
+    func historyEntryNormalizesEmptyVariants() {
+        let entry = HistoryEntry(
+            original: "already final",
+            refined: "already final",
+            presetName: "Casual",
+            systemPrompt: "Prompt",
+            variants: [:],
+            variantPrompts: [:]
+        )
+
+        #expect(entry.variants == nil)
+        #expect(entry.variantPrompts == nil)
+    }
+
+    @Test("Final-only entry does not claim separate baseline or audit trail")
+    func finalOnlyHistoryEntrySemantics() {
+        let entry = HistoryEntry(
+            original: "already final",
+            refined: "already final",
+            presetName: "GPT-4o Audio",
+            systemPrompt: "Prompt",
+            variants: nil,
+            variantPrompts: nil
+        )
+
+        #expect(entry.hasParallelAuditTrail == false)
+        #expect(entry.hasDistinctOriginalBaseline == false)
+    }
+
+    @Test("Non-empty variants retain audit trail semantics")
+    func historyEntryRetainsAuditTrailSemantics() {
+        let entry = HistoryEntry(
+            original: "raw",
+            refined: "refined",
+            presetName: "Casual",
+            systemPrompt: "Prompt",
+            variants: ["Casual": "refined", "Structured": "structured"],
+            variantPrompts: ["Casual": "Prompt"]
+        )
+
+        #expect(entry.hasParallelAuditTrail == true)
+        #expect(entry.hasDistinctOriginalBaseline == true)
+    }
+
+    @Test("Single selected-result variant is not treated as parallel audit trail")
+    func singleVariantDoesNotClaimParallelAuditTrail() {
+        let entry = HistoryEntry(
+            original: "raw",
+            refined: "refined",
+            presetName: "Casual",
+            systemPrompt: "Prompt",
+            variants: ["Casual": "refined"],
+            variantPrompts: ["Casual": "Prompt"]
+        )
+
+        #expect(entry.hasParallelAuditTrail == false)
+        #expect(entry.hasDistinctOriginalBaseline == true)
+    }
+
+    @Test("Prompt provenance prefers effective prompts and retains base prompts")
+    func promptProvenancePrefersEffectivePrompt() {
+        let entry = HistoryEntry(
+            original: "raw",
+            refined: "refined",
+            presetName: "Casual",
+            systemPrompt: "Base prompt",
+            effectiveSystemPrompt: "Base prompt with dictionary",
+            variants: ["Casual": "refined"],
+            variantPrompts: ["Casual": "Variant base prompt"],
+            effectiveVariantPrompts: ["Casual": "Variant base prompt with dictionary"]
+        )
+
+        let provenance = entry.promptProvenance(for: "Casual")
+
+        #expect(provenance.basePrompt == "Variant base prompt")
+        #expect(provenance.effectivePrompt == "Variant base prompt with dictionary")
+        #expect(provenance.showsBasePromptSeparately == true)
+    }
+
+    @Test("Prompt provenance falls back to base prompt for legacy entries")
+    func promptProvenanceFallsBackToBasePrompt() {
+        let entry = HistoryEntry(
+            original: "raw",
+            refined: "refined",
+            presetName: "Casual",
+            systemPrompt: "Legacy prompt",
+            variants: nil,
+            variantPrompts: nil
+        )
+
+        let provenance = entry.promptProvenance(for: "Casual")
+
+        #expect(provenance.basePrompt == "Legacy prompt")
+        #expect(provenance.effectivePrompt == "Legacy prompt")
+        #expect(provenance.showsBasePromptSeparately == false)
     }
 }
 
