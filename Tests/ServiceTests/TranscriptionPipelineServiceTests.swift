@@ -275,7 +275,7 @@ struct TranscriptionPipelineServiceTests {
         network: LegacyTranscriptionNetworking = MockLegacyTranscriptionNetworking(),
         whisper: WhisperKitTranscribing = MockWhisperKitService()
     ) -> TranscriptionPipelineService {
-        TranscriptionPipelineService(network: network, whisperKitService: whisper)
+        TranscriptionPipelineService(network: network, whisperKitService: whisper, cohereMLXService: CohereMLXService())
     }
 
     private func makeTranscriptionRequest(

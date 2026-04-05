@@ -20,7 +20,8 @@ let package = Package(
                 "WhisperKit",
                 "KeyboardShortcuts"
             ],
-            path: "Sources"
+            path: "Sources",
+            resources: [.copy("Resources/cohere_bridge.py")]
         ),
         .testTarget(
             name: "MurmelnTests",

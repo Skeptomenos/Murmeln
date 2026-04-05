@@ -59,7 +59,8 @@ struct TranscriptionProviderTests {
     @Test("All TranscriptionProvider cases have valid default base URLs")
     func transcriptionProviderDefaultBaseURLs() {
         for provider in TranscriptionProvider.allCases {
-            if provider == .whisperKit {
+            if provider.isLocalNativeProvider {
+                // Local-native providers don't use a network base URL
                 #expect(provider.defaultBaseURL.isEmpty)
             } else {
                 let url = URL(string: provider.defaultBaseURL)
@@ -304,7 +305,7 @@ struct ReliabilityTests {
     
     @Test("Transcription provider defaults are HTTPS")
     func transcriptionHTTPS() {
-        for provider in TranscriptionProvider.allCases where provider != .localWhisper && provider != .whisperKit {
+        for provider in TranscriptionProvider.allCases where provider != .localWhisper && !provider.isLocalNativeProvider {
             #expect(provider.defaultBaseURL.hasPrefix("https://"))
         }
     }
@@ -673,7 +674,8 @@ struct IntegrationSimulationTests {
         let twoCallProviders = TranscriptionProvider.allCases.filter { !$0.supportsRefinementInOneCall }
         
         #expect(oneCallProviders.count == 2)
-        #expect(twoCallProviders.count == 4)
+        // whisperKit, cohereMLX, openAIWhisper, groqWhisper, localWhisper = 5 two-call providers
+        #expect(twoCallProviders.count == 5)
     }
     
     @Test("Provider to refinement provider mapping")

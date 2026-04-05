@@ -32,7 +32,9 @@
 		APP025 /* TranscriptionPipelineModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC025 /* TranscriptionPipelineModels.swift */; };
 		APP026 /* TranscriptionPipelineService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC026 /* TranscriptionPipelineService.swift */; };
 		APP027 /* BackendSettingsSections.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC027 /* BackendSettingsSections.swift */; };
+		APP028 /* CohereMLXService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC028 /* CohereMLXService.swift */; };
 		RES001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F2B02ABB2F0409FC00DD12FC /* Assets.xcassets */; };
+		RES002 /* cohere_bridge.py in Resources */ = {isa = PBXBuildFile; fileRef = SRC029 /* cohere_bridge.py */; };
 		PKG001 /* KeyboardShortcuts in Frameworks */ = {isa = PBXBuildFile; productRef = PKG002 /* KeyboardShortcuts */; };
 		PKG004 /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = PKG005 /* WhisperKit */; };
 /* End PBXBuildFile section */
@@ -66,6 +68,8 @@
 		SRC025 /* TranscriptionPipelineModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionPipelineModels.swift; sourceTree = "<group>"; };
 		SRC026 /* TranscriptionPipelineService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionPipelineService.swift; sourceTree = "<group>"; };
 		SRC027 /* BackendSettingsSections.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackendSettingsSections.swift; sourceTree = "<group>"; };
+		SRC028 /* CohereMLXService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CohereMLXService.swift; sourceTree = "<group>"; };
+		SRC029 /* cohere_bridge.py */ = {isa = PBXFileReference; lastKnownFileType = text.script.python; path = cohere_bridge.py; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -86,6 +90,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				RES001 /* Assets.xcassets in Resources */,
+				RES002 /* cohere_bridge.py in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -99,6 +104,7 @@
 				GRP002 /* Models */,
 				GRP003 /* Services */,
 				GRP004 /* Views */,
+				GRP006 /* Resources */,
 			);
 			path = Sources;
 			sourceTree = "<group>";
@@ -131,6 +137,7 @@
 				SRC021 /* KeychainService.swift */,
 				SRC023 /* WhisperKitService.swift */,
 				SRC026 /* TranscriptionPipelineService.swift */,
+				SRC028 /* CohereMLXService.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -155,6 +162,14 @@
 				PROD02 /* Murmeln Dev.app */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		GRP006 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				SRC029 /* cohere_bridge.py */,
+			);
+			path = Resources;
 			sourceTree = "<group>";
 		};
 		ROOT01 = {
@@ -258,6 +273,7 @@
 				APP025 /* TranscriptionPipelineModels.swift in Sources */,
 				APP026 /* TranscriptionPipelineService.swift in Sources */,
 				APP027 /* BackendSettingsSections.swift in Sources */,
+				APP028 /* CohereMLXService.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

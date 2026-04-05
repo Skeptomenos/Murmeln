@@ -143,6 +143,9 @@ final class NetworkService: Sendable {
                 model: model,
                 systemPrompt: systemPrompt
             )
+        case .cohereMLX:
+            // Cohere MLX is handled by CohereMLXService — not via NetworkService
+            throw NetworkError.apiError("Cohere MLX transcription is handled by CohereMLXService, not NetworkService.")
         }
     }
 

@@ -39,6 +39,7 @@ enum Provider: String, CaseIterable, Codable, Sendable {
 
 enum TranscriptionProvider: String, CaseIterable, Codable, Sendable {
     case whisperKit = "WhisperKit (On-Device)"
+    case cohereMLX = "Cohere MLX (On-Device)"
     case openAIWhisper = "OpenAI Whisper"
     case groqWhisper = "Groq Whisper"
     case gpt4oAudio = "GPT-4o Audio"
@@ -57,6 +58,7 @@ enum TranscriptionProvider: String, CaseIterable, Codable, Sendable {
     var defaultBaseURL: String {
         switch self {
         case .whisperKit: return ""
+        case .cohereMLX: return ""
         case .openAIWhisper: return "https://api.openai.com/v1"
         case .groqWhisper: return "https://api.groq.com/openai/v1"
         case .gpt4oAudio: return "https://api.openai.com/v1"
@@ -67,14 +69,14 @@ enum TranscriptionProvider: String, CaseIterable, Codable, Sendable {
     
     var requiresAPIKey: Bool {
         switch self {
-        case .whisperKit, .localWhisper: return false
+        case .whisperKit, .cohereMLX, .localWhisper: return false
         default: return true
         }
     }
     
     var isLocalNativeProvider: Bool {
         switch self {
-        case .whisperKit: return true
+        case .whisperKit, .cohereMLX: return true
         default: return false
         }
     }
@@ -101,6 +103,7 @@ enum TranscriptionProvider: String, CaseIterable, Codable, Sendable {
     var defaultModel: String {
         switch self {
         case .whisperKit: return "openai_whisper-small"
+        case .cohereMLX: return "CohereLabs/cohere-transcribe-03-2026"
         case .openAIWhisper: return "whisper-1"
         case .groqWhisper: return "whisper-large-v3-turbo"
         case .gpt4oAudio: return "gpt-4o-audio-preview"

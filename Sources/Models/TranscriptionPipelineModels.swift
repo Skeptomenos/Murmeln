@@ -13,6 +13,7 @@ enum TranscriptionSupportTier: String, Codable, CaseIterable, Sendable {
 
 enum TranscriptionBackendFamily: String, Codable, CaseIterable, Sendable {
     case firstClassLocalNativeWhisperKit = "first_class_local_native_whisperkit"
+    case firstClassLocalNativeCohereMLX = "first_class_local_native_cohere_mlx"
     case legacyCloudMultipart = "legacy_cloud_multipart"
     case legacyLocalServer = "legacy_local_server"
     case legacyCloudAudioInput = "legacy_cloud_audio_input"
@@ -70,6 +71,21 @@ extension TranscriptionProvider {
                     supportsLocalModelLifecycle: true,
                     isNetworked: false,
                     requiresInstallOrDownload: true
+                )
+            )
+        case .cohereMLX:
+            return TranscriptionBackendDescriptor(
+                provider: self,
+                kind: .localNative,
+                supportTier: .firstClass,
+                family: .firstClassLocalNativeCohereMLX,
+                capabilities: TranscriptionBackendCapabilities(
+                    requiresAPIKey: false,
+                    supportsOneCallRefinement: false,
+                    supportsLanguageOverride: true,   // explicit language, English-only
+                    supportsLocalModelLifecycle: false, // no in-app model switching
+                    isNetworked: false,
+                    requiresInstallOrDownload: true    // model must be pre-downloaded
                 )
             )
         case .openAIWhisper, .groqWhisper:

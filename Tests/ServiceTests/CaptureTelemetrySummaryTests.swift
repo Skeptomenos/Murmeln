@@ -9,7 +9,7 @@ struct CaptureTelemetrySummaryTests {
     func twoCallSummaryIncludesRefinementAttribution() async throws {
         let network = MockLegacyTranscriptionNetworkingForSummaryTests()
         let whisper = SummaryTestWhisperKitService()
-        let service = TranscriptionPipelineService(network: network, whisperKitService: whisper)
+        let service = TranscriptionPipelineService(network: network, whisperKitService: whisper, cohereMLXService: CohereMLXService())
 
         let settings = PipelineSettingsSnapshot(
             transcriptionProvider: .openAIWhisper,

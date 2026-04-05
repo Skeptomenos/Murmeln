@@ -355,6 +355,30 @@ private struct LegacyLocalWhisperServerBackend: TranscriptionBackendAdapter {
     }
 }
 
+private struct CohereMLXTranscriptionBackend: TranscriptionBackendAdapter {
+    private let cohereService: CohereMLXService
+
+    init(cohereService: CohereMLXService) {
+        self.cohereService = cohereService
+    }
+
+    func transcribe(request: TranscriptionRequest) async throws -> TranscriptionBackendExecution {
+        let language = "en"  // English-only in Phase 7B
+        let warmState: TranscriptionWarmState = await cohereService.modelState == .ready ? .warmReady : .coldLoad
+
+        let transcriptionStart = DispatchTime.now().uptimeNanoseconds
+        let text = try await cohereService.transcribe(audioURL: request.audioURL, language: language)
+        let transcriptionFinish = DispatchTime.now().uptimeNanoseconds
+
+        return TranscriptionBackendExecution(
+            text: text,
+            warmState: warmState,
+            backendLoadTiming: nil,
+            transcriptionTiming: StageTiming(startedAt: transcriptionStart, finishedAt: transcriptionFinish)
+        )
+    }
+}
+
 private struct LegacyCloudAudioInputBackend: TranscriptionBackendAdapter {
     private let network: LegacyTranscriptionNetworking
 
@@ -448,10 +472,12 @@ final class TranscriptionPipelineService: @unchecked Sendable {
     @MainActor
     static let shared = TranscriptionPipelineService(
         network: NetworkService.shared,
-        whisperKitService: WhisperKitService.shared
+        whisperKitService: WhisperKitService.shared,
+        cohereMLXService: CohereMLXService.shared
     )
 
     private let whisperKitBackend: WhisperKitTranscriptionBackend
+    private let cohereMLXBackend: CohereMLXTranscriptionBackend
     private let legacyCloudMultipartBackend: LegacyCloudMultipartTranscriptionBackend
     private let legacyLocalWhisperServerBackend: LegacyLocalWhisperServerBackend
     private let legacyCloudAudioInputBackend: LegacyCloudAudioInputBackend
@@ -459,9 +485,11 @@ final class TranscriptionPipelineService: @unchecked Sendable {
 
     init(
         network: LegacyTranscriptionNetworking,
-        whisperKitService: WhisperKitTranscribing
+        whisperKitService: WhisperKitTranscribing,
+        cohereMLXService: CohereMLXService
     ) {
         whisperKitBackend = WhisperKitTranscriptionBackend(whisperKitService: whisperKitService)
+        cohereMLXBackend = CohereMLXTranscriptionBackend(cohereService: cohereMLXService)
         legacyCloudMultipartBackend = LegacyCloudMultipartTranscriptionBackend(network: network)
         legacyLocalWhisperServerBackend = LegacyLocalWhisperServerBackend(network: network)
         legacyCloudAudioInputBackend = LegacyCloudAudioInputBackend(network: network)
@@ -547,6 +575,8 @@ final class TranscriptionPipelineService: @unchecked Sendable {
         switch family {
         case .firstClassLocalNativeWhisperKit:
             return whisperKitBackend
+        case .firstClassLocalNativeCohereMLX:
+            return cohereMLXBackend
         case .legacyCloudMultipart:
             return legacyCloudMultipartBackend
         case .legacyLocalServer:
@@ -557,16 +587,18 @@ final class TranscriptionPipelineService: @unchecked Sendable {
     }
 
     private func resolveLanguageContext(for settings: PipelineSettingsSnapshot) -> (TranscriptionLanguageMode, String?) {
-        guard settings.transcriptionProvider == .whisperKit else {
+        switch settings.transcriptionProvider {
+        case .whisperKit:
+            if settings.whisperKitLanguages.count == 1,
+               let language = settings.whisperKitLanguages.first {
+                return (.explicit, language.code)
+            }
+            return (.autoDetect, nil)
+        case .cohereMLX:
+            return (.explicit, "en")  // English-only in Phase 7B
+        default:
             return (.notApplicable, nil)
         }
-
-        if settings.whisperKitLanguages.count == 1,
-           let language = settings.whisperKitLanguages.first {
-            return (.explicit, language.code)
-        }
-
-        return (.autoDetect, nil)
     }
 
     private func refinementContext(

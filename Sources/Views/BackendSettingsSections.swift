@@ -1,8 +1,78 @@
 import SwiftUI
 
+struct CohereMLXSettingsSection: View {
+    @ObservedObject var cohereService: CohereMLXService
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Model")
+                        .font(.caption.weight(.medium))
+                    Text("CohereLabs/cohere-transcribe-03-2026")
+                        .font(.system(.body, design: .monospaced))
+                }
+
+                Spacer()
+
+                statusLabel
+            }
+
+            HStack {
+                Text("Language")
+                    .font(.caption.weight(.medium))
+                Spacer()
+                Text("English (fixed)")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            Text("First-class local-native transcription runs fully on-device via Python/MLX.")
+                .font(.caption)
+                .foregroundColor(.green)
+                .padding(10)
+                .background(Color.green.opacity(0.1))
+                .cornerRadius(8)
+
+            Text("Requires HuggingFace login and model acceptance. Run `hf auth login` once if not already configured.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .padding(12)
+        .background(Color(nsColor: .controlBackgroundColor))
+        .cornerRadius(8)
+    }
+
+    @ViewBuilder
+    private var statusLabel: some View {
+        switch cohereService.modelState {
+        case .notLoaded:
+            Label("Not Loaded", systemImage: "circle")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        case .loading:
+            HStack(spacing: 4) {
+                ProgressView().scaleEffect(0.6)
+                Text("Loading...")
+                    .font(.caption)
+                    .foregroundColor(.orange)
+            }
+        case .ready:
+            Label("Ready", systemImage: "circle.fill")
+                .font(.caption)
+                .foregroundColor(.green)
+        case .failed(let reason):
+            Label("Failed: \(reason)", systemImage: "xmark.circle.fill")
+                .font(.caption)
+                .foregroundColor(.red)
+        }
+    }
+}
+
 struct TranscriptionSettingsSection: View {
     @ObservedObject var settings: AppSettings
     @ObservedObject var whisperKitService: WhisperKitService
+    @ObservedObject var cohereMLXService: CohereMLXService
 
     @Binding var showingWhisperKitSetup: Bool
     @Binding var transcriptionModels: [ModelInfo]
@@ -64,6 +134,10 @@ struct TranscriptionSettingsSection: View {
                         whisperKitService: whisperKitService,
                         showingWhisperKitSetup: $showingWhisperKitSetup
                     )
+                }
+
+                if settings.transcriptionProvider == .cohereMLX {
+                    CohereMLXSettingsSection(cohereService: cohereMLXService)
                 }
 
                 if settings.transcriptionProvider.requiresAPIKey {

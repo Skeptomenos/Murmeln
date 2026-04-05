@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import Combine
 
 @main
 struct MurmelnApp: App {
@@ -131,6 +132,7 @@ struct MenuContent: View {
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     private var terminationInFlight = false
+    private var cancellables = Set<AnyCancellable>()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -186,6 +188,32 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         
         hotkey.start()
+
+        // Start Cohere bridge eagerly if it's the persisted provider
+        Task { @MainActor in
+            if AppSettings.shared.transcriptionProvider == .cohereMLX {
+                try? await CohereMLXService.shared.startBridge()
+            }
+        }
+
+        // Observe provider changes to start/stop Cohere bridge lifecycle
+        AppSettings.shared.objectWillChange
+            .receive(on: RunLoop.main)
+            .sink {
+                Task { @MainActor in
+                    let provider = AppSettings.shared.transcriptionProvider
+                    if provider == .cohereMLX {
+                        try? await CohereMLXService.shared.startBridge()
+                    } else {
+                        // Stop the bridge if switching away from Cohere and it is active
+                        let bridgeState = CohereMLXService.shared.modelState
+                        if bridgeState == .ready || bridgeState == .loading {
+                            CohereMLXService.shared.stopBridge()
+                        }
+                    }
+                }
+            }
+            .store(in: &cancellables)
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
