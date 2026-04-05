@@ -1,6 +1,12 @@
 import AppKit
 import Carbon.HIToolbox
 
+enum HotkeyServiceStopReason: String, Sendable {
+    case applicationTerminating = "application_terminating"
+    case restartingMonitor = "restarting_monitor"
+    case manualStop = "manual_stop"
+}
+
 @MainActor
 final class HotkeyService {
     static let shared = HotkeyService()
@@ -8,6 +14,7 @@ final class HotkeyService {
     private var flagsMonitor: Any?
     
     private var fnKeyIsDown = false
+    private var fnCaptureID: String?
     private var fnDelayedStartTask: Task<Void, Never>?
     private var fnRecordingDidStart = false
     private var fnPressTime: Date?
@@ -25,17 +32,27 @@ final class HotkeyService {
     var onHoldCancelled: (() -> Void)?
     var onLockEngaged: (() -> Void)?
     var onLockDisengaged: (() -> Void)?
+    var captureIDFactory: (() -> String?)?
     
     private init() {}
     
     func start() {
-        stop()
+        if flagsMonitor != nil || fnCaptureID != nil || fnDelayedStartTask != nil || fnRecordingDidStart || fnKeyIsDown || rightOptionDown || lastRightOptionTapTime != nil || isLocked {
+            stop(reason: .restartingMonitor)
+        } else {
+            resetState()
+        }
         
         flagsMonitor = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
             Task { @MainActor in
                 self?.handleFlagsChanged(event)
             }
         }
+
+        logDiagnostics("hotkey.service_started", metadata: [
+            "hold_threshold_ms": String(Int(holdThreshold * 1000)),
+            "double_tap_threshold_ms": String(Int(doubleTapThreshold * 1000))
+        ])
     }
     
     private func handleFlagsChanged(_ event: NSEvent) {
@@ -60,14 +77,18 @@ final class HotkeyService {
     private func handleFnPressed() {
         fnKeyIsDown = true
         fnPressTime = Date()
-        logDiagnostics("hotkey.fn.press", [
-            "hold_threshold_ms": String(Int(holdThreshold * 1000))
-        ])
-        
+         
         if isLocked {
-            logDiagnostics("hotkey.fn.press_ignored_locked")
+            logDiagnostics("hotkey.fn.press_ignored_locked", metadata: [
+                "reason": "lock_mode_active"
+            ])
             return
         }
+
+        fnCaptureID = captureIDFactory?()
+        logDiagnostics("hotkey.fn.press", captureID: fnCaptureID, metadata: [
+            "hold_threshold_ms": String(Int(holdThreshold * 1000))
+        ])
         
         onHoldStarted?()
         
@@ -80,9 +101,14 @@ final class HotkeyService {
             self.fnRecordingDidStart = true
             if let pressTime = self.fnPressTime {
                 let elapsedMs = Int(Date().timeIntervalSince(pressTime) * 1000)
-                self.logDiagnostics("hotkey.fn.threshold_met", ["elapsed_ms": String(elapsedMs)])
+                self.logDiagnostics("hotkey.fn.threshold_met", captureID: self.fnCaptureID, metadata: [
+                    "elapsed_ms": String(elapsedMs),
+                    "hold_threshold_ms": String(Int(threshold * 1000))
+                ])
             } else {
-                self.logDiagnostics("hotkey.fn.threshold_met")
+                self.logDiagnostics("hotkey.fn.threshold_met", captureID: self.fnCaptureID, metadata: [
+                    "hold_threshold_ms": String(Int(threshold * 1000))
+                ])
             }
             self.onKeyDown?()
         }
@@ -90,11 +116,17 @@ final class HotkeyService {
     
     private func handleFnReleased() {
         fnKeyIsDown = false
+        let captureID = fnCaptureID
         let holdDurationMs = fnPressTime.map { Int(Date().timeIntervalSince($0) * 1000) }
         fnPressTime = nil
         
         if isLocked {
-            logDiagnostics("hotkey.fn.release_ignored_locked", holdDurationMs.map { ["hold_ms": String($0)] } ?? [:])
+            logDiagnostics("hotkey.fn.release_ignored_locked", metadata: holdDurationMs.map {
+                [
+                    "hold_ms": String($0),
+                    "reason": "lock_mode_active"
+                ]
+            } ?? ["reason": "lock_mode_active"])
             return
         }
         
@@ -103,20 +135,39 @@ final class HotkeyService {
             fnDelayedStartTask = nil
             
             if !fnRecordingDidStart {
-                logDiagnostics("hotkey.fn.release_before_threshold", holdDurationMs.map { ["hold_ms": String($0)] } ?? [:])
+                logDiagnostics("hotkey.fn.release_before_threshold", captureID: captureID, metadata: holdDurationMs.map {
+                    [
+                        "hold_ms": String($0),
+                        "hold_threshold_ms": String(Int(holdThreshold * 1000))
+                    ]
+                } ?? ["hold_threshold_ms": String(Int(holdThreshold * 1000))])
                 onHoldCancelled?()
             } else {
                 fnRecordingDidStart = false
-                logDiagnostics("hotkey.fn.release_stop", holdDurationMs.map { ["hold_ms": String($0)] } ?? [:])
+                logDiagnostics("hotkey.fn.release_stop", captureID: captureID, metadata: holdDurationMs.map {
+                    ["hold_ms": String($0)]
+                } ?? [:])
                 onKeyUp?()
             }
         } else if fnRecordingDidStart {
             fnRecordingDidStart = false
-            logDiagnostics("hotkey.fn.release_stop_no_task", holdDurationMs.map { ["hold_ms": String($0)] } ?? [:])
+            logDiagnostics("hotkey.fn.release_stop_no_task", captureID: captureID, metadata: holdDurationMs.map {
+                [
+                    "hold_ms": String($0),
+                    "reason": "threshold_task_already_finished"
+                ]
+            } ?? ["reason": "threshold_task_already_finished"])
             onKeyUp?()
         } else {
-            logDiagnostics("hotkey.fn.release_noop", holdDurationMs.map { ["hold_ms": String($0)] } ?? [:])
+            logDiagnostics("hotkey.fn.release_noop", captureID: captureID, metadata: holdDurationMs.map {
+                [
+                    "hold_ms": String($0),
+                    "reason": "no_recording_in_progress"
+                ]
+            } ?? ["reason": "no_recording_in_progress"])
         }
+
+        fnCaptureID = nil
     }
     
     private func handleRightOptionKey(_ event: NSEvent) {
@@ -149,6 +200,7 @@ final class HotkeyService {
         if isLocked {
             isLocked = false
             fnRecordingDidStart = false
+            fnCaptureID = nil
             lastRightOptionTapTime = nil
             logDiagnostics("hotkey.lock.disengaged")
             onLockDisengaged?()
@@ -166,7 +218,7 @@ final class HotkeyService {
             
             isLocked = true
             lastRightOptionTapTime = nil
-            logDiagnostics("hotkey.lock.engaged", ["double_tap_threshold_ms": String(Int(doubleTapThreshold * 1000))])
+            logDiagnostics("hotkey.lock.engaged", metadata: ["double_tap_threshold_ms": String(Int(doubleTapThreshold * 1000))])
             onLockEngaged?()
             onKeyDown?()
         } else {
@@ -175,12 +227,34 @@ final class HotkeyService {
         }
     }
     
-    func stop() {
+    func stop(reason: HotkeyServiceStopReason = .manualStop) {
+        let hadMonitor = flagsMonitor != nil
+        let hadPendingThresholdTask = fnDelayedStartTask != nil
+        let recordingActive = fnRecordingDidStart
+        let fnWasDown = fnKeyIsDown
+        let wasLocked = isLocked
+        let captureID = fnCaptureID
+
         if let flagsMonitor {
             NSEvent.removeMonitor(flagsMonitor)
         }
+
+        resetState()
+
+        logDiagnostics("hotkey.service_stopped", captureID: captureID, metadata: [
+            "reason": reason.rawValue,
+            "had_monitor": String(hadMonitor),
+            "had_pending_threshold_task": String(hadPendingThresholdTask),
+            "recording_active": String(recordingActive),
+            "fn_key_down": String(fnWasDown),
+            "was_locked": String(wasLocked)
+        ])
+    }
+
+    private func resetState() {
         flagsMonitor = nil
         fnKeyIsDown = false
+        fnCaptureID = nil
         fnDelayedStartTask?.cancel()
         fnDelayedStartTask = nil
         fnRecordingDidStart = false
@@ -188,12 +262,11 @@ final class HotkeyService {
         lastRightOptionTapTime = nil
         isLocked = false
         fnPressTime = nil
-        logDiagnostics("hotkey.service_stopped")
     }
 
-    private func logDiagnostics(_ event: String, _ metadata: [String: String] = [:]) {
+    private func logDiagnostics(_ event: String, captureID: String? = nil, metadata: [String: String] = [:]) {
         Task {
-            await CaptureDiagnostics.shared.mark(event, metadata: metadata)
+            await CaptureDiagnostics.shared.mark(event, captureID: captureID, metadata: metadata)
         }
     }
 }

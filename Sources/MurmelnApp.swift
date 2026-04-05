@@ -130,12 +130,22 @@ struct MenuContent: View {
 }
 
 class AppDelegate: NSObject, NSApplicationDelegate {
+    private var terminationInFlight = false
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
-        
+
+        Task {
+            await CaptureDiagnostics.shared.startSession()
+        }
+         
         let hotkey = HotkeyService.shared
         let overlay = OverlayWindowController.shared
-        
+
+        hotkey.captureIDFactory = {
+            AppState.shared.prepareCaptureIDForHotkeyPressIfPossible()
+        }
+         
         overlay.showAlways()
         
         Task {
@@ -176,5 +186,31 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         
         hotkey.start()
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard !terminationInFlight else {
+            return .terminateNow
+        }
+
+        terminationInFlight = true
+        HotkeyService.shared.stop(reason: .applicationTerminating)
+
+        let activeCaptureID = AppState.shared.diagnosticsActiveCaptureID
+        let recordingPhase = AppState.shared.diagnosticsRecordingPhaseName
+
+        Task {
+            await CaptureDiagnostics.shared.endSession(
+                reason: HotkeyServiceStopReason.applicationTerminating.rawValue,
+                recordingPhase: recordingPhase,
+                activeCaptureID: activeCaptureID
+            )
+
+            await MainActor.run {
+                sender.reply(toApplicationShouldTerminate: true)
+            }
+        }
+
+        return .terminateLater
     }
 }

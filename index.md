@@ -1,6 +1,6 @@
 # Murmeln Index
 
-> Last updated: 2026-03-31
+> Last updated: 2026-04-05
 
 ## Project
 
@@ -8,11 +8,11 @@
 - **Tech:** Swift 6, SwiftUI, macOS, Apple Silicon
 - **README:** `README.md`
 - **Active roadmap Linear:** `DEV-33` — Murmeln truth pass and improvement roadmap
-- **Active phase Linear:** none currently active
-- **Last completed phase Linear:** `DEV-39` — Phase 3: Murmeln local-first architecture foundation
-- **Active phase plan:** none currently active
-- **Last completed phase plan:** `_planning/plans/2026-03-29-murmeln-phase-3-local-first-architecture-foundation.md`
-- **Recommended execution branch:** none until the next phase is promoted
+- **Active phase Linear:** `none currently active`
+- **Last completed phase Linear:** `DEV-40` — Phase 6: Murmeln performance hardening
+- **Active phase plan:** `none currently active`
+- **Last completed phase plan:** `_planning/plans/2026-03-30-murmeln-phase-6-performance-hardening.md`
+- **Recommended execution branch:** `none until the next phase is promoted`
 
 ## Commands
 
@@ -76,11 +76,12 @@ Use a lightweight router-plus-layers model.
 | Router | `index.md` | Points to the currently active planning files | Active file changes |
 | Roadmap | `_planning/plans/2026-03-28-murmeln-plan.md` | Strategy, phases, priorities, directives | Scope or priority changes |
 | Findings | `_planning/plans/2026-03-28-murmeln-findings.md` | Durable discoveries, evidence, and investigation notes | After investigation work |
-| Phase Plan | `none currently active` (last completed: `_planning/plans/2026-03-29-murmeln-phase-3-local-first-architecture-foundation.md`) | Execution-ready plan for the current phase | When the active phase changes |
+| Phase Plan | `none currently active` (last completed: `_planning/plans/2026-03-30-murmeln-phase-6-performance-hardening.md`) | Execution-ready plan for the current phase | When the active phase changes |
 
 External tracker:
 
 - `DEV-33` — umbrella roadmap tracking in Linear
+- `DEV-40` — completed Phase 6 execution tracking in Linear
 - `DEV-39` — completed Phase 3 execution tracking in Linear
 - `DEV-38` — completed Phase 2 execution tracking in Linear
 - `DEV-37` — completed Phase 1 execution tracking in Linear

@@ -152,6 +152,62 @@ struct CaptureTelemetrySummaryTests {
         #expect(summary.metadata["audit_variant_failure_count"] == "1")
         #expect(summary.metadata["audit_fanout_elapsed_ms"] == "0")
     }
+
+    @Test("Summary metadata includes raw and processed audio observations")
+    func summaryIncludesProcessingObservations() {
+        let context = TranscriptionRunContext(
+            provider: TranscriptionProvider.whisperKit.rawValue,
+            backendKind: .localNative,
+            supportTier: .firstClass,
+            pipelineMode: .transcribeOnly,
+            model: "openai_whisper-medium",
+            backendConfigFingerprint: "fingerprint",
+            refinementProvider: nil,
+            refinementModel: nil,
+            refinementConfigFingerprint: nil,
+            languageMode: .explicit,
+            languageCode: "en",
+            audioDurationMs: 800,
+            warmState: .warmReady,
+            refinementEnabled: false
+        )
+
+        let summary = CaptureTelemetrySummary(
+            captureID: "capture-3",
+            context: context,
+            timeline: CaptureStageTimeline(
+                stopRequestedAt: 1_000,
+                audioReadyAt: 1_100,
+                backendLoadStartedAt: nil,
+                backendLoadFinishedAt: nil,
+                transcriptionStartedAt: 1_200,
+                transcriptionFinishedAt: 1_500,
+                refinementStartedAt: nil,
+                refinementFinishedAt: nil,
+                finalResultReadyAt: 1_500,
+                pasteCommandSentAt: 1_550,
+                pasteCompletedAt: 1_650,
+                pasteSucceeded: false
+            ),
+            processing: CaptureProcessingObservations(
+                rawAudioDurationMs: 900,
+                rawAudioFileSizeBytes: 55_296,
+                processedAudioDurationMs: 800,
+                processedAudioFileSizeBytes: 49_152,
+                speechDetected: true,
+                trimResult: .completed,
+                transcriptionCharacterCount: 0,
+                completionReason: "empty_transcript_skipped"
+            )
+        )
+
+        #expect(summary.metadata["raw_audio_duration_ms"] == "900")
+        #expect(summary.metadata["processed_audio_duration_ms"] == "800")
+        #expect(summary.metadata["trim_result"] == "completed")
+        #expect(summary.metadata["speech_detected"] == "true")
+        #expect(summary.metadata["transcription_character_count"] == "0")
+        #expect(summary.metadata["completion_reason"] == "empty_transcript_skipped")
+    }
 }
 
 private final class MockLegacyTranscriptionNetworkingForSummaryTests: LegacyTranscriptionNetworking {

@@ -157,18 +157,24 @@ final class PasteService: Sendable {
     @MainActor
     func pasteAndRestore(text: String, captureID: String? = nil) async -> PasteTiming {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        logDiagnostics("paste.requested", captureID: captureID, metadata: [
+            "text_chars": String(text.count),
+            "trimmed_text_chars": String(trimmed.count)
+        ])
+
         guard !trimmed.isEmpty else {
             #if DEBUG
             print("⚠️ Skipping paste: text is empty")
             #endif
-            logDiagnostics("paste.skipped_empty", captureID: captureID)
+            logDiagnostics("paste.skipped_empty", captureID: captureID, metadata: [
+                "reason": "empty_text",
+                "text_chars": String(text.count),
+                "trimmed_text_chars": String(trimmed.count)
+            ])
             return PasteTiming(succeeded: false, commandSentElapsedMs: 0, totalElapsedMs: 0)
         }
 
         let pasteStartNs = DispatchTime.now().uptimeNanoseconds
-        logDiagnostics("paste.start", captureID: captureID, metadata: [
-            "text_chars": String(text.count)
-        ])
 
         let pasteboard = NSPasteboard.general
 
@@ -202,7 +208,8 @@ final class PasteService: Sendable {
         let totalElapsedMs = (pasteEndNs - pasteStartNs) / 1_000_000
         logDiagnostics("paste.complete", captureID: captureID, metadata: [
             "elapsed_ms": String(totalElapsedMs),
-            "restored_items": String(savedItems.count)
+            "restored_items": String(savedItems.count),
+            "succeeded": String(true)
         ])
 
         return PasteTiming(

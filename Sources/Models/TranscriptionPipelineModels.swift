@@ -203,6 +203,62 @@ struct TranscriptionRequest {
     let settings: PipelineSettingsSnapshot
 }
 
+struct WhisperKitDecodeRequestShape: Sendable, Equatable {
+    let profile: String
+    let languageMode: TranscriptionLanguageMode
+    let languageCode: String?
+    let declaredLanguages: [String]
+    let detectLanguage: Bool
+    let usePrefillPrompt: Bool
+    let usePrefillCache: Bool
+    let withoutTimestamps: Bool
+    let suppressBlank: Bool
+    let suppressTokens: [Int]
+    let droppedSuppressTokens: [Int]
+    let temperature: Double
+    let temperatureFallbackCount: Int
+    let noSpeechThreshold: Double?
+    let concurrentWorkerCount: Int
+    let chunkingStrategy: String
+
+    var diagnosticsMetadata: [String: String] {
+        let suppressTokensValue = suppressTokens.map { String($0) }.joined(separator: ",")
+        let droppedSuppressTokensValue = droppedSuppressTokens.map { String($0) }.joined(separator: ",")
+        let noSpeechThresholdValue = noSpeechThreshold.map { String($0) } ?? "nil"
+
+        return [
+            "profile": profile,
+            "language_mode": languageMode.rawValue,
+            "language_code": languageCode ?? "auto",
+            "declared_languages": declaredLanguages.isEmpty ? "none" : declaredLanguages.joined(separator: ","),
+            "detect_language": String(detectLanguage),
+            "prompt_prefill": String(usePrefillPrompt),
+            "prefill_cache": String(usePrefillCache),
+            "without_timestamps": String(withoutTimestamps),
+            "suppress_blank": String(suppressBlank),
+            "suppress_tokens": suppressTokensValue,
+            "dropped_suppress_tokens": droppedSuppressTokensValue,
+            "temperature": String(temperature),
+            "temperature_fallback_count": String(temperatureFallbackCount),
+            "no_speech_threshold": noSpeechThresholdValue,
+            "concurrent_worker_count": String(concurrentWorkerCount),
+            "chunking": chunkingStrategy
+        ]
+    }
+
+    func backendConfigFingerprint(
+        provider: TranscriptionProvider,
+        model: String,
+        pipelineMode: TranscriptionPipelineMode
+    ) -> String {
+        let suppressTokensValue = suppressTokens.map { String($0) }.joined(separator: ",")
+        let droppedSuppressTokensValue = droppedSuppressTokens.map { String($0) }.joined(separator: ",")
+        let noSpeechThresholdValue = noSpeechThreshold.map { String($0) } ?? "nil"
+
+        return "provider=\(provider.rawValue)|model=\(model)|profile=\(profile)|language_mode=\(languageMode.rawValue)|language_code=\(languageCode ?? "auto")|languages=\(declaredLanguages.joined(separator: ","))|detect_language=\(detectLanguage)|prompt_prefill=\(usePrefillPrompt)|prefill_cache=\(usePrefillCache)|without_timestamps=\(withoutTimestamps)|suppress_blank=\(suppressBlank)|suppress_tokens=\(suppressTokensValue)|dropped_suppress_tokens=\(droppedSuppressTokensValue)|temperature=\(temperature)|temperature_fallback_count=\(temperatureFallbackCount)|no_speech_threshold=\(noSpeechThresholdValue)|concurrent_worker_count=\(concurrentWorkerCount)|chunking=\(chunkingStrategy)|pipeline_mode=\(pipelineMode.rawValue)"
+    }
+}
+
 struct TranscriptionExecutionResult {
     let text: String
     let runContext: TranscriptionRunContext
@@ -280,12 +336,95 @@ struct CaptureStageTimeline {
     }
 }
 
+enum CaptureTrimResult: String, Sendable {
+    case notApplicable = "not_applicable"
+    case disabled = "disabled"
+    case completed = "completed"
+    case skipped = "skipped"
+}
+
+struct CaptureProcessingObservations: Sendable {
+    let rawAudioDurationMs: UInt64
+    let rawAudioFileSizeBytes: Int
+    let processedAudioDurationMs: UInt64
+    let processedAudioFileSizeBytes: Int
+    let speechDetected: Bool
+    let trimResult: CaptureTrimResult
+    let transcriptionCharacterCount: Int
+    let completionReason: String
+
+    static let empty = CaptureProcessingObservations(
+        rawAudioDurationMs: 0,
+        rawAudioFileSizeBytes: 0,
+        processedAudioDurationMs: 0,
+        processedAudioFileSizeBytes: 0,
+        speechDetected: false,
+        trimResult: .notApplicable,
+        transcriptionCharacterCount: 0,
+        completionReason: "not_recorded"
+    )
+}
+
+struct CaptureCompletionOutcome: Sendable, Equatable {
+    static let shortAudioUpperBoundMs: UInt64 = 1_000
+
+    let completionOutcome: String
+    let completionReason: String
+    let userFacingMessage: String?
+
+    static func classify(
+        transcriptionText: String,
+        pasteSucceeded: Bool,
+        processedAudioDurationMs: UInt64,
+        speechDetected: Bool
+    ) -> CaptureCompletionOutcome {
+        if pasteSucceeded {
+            return CaptureCompletionOutcome(
+                completionOutcome: "completed",
+                completionReason: "paste_completed",
+                userFacingMessage: nil
+            )
+        }
+
+        let trimmedText = transcriptionText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmedText.isEmpty,
+           speechDetected,
+           processedAudioDurationMs > 0,
+           processedAudioDurationMs <= shortAudioUpperBoundMs {
+            return CaptureCompletionOutcome(
+                completionOutcome: "completed_no_paste",
+                completionReason: "short_audio_empty_decode",
+                userFacingMessage: "Too short to transcribe reliably."
+            )
+        }
+
+        return CaptureCompletionOutcome(
+            completionOutcome: "completed_no_paste",
+            completionReason: "empty_transcript_skipped",
+            userFacingMessage: nil
+        )
+    }
+}
+
 struct CaptureTelemetrySummary {
     private static let missingStage = "not_applicable"
 
     let captureID: String
     let context: TranscriptionRunContext
     let timeline: CaptureStageTimeline
+    let processing: CaptureProcessingObservations
+
+    init(
+        captureID: String,
+        context: TranscriptionRunContext,
+        timeline: CaptureStageTimeline,
+        processing: CaptureProcessingObservations = .empty
+    ) {
+        self.captureID = captureID
+        self.context = context
+        self.timeline = timeline
+        self.processing = processing
+    }
 
     private func elapsedMs(from start: UInt64, to end: UInt64) -> UInt64 {
         guard end >= start else { return 0 }
@@ -324,6 +463,14 @@ struct CaptureTelemetrySummary {
             "audio_duration_ms": String(context.audioDurationMs),
             "warm_state": context.warmState.rawValue,
             "refinement_enabled": String(context.refinementEnabled),
+            "raw_audio_duration_ms": String(processing.rawAudioDurationMs),
+            "raw_audio_file_size_bytes": String(processing.rawAudioFileSizeBytes),
+            "processed_audio_duration_ms": String(processing.processedAudioDurationMs),
+            "processed_audio_file_size_bytes": String(processing.processedAudioFileSizeBytes),
+            "speech_detected": String(processing.speechDetected),
+            "trim_result": processing.trimResult.rawValue,
+            "transcription_character_count": String(processing.transcriptionCharacterCount),
+            "completion_reason": processing.completionReason,
             "stop_requested_at": String(timeline.stopRequestedAt),
             "audio_ready_at": String(timeline.audioReadyAt),
             "backend_load_started_at": optionalTimestamp(timeline.backendLoadStartedAt),

@@ -239,6 +239,38 @@ struct TranscriptionPipelineServiceTests {
         #expect(result.runContext.languageCode == nil)
     }
 
+    @Test("WhisperKit backend fingerprint uses actual normalized decode request")
+    func executeTranscriptionWhisperKitFingerprintReflectsActualDecodeRequest() async throws {
+        let network = MockLegacyTranscriptionNetworking()
+        let whisper = MockWhisperKitService()
+        whisper.modelState = .ready
+        whisper.selectedModel = "openai_whisper-small"
+        let service = makeService(network: network, whisper: whisper)
+
+        let settings = makeSettings(
+            transcriptionProvider: .whisperKit,
+            skipRefinement: true,
+            whisperKitLanguages: [.english]
+        )
+        let result = try await service.executeTranscription(
+            request: makeTranscriptionRequest(settings: settings)
+        )
+
+        let prepared = try #require(whisper.lastPreparedDecoding)
+        #expect(prepared.requestShape.usePrefillPrompt == true)
+        #expect(prepared.requestShape.usePrefillCache == true)
+        #expect(prepared.requestShape.withoutTimestamps == false)
+        #expect(prepared.requestShape.suppressTokens.isEmpty)
+        #expect(prepared.requestShape.droppedSuppressTokens == [-1])
+
+        #expect(result.runContext.backendConfigFingerprint.contains("without_timestamps=false"))
+        #expect(result.runContext.backendConfigFingerprint.contains("detect_language=false"))
+        #expect(result.runContext.backendConfigFingerprint.contains("prompt_prefill=true"))
+        #expect(result.runContext.backendConfigFingerprint.contains("prefill_cache=true"))
+        #expect(result.runContext.backendConfigFingerprint.contains("chunking=none"))
+        #expect(result.runContext.backendConfigFingerprint.contains("dropped_suppress_tokens=-1"))
+    }
+
     private func makeService(
         network: LegacyTranscriptionNetworking = MockLegacyTranscriptionNetworking(),
         whisper: WhisperKitTranscribing = MockWhisperKitService()
@@ -336,6 +368,7 @@ private final class MockWhisperKitService: WhisperKitTranscribing {
     var transcribeResult = "whisper result"
     var loadModelCalls: [String] = []
     var transcribeCalls = 0
+    var lastPreparedDecoding: WhisperKitPreparedDecoding?
 
     func loadModel(_ variant: String) async throws {
         loadModelCalls.append(variant)
@@ -343,8 +376,20 @@ private final class MockWhisperKitService: WhisperKitTranscribing {
         modelState = .ready
     }
 
+    func prepareDecoding(settings: PipelineSettingsSnapshot) -> WhisperKitPreparedDecoding {
+        let prepared = WhisperKitService.prepareDecoding(settings: settings)
+        lastPreparedDecoding = prepared
+        return prepared
+    }
+
     func transcribe(audioURL: URL) async throws -> String {
         transcribeCalls += 1
+        return transcribeResult
+    }
+
+    func transcribe(audioURL: URL, preparedDecoding: WhisperKitPreparedDecoding) async throws -> String {
+        transcribeCalls += 1
+        lastPreparedDecoding = preparedDecoding
         return transcribeResult
     }
 }

@@ -59,6 +59,35 @@ private actor WhisperKitWorker {
         
         return try await whisperKit.transcribe(audioPath: audioPath, decodeOptions: decodingOptions)
     }
+
+    func inspectVADChunkDiagnostics(audioPath: String, decodingOptions: DecodingOptions) async throws -> WhisperKitVADChunkDiagnostics? {
+        guard let whisperKit else {
+            throw WhisperKitService.ServiceError.modelNotLoaded
+        }
+
+        guard decodingOptions.chunkingStrategy == .vad else {
+            return nil
+        }
+
+        let audioArray = try AudioProcessor.loadAudioAsFloatArray(
+            fromPath: audioPath,
+            channelMode: whisperKit.audioInputConfig.channelMode
+        )
+        let maxChunkLength = whisperKit.featureExtractor.windowSamples ?? Constants.defaultWindowSamples
+        let chunker = VADAudioChunker(vad: whisperKit.voiceActivityDetector ?? EnergyVAD())
+        let chunks = try await chunker.chunkAll(
+            audioArray: audioArray,
+            maxChunkLength: maxChunkLength,
+            decodeOptions: decodingOptions
+        )
+        let audioDurationMs = Int((Double(audioArray.count) / Double(WhisperKit.sampleRate) * 1000).rounded())
+
+        return WhisperKitService.summarizeVADChunks(
+            chunks,
+            audioDurationMs: audioDurationMs,
+            maxChunkLengthSamples: maxChunkLength
+        )
+    }
     
     func isLoaded(variant: String) -> Bool {
         return whisperKit != nil && loadedVariant == variant
@@ -66,6 +95,87 @@ private actor WhisperKitWorker {
     
     var currentVariant: String? {
         loadedVariant
+    }
+}
+
+struct WhisperKitPreparedDecoding: Sendable {
+    let options: DecodingOptions
+    let requestShape: WhisperKitDecodeRequestShape
+}
+
+struct WhisperKitTranscriptionOutput: Sendable {
+    let text: String
+    let segments: [TranscriptionSegment]
+}
+
+struct WhisperKitVADChunkBoundary: Sendable, Equatable {
+    let startMs: Int
+    let endMs: Int
+
+    var durationMs: Int {
+        max(0, endMs - startMs)
+    }
+}
+
+struct WhisperKitVADChunkDiagnostics: Sendable, Equatable {
+    let strategy: String
+    let audioDurationMs: Int
+    let maxChunkLengthMs: Int
+    let chunkCount: Int
+    let boundaries: [WhisperKitVADChunkBoundary]
+    let boundariesTruncated: Bool
+    let totalCoveredAudioMs: Int
+    let leadingGapMs: Int
+    let tailGapMs: Int
+    let longestChunkMs: Int
+    let shortestChunkMs: Int
+
+    var diagnosticsMetadata: [String: String] {
+        let chunkBoundariesValue = boundaries.map { "\($0.startMs)-\($0.endMs)" }.joined(separator: ";")
+
+        return [
+            "strategy": strategy,
+            "audio_duration_ms": String(audioDurationMs),
+            "max_chunk_length_ms": String(maxChunkLengthMs),
+            "chunk_count": String(chunkCount),
+            "chunk_boundaries_ms": chunkBoundariesValue,
+            "chunk_boundaries_truncated": String(boundariesTruncated),
+            "total_covered_audio_ms": String(totalCoveredAudioMs),
+            "leading_gap_ms": String(leadingGapMs),
+            "tail_gap_ms": String(tailGapMs),
+            "longest_chunk_ms": String(longestChunkMs),
+            "shortest_chunk_ms": String(shortestChunkMs)
+        ]
+    }
+}
+
+struct WhisperKitDecodedSegmentCoverageDiagnostics: Sendable, Equatable {
+    let processedAudioDurationMs: Int
+    let segmentCount: Int
+    let nonEmptySegmentCount: Int
+    let boundaries: [WhisperKitVADChunkBoundary]
+    let boundariesTruncated: Bool
+    let firstSegmentStartMs: Int?
+    let lastSegmentStartMs: Int?
+    let lastSegmentEndMs: Int?
+    let maxSegmentEndMs: Int?
+    let decodedTailGapMs: Int
+
+    var diagnosticsMetadata: [String: String] {
+        let segmentBoundariesValue = boundaries.map { "\($0.startMs)-\($0.endMs)" }.joined(separator: ";")
+
+        return [
+            "processed_audio_duration_ms": String(processedAudioDurationMs),
+            "segment_count": String(segmentCount),
+            "non_empty_segment_count": String(nonEmptySegmentCount),
+            "segment_boundaries_ms": segmentBoundariesValue,
+            "segment_boundaries_truncated": String(boundariesTruncated),
+            "first_segment_start_ms": firstSegmentStartMs.map(String.init) ?? "nil",
+            "last_segment_start_ms": lastSegmentStartMs.map(String.init) ?? "nil",
+            "last_segment_end_ms": lastSegmentEndMs.map(String.init) ?? "nil",
+            "max_segment_end_ms": maxSegmentEndMs.map(String.init) ?? "nil",
+            "decoded_tail_gap_ms": String(decodedTailGapMs)
+        ]
     }
 }
 
@@ -89,6 +199,10 @@ final class WhisperKitService: ObservableObject {
     
     // Worker actor
     private let worker = WhisperKitWorker()
+
+    private static var captureDiagnosticsInspectionEnabled: Bool {
+        AppIdentity.isDevelopmentBuild || ProcessInfo.processInfo.environment["MURMELN_CAPTURE_DIAGNOSTICS"] == "1"
+    }
     
     enum ModelState: Equatable {
         case unloaded
@@ -129,6 +243,193 @@ final class WhisperKitService: ObservableObject {
         Task {
             scanDownloadedModels()
         }
+    }
+
+    @MainActor
+    func prepareDecoding(settings: PipelineSettingsSnapshot) -> WhisperKitPreparedDecoding {
+        Self.prepareDecoding(settings: settings)
+    }
+
+    @MainActor
+    func inspectVADChunkDiagnostics(audioURL: URL, preparedDecoding: WhisperKitPreparedDecoding) async throws -> WhisperKitVADChunkDiagnostics? {
+        guard Self.captureDiagnosticsInspectionEnabled else {
+            return nil
+        }
+
+        return try await worker.inspectVADChunkDiagnostics(
+            audioPath: audioURL.path,
+            decodingOptions: preparedDecoding.options
+        )
+    }
+
+    @MainActor
+    static func prepareDecoding(settings: PipelineSettingsSnapshot) -> WhisperKitPreparedDecoding {
+        let rawSuppressTokens: [Int]
+        var decodingOptions: DecodingOptions
+
+        switch settings.whisperKitProfile {
+        case .fast:
+            rawSuppressTokens = [-1]
+            decodingOptions = DecodingOptions(
+                verbose: false,
+                task: .transcribe,
+                temperature: 0,
+                temperatureFallbackCount: 2,
+                usePrefillPrompt: true,
+                usePrefillCache: true,
+                skipSpecialTokens: true,
+                withoutTimestamps: true,
+                suppressBlank: true,
+                supressTokens: rawSuppressTokens,
+                noSpeechThreshold: 0.6,
+                concurrentWorkerCount: 4,
+                chunkingStrategy: ChunkingStrategy.none
+            )
+        case .balanced:
+            rawSuppressTokens = [-1]
+            decodingOptions = DecodingOptions(
+                verbose: false,
+                task: .transcribe,
+                temperature: 0,
+                temperatureFallbackCount: 3,
+                usePrefillPrompt: true,
+                usePrefillCache: true,
+                skipSpecialTokens: true,
+                withoutTimestamps: false,
+                suppressBlank: true,
+                supressTokens: rawSuppressTokens,
+                noSpeechThreshold: 0.6,
+                chunkingStrategy: ChunkingStrategy.none
+            )
+        case .accurate:
+            rawSuppressTokens = [-1]
+            decodingOptions = DecodingOptions(
+                verbose: false,
+                task: .transcribe,
+                temperature: 0,
+                temperatureFallbackCount: 5,
+                usePrefillPrompt: true,
+                usePrefillCache: true,
+                skipSpecialTokens: true,
+                withoutTimestamps: false,
+                suppressBlank: true,
+                supressTokens: rawSuppressTokens,
+                noSpeechThreshold: 0.6,
+                chunkingStrategy: .vad
+            )
+        case .custom:
+            rawSuppressTokens = []
+            decodingOptions = DecodingOptions(
+                verbose: false,
+                task: .transcribe,
+                temperature: Float(settings.whisperKitTemperature),
+                usePrefillPrompt: settings.whisperKitPromptPrefill,
+                usePrefillCache: settings.whisperKitPromptPrefill,
+                withoutTimestamps: !settings.whisperKitEnableTimestamps,
+                supressTokens: rawSuppressTokens,
+                chunkingStrategy: settings.whisperKitUseVAD ? .vad : ChunkingStrategy.none
+            )
+        }
+
+        let normalization = normalizeSuppressTokens(rawSuppressTokens)
+        decodingOptions.supressTokens = normalization.normalizedTokens
+
+        let (languageMode, languageCode) = resolveLanguageContext(settings.whisperKitLanguages)
+        if let languageCode {
+            decodingOptions.language = languageCode
+            decodingOptions.detectLanguage = false
+        } else {
+            decodingOptions.language = nil
+            decodingOptions.detectLanguage = true
+        }
+
+        let requestShape = WhisperKitDecodeRequestShape(
+            profile: settings.whisperKitProfile.rawValue,
+            languageMode: languageMode,
+            languageCode: languageCode,
+            declaredLanguages: settings.whisperKitLanguages.map(\.rawValue).sorted(),
+            detectLanguage: decodingOptions.detectLanguage,
+            usePrefillPrompt: decodingOptions.usePrefillPrompt,
+            usePrefillCache: decodingOptions.usePrefillCache,
+            withoutTimestamps: decodingOptions.withoutTimestamps,
+            suppressBlank: decodingOptions.suppressBlank,
+            suppressTokens: decodingOptions.supressTokens,
+            droppedSuppressTokens: normalization.droppedTokens,
+            temperature: Double(decodingOptions.temperature),
+            temperatureFallbackCount: decodingOptions.temperatureFallbackCount,
+            noSpeechThreshold: decodingOptions.noSpeechThreshold.map(Double.init),
+            concurrentWorkerCount: decodingOptions.concurrentWorkerCount,
+            chunkingStrategy: decodingOptions.chunkingStrategy?.rawValue ?? ChunkingStrategy.none.rawValue
+        )
+
+        return WhisperKitPreparedDecoding(options: decodingOptions, requestShape: requestShape)
+    }
+
+    private static func normalizeSuppressTokens(_ rawSuppressTokens: [Int]) -> (normalizedTokens: [Int], droppedTokens: [Int]) {
+        var normalizedTokens: [Int] = []
+        var droppedTokens: [Int] = []
+        var seen = Set<Int>()
+
+        for token in rawSuppressTokens {
+            if token < 0 {
+                droppedTokens.append(token)
+                continue
+            }
+
+            if seen.insert(token).inserted {
+                normalizedTokens.append(token)
+            }
+        }
+
+        return (normalizedTokens, droppedTokens)
+    }
+
+    private static func resolveLanguageContext(_ languages: [WhisperKitLanguage]) -> (TranscriptionLanguageMode, String?) {
+        if languages.count == 1, let language = languages.first {
+            return (.explicit, language.code)
+        }
+
+        return (.autoDetect, nil)
+    }
+
+    nonisolated static func summarizeVADChunks(
+        _ chunks: [AudioChunk],
+        audioDurationMs: Int,
+        maxChunkLengthSamples: Int,
+        sampleRate: Int = WhisperKit.sampleRate,
+        logBoundaryLimit: Int = 64
+    ) -> WhisperKitVADChunkDiagnostics {
+        let safeSampleRate = max(sampleRate, 1)
+        let boundaries = chunks.map { chunk in
+            let startMs = Int((Double(chunk.seekOffsetIndex) / Double(safeSampleRate) * 1000).rounded())
+            let endFrame = chunk.seekOffsetIndex + chunk.audioSamples.count
+            let endMs = Int((Double(endFrame) / Double(safeSampleRate) * 1000).rounded())
+            return WhisperKitVADChunkBoundary(startMs: startMs, endMs: endMs)
+        }
+
+        let totalCoveredAudioMs = boundaries.reduce(0) { $0 + $1.durationMs }
+        let leadingGapMs = boundaries.first?.startMs ?? audioDurationMs
+        let lastChunkEndMs = boundaries.last?.endMs ?? 0
+        let tailGapMs = max(0, audioDurationMs - lastChunkEndMs)
+        let longestChunkMs = boundaries.map(\.durationMs).max() ?? 0
+        let shortestChunkMs = boundaries.map(\.durationMs).min() ?? 0
+        let boundaryLimit = max(logBoundaryLimit, 0)
+        let loggedBoundaries = Array(boundaries.prefix(boundaryLimit))
+        let maxChunkLengthMs = Int((Double(maxChunkLengthSamples) / Double(safeSampleRate) * 1000).rounded())
+
+        return WhisperKitVADChunkDiagnostics(
+            strategy: ChunkingStrategy.vad.rawValue,
+            audioDurationMs: audioDurationMs,
+            maxChunkLengthMs: maxChunkLengthMs,
+            chunkCount: boundaries.count,
+            boundaries: loggedBoundaries,
+            boundariesTruncated: loggedBoundaries.count < boundaries.count,
+            totalCoveredAudioMs: totalCoveredAudioMs,
+            leadingGapMs: max(0, leadingGapMs),
+            tailGapMs: tailGapMs,
+            longestChunkMs: longestChunkMs,
+            shortestChunkMs: shortestChunkMs
+        )
     }
     
     // Fetch available models from HuggingFace
@@ -257,86 +558,57 @@ final class WhisperKitService: ObservableObject {
     
     // Transcribe audio file
     func transcribe(audioURL: URL) async throws -> String {
+        let preparedDecoding = prepareDecoding(settings: AppSettings.shared.pipelineSettingsSnapshot())
+        return try await transcribe(audioURL: audioURL, preparedDecoding: preparedDecoding)
+    }
+
+    func transcribe(audioURL: URL, preparedDecoding: WhisperKitPreparedDecoding) async throws -> String {
+        let output = try await transcribeOutput(audioURL: audioURL, preparedDecoding: preparedDecoding)
+        return output.text
+    }
+
+    func transcribeOutput(audioURL: URL, preparedDecoding: WhisperKitPreparedDecoding) async throws -> WhisperKitTranscriptionOutput {
         guard modelState == .ready else {
             throw ServiceError.modelNotLoaded
         }
-        
-        let settings = AppSettings.shared
-        var decodingOptions: DecodingOptions
-        
-        // Base configuration based on profile
-        switch settings.whisperKitProfile {
-        case .fast:
-            decodingOptions = DecodingOptions(
-                verbose: false,
-                task: .transcribe,
-                temperature: 0,
-                temperatureFallbackCount: 2,
-                usePrefillPrompt: true,
-                usePrefillCache: true,
-                skipSpecialTokens: true,
-                withoutTimestamps: true,
-                suppressBlank: true,
-                supressTokens: [-1],
-                noSpeechThreshold: 0.6,
-                concurrentWorkerCount: 4,
-                chunkingStrategy: ChunkingStrategy.none
-            )
-        case .balanced:
-            decodingOptions = DecodingOptions(
-                verbose: false,
-                task: .transcribe,
-                temperature: 0,
-                temperatureFallbackCount: 3,
-                usePrefillPrompt: true,
-                usePrefillCache: true,
-                skipSpecialTokens: true,
-                withoutTimestamps: false,
-                suppressBlank: true,
-                supressTokens: [-1],
-                noSpeechThreshold: 0.6,
-                chunkingStrategy: ChunkingStrategy.none
-            )
-        case .accurate:
-            decodingOptions = DecodingOptions(
-                verbose: false,
-                task: .transcribe,
-                temperature: 0,
-                temperatureFallbackCount: 5,
-                usePrefillPrompt: true,
-                usePrefillCache: true,
-                skipSpecialTokens: true,
-                withoutTimestamps: false,
-                suppressBlank: true,
-                supressTokens: [-1],
-                noSpeechThreshold: 0.6,
-                chunkingStrategy: .vad
-            )
-        case .custom:
-            decodingOptions = DecodingOptions(
-                verbose: false,
-                task: .transcribe,
-                temperature: Float(settings.whisperKitTemperature),
-                usePrefillPrompt: settings.whisperKitPromptPrefill,
-                usePrefillCache: settings.whisperKitPromptPrefill,
-                withoutTimestamps: !settings.whisperKitEnableTimestamps,
-                chunkingStrategy: settings.whisperKitUseVAD ? .vad : ChunkingStrategy.none
+
+        let results = try await worker.transcribe(audioPath: audioURL.path, decodingOptions: preparedDecoding.options)
+        let segments = results.flatMap(\.segments)
+        let text = results.map { $0.text }.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+        return WhisperKitTranscriptionOutput(text: text, segments: segments)
+    }
+
+    nonisolated static func summarizeDecodedSegmentCoverage(
+        _ segments: [TranscriptionSegment],
+        processedAudioDurationMs: Int,
+        logBoundaryLimit: Int = 64
+    ) -> WhisperKitDecodedSegmentCoverageDiagnostics {
+        let nonEmptySegments = segments.filter { $0.end > $0.start }
+        let boundaries = nonEmptySegments.map { segment in
+            WhisperKitVADChunkBoundary(
+                startMs: Int((Double(segment.start) * 1000).rounded()),
+                endMs: Int((Double(segment.end) * 1000).rounded())
             )
         }
-        
-        // Apply language override
-        let selectedLanguages = settings.whisperKitLanguages
-        if selectedLanguages.count == 1, let lang = selectedLanguages.first {
-            decodingOptions.language = lang.code
-            decodingOptions.detectLanguage = false
-        } else {
-            // 0 or >1 languages -> Auto detect
-            decodingOptions.language = nil
-            decodingOptions.detectLanguage = true
-        }
-        
-        let results = try await worker.transcribe(audioPath: audioURL.path, decodingOptions: decodingOptions)
-        return results.map { $0.text }.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+        let boundaryLimit = max(logBoundaryLimit, 0)
+        let loggedBoundaries = Array(boundaries.prefix(boundaryLimit))
+        let firstBoundary = boundaries.first
+        let lastBoundary = boundaries.last
+        let maxSegmentEndMs = boundaries.map(\.endMs).max()
+        let decodedTailGapMs = max(0, processedAudioDurationMs - (maxSegmentEndMs ?? 0))
+
+        return WhisperKitDecodedSegmentCoverageDiagnostics(
+            processedAudioDurationMs: processedAudioDurationMs,
+            segmentCount: segments.count,
+            nonEmptySegmentCount: nonEmptySegments.count,
+            boundaries: loggedBoundaries,
+            boundariesTruncated: loggedBoundaries.count < boundaries.count,
+            firstSegmentStartMs: firstBoundary?.startMs,
+            lastSegmentStartMs: lastBoundary?.startMs,
+            lastSegmentEndMs: lastBoundary?.endMs,
+            maxSegmentEndMs: maxSegmentEndMs,
+            decodedTailGapMs: decodedTailGapMs
+        )
     }
     
     // Check what models are already downloaded

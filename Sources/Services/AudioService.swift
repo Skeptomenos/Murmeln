@@ -20,6 +20,8 @@ actor AudioRecorder {
         var preRollFrameCount = 0
         var preRollMaxFrames = 0
         var pendingPreRollFlush = false
+        var captureStartedAtNs: UInt64?
+        var firstCaptureBufferLogged = false
     }
     
     private let tapState = TapState()
@@ -139,6 +141,7 @@ actor AudioRecorder {
             
             func handleOutputBuffer(_ processedBuffer: AVAudioPCMBuffer) {
                 if tapState.isWriting, let file = tapState.audioFile {
+                    let hadPendingPreRollFlush = tapState.pendingPreRollFlush
                     if tapState.pendingPreRollFlush {
                         _ = try? Self.flushPreRollBuffers(
                             to: file,
@@ -146,6 +149,27 @@ actor AudioRecorder {
                             totalFrames: &tapState.preRollFrameCount,
                             pendingFlush: &tapState.pendingPreRollFlush
                         )
+                    }
+
+                    if !tapState.firstCaptureBufferLogged {
+                        tapState.firstCaptureBufferLogged = true
+                        let captureStartNs = tapState.captureStartedAtNs
+                        let firstBufferElapsedMs: UInt64
+                        if let captureStartNs {
+                            firstBufferElapsedMs = (DispatchTime.now().uptimeNanoseconds - captureStartNs) / 1_000_000
+                        } else {
+                            firstBufferElapsedMs = 0
+                        }
+
+                        if let self {
+                            Task {
+                                await self.recordFirstCaptureBuffer(
+                                    frameCount: Int(processedBuffer.frameLength),
+                                    elapsedMs: firstBufferElapsedMs,
+                                    pendingPreRollFlush: hadPendingPreRollFlush
+                                )
+                            }
+                        }
                     }
 
                     try? file.write(from: processedBuffer)
@@ -246,6 +270,8 @@ actor AudioRecorder {
         // Signal the tap to start writing. Keep one deferred flush armed so
         // any buffers that arrive between the synchronous flush above and the
         // next tap callback still get written in-order before live audio.
+        tapState.captureStartedAtNs = DispatchTime.now().uptimeNanoseconds
+        tapState.firstCaptureBufferLogged = false
         tapState.pendingPreRollFlush = true
         tapState.isWriting = true
 
@@ -288,6 +314,8 @@ actor AudioRecorder {
         tapState.preRollFrameCount = 0
         tapState.preRollMaxFrames = 0
         tapState.pendingPreRollFlush = false
+        tapState.captureStartedAtNs = nil
+        tapState.firstCaptureBufferLogged = false
         
         #if DEBUG
         print("❄️ Warm-up cancelled")
@@ -455,6 +483,15 @@ actor AudioRecorder {
                 "flushed_frames": String(flushedFrames)
             ])
         }
+
+        let recordedFrames = audioFile?.length ?? 0
+        let sampleRate = cachedOutputFormat?.sampleRate ?? tapState.outputFormat?.sampleRate ?? 0
+        let audioDurationMs: UInt64
+        if sampleRate > 0 {
+            audioDurationMs = UInt64((Double(recordedFrames) / sampleRate * 1000).rounded())
+        } else {
+            audioDurationMs = 0
+        }
         
         let url = tempFileURL
         
@@ -473,12 +510,17 @@ actor AudioRecorder {
         tapState.preRollFrameCount = 0
         tapState.preRollMaxFrames = 0
         tapState.pendingPreRollFlush = false
+        tapState.captureStartedAtNs = nil
+        tapState.firstCaptureBufferLogged = false
 
         if let url {
             let fileSize = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) ?? -1
             logDiagnostics("audio.capture.stop_complete", [
                 "file": url.lastPathComponent,
-                "file_size_bytes": String(fileSize)
+                "file_size_bytes": String(fileSize),
+                "recorded_frames": String(recordedFrames),
+                "sample_rate": String(format: "%.0f", sampleRate),
+                "audio_duration_ms": String(audioDurationMs)
             ])
         } else {
             logDiagnostics("audio.capture.stop_complete", ["file": "nil"])
@@ -494,6 +536,14 @@ actor AudioRecorder {
         Task {
             await CaptureDiagnostics.shared.mark(event, captureID: captureID, metadata: metadata)
         }
+    }
+
+    private func recordFirstCaptureBuffer(frameCount: Int, elapsedMs: UInt64, pendingPreRollFlush: Bool) {
+        logDiagnostics("audio.capture.first_buffer_received", [
+            "frame_count": String(frameCount),
+            "elapsed_ms": String(elapsedMs),
+            "pending_pre_roll_flush": String(pendingPreRollFlush)
+        ])
     }
 
     private func flushPendingConvertedFrames() -> Int {
