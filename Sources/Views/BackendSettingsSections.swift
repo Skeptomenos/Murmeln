@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct CohereMLXSettingsSection: View {
+    @ObservedObject var settings: AppSettings
     @ObservedObject var cohereService: CohereMLXService
 
     var body: some View {
@@ -23,8 +24,8 @@ struct CohereMLXSettingsSection: View {
                     .font(.caption.weight(.medium))
                 Spacer()
                 Picker("Language", selection: Binding(
-                    get: { AppSettings.shared.cohereLanguage },
-                    set: { AppSettings.shared.cohereLanguage = $0 }
+                    get: { settings.cohereLanguage },
+                    set: { settings.cohereLanguage = $0 }
                 )) {
                     ForEach(CohereLanguage.allCases, id: \.self) { language in
                         Text(language.rawValue).tag(language)
@@ -144,7 +145,7 @@ struct TranscriptionSettingsSection: View {
                 }
 
                 if settings.transcriptionProvider == .cohereMLX {
-                    CohereMLXSettingsSection(cohereService: cohereMLXService)
+                    CohereMLXSettingsSection(settings: settings, cohereService: cohereMLXService)
                 }
 
                 if settings.transcriptionProvider.requiresAPIKey {

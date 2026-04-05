@@ -51,6 +51,7 @@ struct MenuContent: View {
     @ObservedObject private var overlay = OverlayWindowController.shared
     @ObservedObject private var historyStore = HistoryStore.shared
     @ObservedObject private var updateService = UpdateService.shared
+    @ObservedObject private var settings = AppSettings.shared
     
     var body: some View {
         if overlay.state == .locked {
@@ -74,6 +75,22 @@ struct MenuContent: View {
         }
         
         Divider()
+        
+        if settings.transcriptionProvider == .cohereMLX {
+            Menu("Language: \(settings.cohereLanguage.rawValue)") {
+                ForEach(CohereLanguage.allCases, id: \.self) { language in
+                    Button {
+                        settings.cohereLanguage = language
+                    } label: {
+                        if language == settings.cohereLanguage {
+                            Text("✓ \(language.rawValue)")
+                        } else {
+                            Text("   \(language.rawValue)")
+                        }
+                    }
+                }
+            }
+        }
         
         Button("Show History (\(historyStore.entries.count))") {
             HistoryWindowController.shared.show()
