@@ -43,6 +43,7 @@ final class CohereMLXService: ObservableObject {
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         proc.arguments = ["python3", scriptURL.path]
+        proc.environment = CohereMLXService.bridgeEnvironment()
 
         let stdin = Pipe()
         let stdout = Pipe()
@@ -211,6 +212,47 @@ final class CohereMLXService: ObservableObject {
     #endif
 
     // MARK: - Helpers
+
+    /// Resolve the user's login-shell PATH so `/usr/bin/env python3` finds
+    /// the same Python the user has in their terminal (homebrew, pyenv, conda,
+    /// framework install, etc.). macOS GUI apps inherit a minimal environment
+    /// that typically only contains `/usr/bin`, which points at the system
+    /// Python 3.9 — usually missing `mlx_audio`.
+    private nonisolated static func bridgeEnvironment() -> [String: String] {
+        var env = ProcessInfo.processInfo.environment
+
+        let shell = env["SHELL"] ?? "/bin/zsh"
+        let probe = Process()
+        probe.executableURL = URL(fileURLWithPath: shell)
+        probe.arguments = ["-l", "-c", "echo $PATH"]
+        let pipe = Pipe()
+        probe.standardOutput = pipe
+        probe.standardError = FileHandle.nullDevice
+
+        do {
+            try probe.run()
+            probe.waitUntilExit()
+            if let shellPath = String(
+                data: pipe.fileHandleForReading.readDataToEndOfFile(),
+                encoding: .utf8
+            )?.trimmingCharacters(in: .whitespacesAndNewlines), !shellPath.isEmpty {
+                env["PATH"] = shellPath
+                return env
+            }
+        } catch {
+            logger.warning("Failed to resolve login shell PATH: \(error.localizedDescription, privacy: .public)")
+        }
+
+        // Fallback: augment current PATH with common Python locations
+        let fallbackPaths = [
+            "/opt/homebrew/bin",
+            "/usr/local/bin",
+            "/Library/Frameworks/Python.framework/Versions/Current/bin"
+        ]
+        let currentPath = env["PATH"] ?? "/usr/bin:/bin"
+        env["PATH"] = (fallbackPaths + [currentPath]).joined(separator: ":")
+        return env
+    }
 
     private func bridgeScriptURL() -> URL {
         // Xcode app bundle: Bundle.main has resources from Copy Bundle Resources phase
