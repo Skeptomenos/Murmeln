@@ -367,15 +367,53 @@ private struct CohereMLXTranscriptionBackend: TranscriptionBackendAdapter {
         let warmState: TranscriptionWarmState = await cohereService.modelState == .ready ? .warmReady : .coldLoad
 
         let transcriptionStart = DispatchTime.now().uptimeNanoseconds
-        let text = try await cohereService.transcribe(audioURL: request.audioURL, language: language)
-        let transcriptionFinish = DispatchTime.now().uptimeNanoseconds
 
-        return TranscriptionBackendExecution(
-            text: text,
-            warmState: warmState,
-            backendLoadTiming: nil,
-            transcriptionTiming: StageTiming(startedAt: transcriptionStart, finishedAt: transcriptionFinish)
-        )
+        // P1-9: Add diagnostics matching pattern from other backends
+        logCaptureDiagnostics("app.backend_transcription.started", captureID: request.captureID, metadata: [
+            "provider": "cohereMLX",
+            "backend_kind": TranscriptionBackendKind.localNative.rawValue,
+            "support_tier": TranscriptionSupportTier.firstClass.rawValue,
+            "model": "CohereLabs/cohere-transcribe-03-2026",
+            "warm_state": warmState.rawValue,
+            "audio_duration_ms": String(request.audioDurationMs)
+        ])
+
+        do {
+            let text = try await cohereService.transcribe(audioURL: request.audioURL, language: language)
+            let transcriptionFinish = DispatchTime.now().uptimeNanoseconds
+
+            logCaptureDiagnostics("app.backend_transcription.completed", captureID: request.captureID, metadata: [
+                "provider": "cohereMLX",
+                "backend_kind": TranscriptionBackendKind.localNative.rawValue,
+                "support_tier": TranscriptionSupportTier.firstClass.rawValue,
+                "model": "CohereLabs/cohere-transcribe-03-2026",
+                "warm_state": warmState.rawValue,
+                "elapsed_ms": String((transcriptionFinish - transcriptionStart) / 1_000_000),
+                "characters": String(text.count)
+            ])
+
+            return TranscriptionBackendExecution(
+                text: text,
+                warmState: warmState,
+                backendLoadTiming: nil,
+                transcriptionTiming: StageTiming(startedAt: transcriptionStart, finishedAt: transcriptionFinish),
+                whisperKitRequestShape: nil,
+                whisperKitSegmentCoverage: nil
+            )
+        } catch {
+            let failureTime = DispatchTime.now().uptimeNanoseconds
+            logCaptureDiagnostics("app.backend_transcription.failed", captureID: request.captureID, metadata: [
+                "provider": "cohereMLX",
+                "backend_kind": TranscriptionBackendKind.localNative.rawValue,
+                "support_tier": TranscriptionSupportTier.firstClass.rawValue,
+                "model": "CohereLabs/cohere-transcribe-03-2026",
+                "warm_state": warmState.rawValue,
+                "elapsed_ms": String((failureTime - transcriptionStart) / 1_000_000),
+                "reason": "backend_transcription_failed",
+                "error": error.localizedDescription
+            ])
+            throw error
+        }
     }
 }
 

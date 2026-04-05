@@ -1,6 +1,9 @@
 import SwiftUI
 import AppKit
 import Combine
+import os
+
+private let appDelegateLogger = Logger(subsystem: "com.skeptomenos.murmeln", category: "AppDelegate")
 
 @main
 struct MurmelnApp: App {
@@ -133,9 +136,13 @@ struct MenuContent: View {
 class AppDelegate: NSObject, NSApplicationDelegate {
     private var terminationInFlight = false
     private var cancellables = Set<AnyCancellable>()
+    // P1-6: Track last observed provider to avoid spurious bridge lifecycle checks.
+    // Initialized in applicationDidFinishLaunching (main thread).
+    private var lastObservedProvider: String = ""
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+        lastObservedProvider = AppSettings.shared.transcriptionProviderRaw
 
         Task {
             await CaptureDiagnostics.shared.startSession()
@@ -189,21 +196,35 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         hotkey.start()
 
-        // Start Cohere bridge eagerly if it's the persisted provider
+        // P1-7: Start Cohere bridge eagerly if it's the persisted provider — log errors
         Task { @MainActor in
             if AppSettings.shared.transcriptionProvider == .cohereMLX {
-                try? await CohereMLXService.shared.startBridge()
+                do {
+                    try await CohereMLXService.shared.startBridge()
+                } catch {
+                    appDelegateLogger.error("Cohere bridge start failed: \(error.localizedDescription, privacy: .public)")
+                }
             }
         }
 
-        // Observe provider changes to start/stop Cohere bridge lifecycle
+        // P1-6: Observe provider changes — only react when transcriptionProviderRaw actually changes
         AppSettings.shared.objectWillChange
             .receive(on: RunLoop.main)
-            .sink {
+            .sink { [weak self] in
                 Task { @MainActor in
+                    guard let self else { return }
+                    let current = AppSettings.shared.transcriptionProviderRaw
+                    guard current != self.lastObservedProvider else { return }
+                    self.lastObservedProvider = current
+
                     let provider = AppSettings.shared.transcriptionProvider
                     if provider == .cohereMLX {
-                        try? await CohereMLXService.shared.startBridge()
+                        // P1-7: Log bridge start errors
+                        do {
+                            try await CohereMLXService.shared.startBridge()
+                        } catch {
+                            appDelegateLogger.error("Cohere bridge start failed: \(error.localizedDescription, privacy: .public)")
+                        }
                     } else {
                         // Stop the bridge if switching away from Cohere and it is active
                         let bridgeState = CohereMLXService.shared.modelState
@@ -223,6 +244,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         terminationInFlight = true
         HotkeyService.shared.stop(reason: .applicationTerminating)
+        // P1-11: Stop Cohere bridge on app quit to avoid orphaned Python process
+        CohereMLXService.shared.stopBridge()
 
         let activeCaptureID = AppState.shared.diagnosticsActiveCaptureID
         let recordingPhase = AppState.shared.diagnosticsRecordingPhaseName

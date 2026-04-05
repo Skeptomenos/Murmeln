@@ -3,6 +3,9 @@
 Murmeln Cohere bridge — persistent stdin/stdout protocol.
 Messages on stdin: "<audio_path>|<language>\n"
 Messages on stdout: "READY\n" (on startup), "OK|<transcript>\n" or "ERROR|<message>\n"
+
+P0-2: All outgoing messages escape embedded newlines as literal \\n so Swift
+processLine() receives exactly one protocol line per message.
 """
 
 import sys
@@ -15,7 +18,8 @@ try:
     model = load(MODEL_ID)
     print("READY", flush=True)
 except Exception as e:
-    print(f"LOAD_ERROR|{e}", flush=True)
+    msg = str(e).replace("\n", "\\n")
+    print(f"LOAD_ERROR|{msg}", flush=True)
     sys.exit(1)
 
 for line in sys.stdin:
@@ -27,7 +31,8 @@ for line in sys.stdin:
     language = parts[1] if len(parts) > 1 else "en"
     try:
         result = model.generate(audio_path, language=language)
-        transcript = result.text.strip()
+        transcript = result.text.strip().replace("\n", "\\n")
         print(f"OK|{transcript}", flush=True)
     except Exception as e:
-        print(f"ERROR|{e}", flush=True)
+        msg = str(e).replace("\n", "\\n")
+        print(f"ERROR|{msg}", flush=True)

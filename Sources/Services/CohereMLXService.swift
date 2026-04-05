@@ -1,4 +1,7 @@
 import Foundation
+import os
+
+private let logger = Logger(subsystem: "com.skeptomenos.murmeln", category: "CohereMLX")
 
 @MainActor
 final class CohereMLXService: ObservableObject {
@@ -19,6 +22,7 @@ final class CohereMLXService: ObservableObject {
     private var process: Process?
     private var stdinPipe: Pipe?
     private var stdoutPipe: Pipe?
+    private var stderrPipe: Pipe?
     private var stdoutBuffer = ""
     private var pendingContinuation: CheckedContinuation<String, Error>?
 
@@ -40,24 +44,48 @@ final class CohereMLXService: ObservableObject {
 
         let stdin = Pipe()
         let stdout = Pipe()
+        let stderr = Pipe()
         proc.standardInput = stdin
         proc.standardOutput = stdout
-        proc.standardError = FileHandle.nullDevice
+        proc.standardError = stderr
 
         process = proc
         stdinPipe = stdin
         stdoutPipe = stdout
+        stderrPipe = stderr
 
+        // P1-1: Guard empty data (EOF) to stop handler when process exits
         stdout.fileHandleForReading.readabilityHandler = { [weak self] handle in
             let data = handle.availableData
+            guard !data.isEmpty else {
+                handle.readabilityHandler = nil
+                return
+            }
             guard let self, let chunk = String(data: data, encoding: .utf8) else { return }
             Task { @MainActor in self.handleOutput(chunk) }
         }
 
+        // P1-5: Capture stderr for diagnostics instead of discarding
+        stderr.fileHandleForReading.readabilityHandler = { handle in
+            let data = handle.availableData
+            guard !data.isEmpty, let text = String(data: data, encoding: .utf8) else {
+                handle.readabilityHandler = nil
+                return
+            }
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                logger.warning("cohere_bridge stderr: \(trimmed, privacy: .public)")
+            }
+        }
+
+        // P0-3: Resume pending continuation on unexpected process exit
         proc.terminationHandler = { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
-                if self.modelState == .ready {
+                let cont = self.pendingContinuation
+                self.pendingContinuation = nil
+                cont?.resume(throwing: CohereMLXError.bridgeCrashed)
+                if self.modelState == .ready || self.modelState == .loading {
                     self.modelState = .failed("Bridge process exited unexpectedly")
                 }
             }
@@ -66,27 +94,45 @@ final class CohereMLXService: ObservableObject {
         try proc.run()
     }
 
+    // P0-3 + P1-2: Resume continuation and clear handlers before cleanup
     func stopBridge() {
+        let cont = pendingContinuation
+        pendingContinuation = nil
+        cont?.resume(throwing: CohereMLXError.bridgeStopped)
+
+        stdoutPipe?.fileHandleForReading.readabilityHandler = nil
+        stderrPipe?.fileHandleForReading.readabilityHandler = nil
         process?.terminate()
         process = nil
         stdinPipe = nil
         stdoutPipe = nil
+        stderrPipe = nil
         modelState = .notLoaded
     }
 
     // MARK: - Transcription
 
+    // P0-1: Guard concurrent transcription
+    // P1-3: Validate stdinPipe before registering continuation
     func transcribe(audioURL: URL, language: String = "en") async throws -> String {
         guard modelState == .ready else {
             throw CohereMLXError.bridgeNotReady
         }
+        guard pendingContinuation == nil else {
+            throw CohereMLXError.transcriptionInFlight
+        }
+        guard let pipe = stdinPipe else {
+            throw CohereMLXError.bridgeNotReady
+        }
+
         let message = "\(audioURL.path)|\(language)\n"
         guard let data = message.data(using: .utf8) else {
             throw CohereMLXError.encodingFailed
         }
+
         return try await withCheckedThrowingContinuation { continuation in
             self.pendingContinuation = continuation
-            self.stdinPipe?.fileHandleForWriting.write(data)
+            pipe.fileHandleForWriting.write(data)
         }
     }
 
@@ -107,6 +153,7 @@ final class CohereMLXService: ObservableObject {
         stdoutBuffer = ""
     }
 
+    // P0-2: Unescape \\n back to real newlines in protocol messages
     func processLine(_ line: String) {
         if line == "READY" {
             modelState = .ready
@@ -114,20 +161,41 @@ final class CohereMLXService: ObservableObject {
         }
         if line.hasPrefix("LOAD_ERROR|") {
             let msg = String(line.dropFirst("LOAD_ERROR|".count))
+                .replacingOccurrences(of: "\\n", with: "\n")
             modelState = .failed(msg)
             return
         }
         if line.hasPrefix("OK|") {
             let transcript = String(line.dropFirst("OK|".count))
+                .replacingOccurrences(of: "\\n", with: "\n")
             pendingContinuation?.resume(returning: transcript)
             pendingContinuation = nil
             return
         }
         if line.hasPrefix("ERROR|") {
             let msg = String(line.dropFirst("ERROR|".count))
+                .replacingOccurrences(of: "\\n", with: "\n")
             pendingContinuation?.resume(throwing: CohereMLXError.transcriptionFailed(msg))
             pendingContinuation = nil
         }
+    }
+
+    // MARK: - Test Helpers (internal access for @testable import)
+
+    /// Exposes pendingContinuation for test assertions. Do not use in production code.
+    var pendingContinuation_testAccess: CheckedContinuation<String, Error>? {
+        pendingContinuation
+    }
+
+    /// Clears pendingContinuation without resuming. For test use only.
+    func clearPendingContinuation_testAccess() {
+        pendingContinuation = nil
+    }
+
+    /// Installs a dummy stdinPipe so transcribe() can register continuations
+    /// without spawning a real Python process. For test use only.
+    func installTestStdinPipe() {
+        stdinPipe = Pipe()
     }
 
     // MARK: - Helpers
@@ -150,12 +218,18 @@ enum CohereMLXError: Error, LocalizedError, Equatable {
     case bridgeNotReady
     case encodingFailed
     case transcriptionFailed(String)
+    case transcriptionInFlight   // P0-1
+    case bridgeStopped           // P0-3
+    case bridgeCrashed           // P0-3
 
     var errorDescription: String? {
         switch self {
         case .bridgeNotReady: return "Cohere bridge is not ready. Wait for model to load."
         case .encodingFailed: return "Failed to encode transcription request."
         case .transcriptionFailed(let msg): return "Cohere transcription failed: \(msg)"
+        case .transcriptionInFlight: return "A transcription is already in progress."
+        case .bridgeStopped: return "Cohere bridge was stopped during transcription."
+        case .bridgeCrashed: return "Cohere bridge process exited unexpectedly."
         }
     }
 }

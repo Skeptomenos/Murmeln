@@ -152,11 +152,11 @@ struct TranscriptionSettingsSection: View {
                     }
                 }
 
-                if settings.transcriptionProvider != .whisperKit {
+                if !settings.transcriptionProvider.isLocalNativeProvider {
                     ValidatedURLField(title: "Base URL", url: $settings.transcriptionBaseURL)
                 }
 
-                if settings.transcriptionProvider != .whisperKit {
+                if !settings.transcriptionProvider.isLocalNativeProvider {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Model")
                             .font(.caption.weight(.medium))
