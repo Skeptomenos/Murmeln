@@ -10,6 +10,8 @@ final class CohereMLXService: ObservableObject {
     // MurmelnApp/AppState observe this via @StateObject referencing the same shared instance.
     static let shared = CohereMLXService()
 
+    nonisolated static let modelID = "CohereLabs/cohere-transcribe-03-2026"
+
     enum ModelState: Equatable {
         case notLoaded
         case loading
@@ -68,9 +70,12 @@ final class CohereMLXService: ObservableObject {
         // P1-5: Capture stderr for diagnostics instead of discarding
         stderr.fileHandleForReading.readabilityHandler = { handle in
             let data = handle.availableData
-            guard !data.isEmpty, let text = String(data: data, encoding: .utf8) else {
+            guard !data.isEmpty else {
                 handle.readabilityHandler = nil
                 return
+            }
+            guard let text = String(data: data, encoding: .utf8) else {
+                return  // skip garbled chunk but keep handler alive
             }
             let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
             if !trimmed.isEmpty {
@@ -162,12 +167,14 @@ final class CohereMLXService: ObservableObject {
         if line.hasPrefix("LOAD_ERROR|") {
             let msg = String(line.dropFirst("LOAD_ERROR|".count))
                 .replacingOccurrences(of: "\\n", with: "\n")
+                .replacingOccurrences(of: "\\\\", with: "\\")
             modelState = .failed(msg)
             return
         }
         if line.hasPrefix("OK|") {
             let transcript = String(line.dropFirst("OK|".count))
                 .replacingOccurrences(of: "\\n", with: "\n")
+                .replacingOccurrences(of: "\\\\", with: "\\")
             pendingContinuation?.resume(returning: transcript)
             pendingContinuation = nil
             return
@@ -175,12 +182,16 @@ final class CohereMLXService: ObservableObject {
         if line.hasPrefix("ERROR|") {
             let msg = String(line.dropFirst("ERROR|".count))
                 .replacingOccurrences(of: "\\n", with: "\n")
+                .replacingOccurrences(of: "\\\\", with: "\\")
             pendingContinuation?.resume(throwing: CohereMLXError.transcriptionFailed(msg))
             pendingContinuation = nil
         }
     }
 
     // MARK: - Test Helpers (internal access for @testable import)
+
+    #if DEBUG
+    // Test-only accessors — not available in release builds
 
     /// Exposes pendingContinuation for test assertions. Do not use in production code.
     var pendingContinuation_testAccess: CheckedContinuation<String, Error>? {
@@ -197,6 +208,7 @@ final class CohereMLXService: ObservableObject {
     func installTestStdinPipe() {
         stdinPipe = Pipe()
     }
+    #endif
 
     // MARK: - Helpers
 

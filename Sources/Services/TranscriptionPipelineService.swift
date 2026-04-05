@@ -373,7 +373,7 @@ private struct CohereMLXTranscriptionBackend: TranscriptionBackendAdapter {
             "provider": "cohereMLX",
             "backend_kind": TranscriptionBackendKind.localNative.rawValue,
             "support_tier": TranscriptionSupportTier.firstClass.rawValue,
-            "model": "CohereLabs/cohere-transcribe-03-2026",
+            "model": CohereMLXService.modelID,
             "warm_state": warmState.rawValue,
             "audio_duration_ms": String(request.audioDurationMs)
         ])
@@ -386,7 +386,7 @@ private struct CohereMLXTranscriptionBackend: TranscriptionBackendAdapter {
                 "provider": "cohereMLX",
                 "backend_kind": TranscriptionBackendKind.localNative.rawValue,
                 "support_tier": TranscriptionSupportTier.firstClass.rawValue,
-                "model": "CohereLabs/cohere-transcribe-03-2026",
+                "model": CohereMLXService.modelID,
                 "warm_state": warmState.rawValue,
                 "elapsed_ms": String((transcriptionFinish - transcriptionStart) / 1_000_000),
                 "characters": String(text.count)
@@ -406,7 +406,7 @@ private struct CohereMLXTranscriptionBackend: TranscriptionBackendAdapter {
                 "provider": "cohereMLX",
                 "backend_kind": TranscriptionBackendKind.localNative.rawValue,
                 "support_tier": TranscriptionSupportTier.firstClass.rawValue,
-                "model": "CohereLabs/cohere-transcribe-03-2026",
+                "model": CohereMLXService.modelID,
                 "warm_state": warmState.rawValue,
                 "elapsed_ms": String((failureTime - transcriptionStart) / 1_000_000),
                 "reason": "backend_transcription_failed",

@@ -9,7 +9,7 @@ struct CohereMLXSettingsSection: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Model")
                         .font(.caption.weight(.medium))
-                    Text("CohereLabs/cohere-transcribe-03-2026")
+                    Text(CohereMLXService.modelID)
                         .font(.system(.body, design: .monospaced))
                 }
 

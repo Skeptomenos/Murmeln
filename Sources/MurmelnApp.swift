@@ -209,7 +209,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // P1-6: Observe provider changes — only react when transcriptionProviderRaw actually changes
         AppSettings.shared.objectWillChange
-            .receive(on: RunLoop.main)
             .sink { [weak self] in
                 Task { @MainActor in
                     guard let self else { return }

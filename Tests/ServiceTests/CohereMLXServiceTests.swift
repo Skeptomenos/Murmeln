@@ -14,6 +14,18 @@ import Foundation
         return svc
     }
 
+    /// Polls until pendingContinuation is registered, avoiding flaky 1ms sleeps under CI load.
+    private func waitForContinuation(_ svc: CohereMLXService, timeout: UInt64 = 100_000_000) async throws {
+        let deadline = DispatchTime.now().uptimeNanoseconds + timeout
+        while svc.pendingContinuation_testAccess == nil {
+            guard DispatchTime.now().uptimeNanoseconds < deadline else {
+                Issue.record("Timed out waiting for pendingContinuation")
+                return
+            }
+            try await Task.sleep(nanoseconds: 1_000_000)
+        }
+    }
+
     @Test func readyTransition() {
         let svc = CohereMLXService()
         svc.handleOutput("READY\n")
@@ -24,16 +36,16 @@ import Foundation
         let svc = makeReadyService()
         // Prime a pending continuation via a task
         let task = Task { try await svc.transcribe(audioURL: URL(fileURLWithPath: "/tmp/a.wav")) }
-        try await Task.sleep(nanoseconds: 1_000_000)  // let transcribe() register continuation
+        try await waitForContinuation(svc)
         svc.handleOutput("OK|Hello world\n")
         let result = try await task.value
         #expect(result == "Hello world")
     }
 
-    @Test func errorLineThrows() async {
+    @Test func errorLineThrows() async throws {
         let svc = makeReadyService()
         let task = Task { try await svc.transcribe(audioURL: URL(fileURLWithPath: "/tmp/a.wav")) }
-        try? await Task.sleep(nanoseconds: 1_000_000)
+        try await waitForContinuation(svc)
         svc.handleOutput("ERROR|inference failed\n")
         await #expect(throws: CohereMLXError.self) { try await task.value }
     }
@@ -72,7 +84,7 @@ import Foundation
 
         // First call — registers a pending continuation
         let first = Task { try await svc.transcribe(audioURL: URL(fileURLWithPath: "/tmp/a.wav")) }
-        try await Task.sleep(nanoseconds: 1_000_000)
+        try await waitForContinuation(svc)
 
         // Second call while first is in-flight should throw .transcriptionInFlight
         await #expect(throws: CohereMLXError.transcriptionInFlight) {
@@ -89,7 +101,7 @@ import Foundation
         let svc = makeReadyService()
 
         let task = Task { try await svc.transcribe(audioURL: URL(fileURLWithPath: "/tmp/a.wav")) }
-        try await Task.sleep(nanoseconds: 1_000_000)
+        try await waitForContinuation(svc)
 
         // Bridge sends escaped newlines: OK|Hello\\nworld\\ntest
         svc.handleOutput("OK|Hello\\nworld\\ntest\n")
@@ -102,7 +114,7 @@ import Foundation
         let svc = makeReadyService()
 
         let task = Task { try await svc.transcribe(audioURL: URL(fileURLWithPath: "/tmp/a.wav")) }
-        try await Task.sleep(nanoseconds: 1_000_000)
+        try await waitForContinuation(svc)
 
         svc.stopBridge()
 
@@ -116,7 +128,7 @@ import Foundation
         let svc = makeReadyService()
 
         let task = Task { try await svc.transcribe(audioURL: URL(fileURLWithPath: "/tmp/a.wav")) }
-        try await Task.sleep(nanoseconds: 1_000_000)
+        try await waitForContinuation(svc)
 
         // Simulate the terminationHandler's logic: grab and nil continuation, then resume with bridgeCrashed
         let cont = svc.pendingContinuation_testAccess

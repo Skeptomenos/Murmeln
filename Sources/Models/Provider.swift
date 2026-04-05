@@ -103,7 +103,7 @@ enum TranscriptionProvider: String, CaseIterable, Codable, Sendable {
     var defaultModel: String {
         switch self {
         case .whisperKit: return "openai_whisper-small"
-        case .cohereMLX: return "CohereLabs/cohere-transcribe-03-2026"
+        case .cohereMLX: return CohereMLXService.modelID
         case .openAIWhisper: return "whisper-1"
         case .groqWhisper: return "whisper-large-v3-turbo"
         case .gpt4oAudio: return "gpt-4o-audio-preview"

@@ -18,7 +18,7 @@ try:
     model = load(MODEL_ID)
     print("READY", flush=True)
 except Exception as e:
-    msg = str(e).replace("\n", "\\n")
+    msg = str(e).replace("\\", "\\\\").replace("\n", "\\n")
     print(f"LOAD_ERROR|{msg}", flush=True)
     sys.exit(1)
 
@@ -31,8 +31,8 @@ for line in sys.stdin:
     language = parts[1] if len(parts) > 1 else "en"
     try:
         result = model.generate(audio_path, language=language)
-        transcript = result.text.strip().replace("\n", "\\n")
+        transcript = result.text.strip().replace("\\", "\\\\").replace("\n", "\\n")
         print(f"OK|{transcript}", flush=True)
     except Exception as e:
-        msg = str(e).replace("\n", "\\n")
+        msg = str(e).replace("\\", "\\\\").replace("\n", "\\n")
         print(f"ERROR|{msg}", flush=True)
