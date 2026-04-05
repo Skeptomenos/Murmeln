@@ -27,7 +27,8 @@ struct CaptureTelemetrySummaryTests {
             whisperKitPromptPrefill: false,
             whisperKitEnableTimestamps: false,
             whisperKitUseVAD: true,
-            whisperKitLanguages: [.english]
+            whisperKitLanguages: [.english],
+            cohereLanguage: .english
         )
 
         let transcription = try await service.executeTranscription(

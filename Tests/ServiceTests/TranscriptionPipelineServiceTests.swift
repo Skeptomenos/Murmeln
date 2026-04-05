@@ -295,7 +295,8 @@ struct TranscriptionPipelineServiceTests {
         transcriptionProvider: TranscriptionProvider = .openAIWhisper,
         transcriptionModel: String = "whisper-1",
         skipRefinement: Bool = false,
-        whisperKitLanguages: [WhisperKitLanguage] = [.english]
+        whisperKitLanguages: [WhisperKitLanguage] = [.english],
+        cohereLanguage: CohereLanguage = .english
     ) -> PipelineSettingsSnapshot {
         PipelineSettingsSnapshot(
             transcriptionProvider: transcriptionProvider,
@@ -313,7 +314,8 @@ struct TranscriptionPipelineServiceTests {
             whisperKitPromptPrefill: false,
             whisperKitEnableTimestamps: false,
             whisperKitUseVAD: true,
-            whisperKitLanguages: whisperKitLanguages
+            whisperKitLanguages: whisperKitLanguages,
+            cohereLanguage: cohereLanguage
         )
     }
 }

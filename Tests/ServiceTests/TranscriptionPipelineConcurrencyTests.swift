@@ -27,7 +27,8 @@ struct TranscriptionPipelineConcurrencyTests {
             whisperKitPromptPrefill: false,
             whisperKitEnableTimestamps: false,
             whisperKitUseVAD: true,
-            whisperKitLanguages: [.english]
+            whisperKitLanguages: [.english],
+            cohereLanguage: .english
         )
 
         _ = try await Task.detached(priority: .userInitiated) {

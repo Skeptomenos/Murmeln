@@ -363,7 +363,7 @@ private struct CohereMLXTranscriptionBackend: TranscriptionBackendAdapter {
     }
 
     func transcribe(request: TranscriptionRequest) async throws -> TranscriptionBackendExecution {
-        let language = "en"  // English-only in Phase 7B
+        let language = await AppSettings.shared.cohereLanguage.code
         let warmState: TranscriptionWarmState = await cohereService.modelState == .ready ? .warmReady : .coldLoad
 
         let transcriptionStart = DispatchTime.now().uptimeNanoseconds
@@ -633,7 +633,7 @@ final class TranscriptionPipelineService: @unchecked Sendable {
             }
             return (.autoDetect, nil)
         case .cohereMLX:
-            return (.explicit, "en")  // English-only in Phase 7B
+            return (.explicit, settings.cohereLanguage.code)
         default:
             return (.notApplicable, nil)
         }
@@ -665,6 +665,10 @@ final class TranscriptionPipelineService: @unchecked Sendable {
             let languages = settings.whisperKitLanguages.map(\.rawValue).sorted().joined(separator: ",")
             let resolvedLanguage = languageCode ?? "auto"
             return "provider=\(descriptor.provider.rawValue)|model=\(settings.transcriptionModel)|profile=\(settings.whisperKitProfile.rawValue)|language_mode=\(languageMode.rawValue)|language_code=\(resolvedLanguage)|languages=\(languages)|timestamps=\(settings.whisperKitEnableTimestamps)|vad=\(settings.whisperKitUseVAD)|prompt_prefill=\(settings.whisperKitPromptPrefill)|temperature=\(settings.whisperKitTemperature)|pipeline_mode=\(mode.rawValue)"
+        }
+
+        if descriptor.provider == .cohereMLX {
+            return "provider=\(descriptor.provider.rawValue)|model=\(settings.transcriptionModel)|language=\(settings.cohereLanguage.code)|pipeline_mode=\(mode.rawValue)"
         }
 
         return "provider=\(descriptor.provider.rawValue)|model=\(settings.transcriptionModel)|base_url=\(settings.transcriptionBaseURL)|pipeline_mode=\(mode.rawValue)"

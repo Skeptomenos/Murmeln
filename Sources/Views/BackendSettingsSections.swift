@@ -22,9 +22,16 @@ struct CohereMLXSettingsSection: View {
                 Text("Language")
                     .font(.caption.weight(.medium))
                 Spacer()
-                Text("English (fixed)")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                Picker("Language", selection: Binding(
+                    get: { AppSettings.shared.cohereLanguage },
+                    set: { AppSettings.shared.cohereLanguage = $0 }
+                )) {
+                    ForEach(CohereLanguage.allCases, id: \.self) { language in
+                        Text(language.rawValue).tag(language)
+                    }
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
             }
 
             Text("First-class local-native transcription runs fully on-device via Python/MLX.")

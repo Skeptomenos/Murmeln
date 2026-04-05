@@ -22,7 +22,8 @@ struct WhisperKitDecodeRequestTests {
             whisperKitPromptPrefill: false,
             whisperKitEnableTimestamps: false,
             whisperKitUseVAD: true,
-            whisperKitLanguages: [.english]
+            whisperKitLanguages: [.english],
+            cohereLanguage: .english
         )
 
         let prepared = WhisperKitService.prepareDecoding(settings: settings)
@@ -51,7 +52,8 @@ struct WhisperKitDecodeRequestTests {
             whisperKitPromptPrefill: false,
             whisperKitEnableTimestamps: false,
             whisperKitUseVAD: true,
-            whisperKitLanguages: [.english]
+            whisperKitLanguages: [.english],
+            cohereLanguage: .english
         )
 
         let prepared = WhisperKitService.prepareDecoding(settings: settings)

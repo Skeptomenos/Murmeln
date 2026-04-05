@@ -25,6 +25,42 @@ enum WhisperKitLanguage: String, CaseIterable, Codable, Hashable {
     }
 }
 
+enum CohereLanguage: String, CaseIterable, Codable, Hashable {
+    case english = "English"
+    case french = "French"
+    case german = "German"
+    case spanish = "Spanish"
+    case italian = "Italian"
+    case portuguese = "Portuguese"
+    case dutch = "Dutch"
+    case japanese = "Japanese"
+    case korean = "Korean"
+    case chinese = "Chinese"
+    case hindi = "Hindi"
+    case russian = "Russian"
+    case turkish = "Turkish"
+    case polish = "Polish"
+
+    var code: String {
+        switch self {
+        case .english: return "en"
+        case .french: return "fr"
+        case .german: return "de"
+        case .spanish: return "es"
+        case .italian: return "it"
+        case .portuguese: return "pt"
+        case .dutch: return "nl"
+        case .japanese: return "ja"
+        case .korean: return "ko"
+        case .chinese: return "zh"
+        case .hindi: return "hi"
+        case .russian: return "ru"
+        case .turkish: return "tr"
+        case .polish: return "pl"
+        }
+    }
+}
+
 struct PromptPreset: Codable, Identifiable, Hashable {
     let id: UUID
     var name: String
@@ -204,6 +240,16 @@ final class AppSettings: ObservableObject {
     @AppStorage("whisperKitUseVAD") var whisperKitUseVAD = false
     @AppStorage("whisperKitLanguagesJSON") private var whisperKitLanguagesJSON = "[\"German\",\"English\"]"
     @AppStorage("installedWhisperModelsJSON") private var installedWhisperModelsJSON = "[]"
+    
+    @AppStorage("cohereLanguageRaw") private var cohereLanguageRaw = CohereLanguage.english.rawValue
+
+    var cohereLanguage: CohereLanguage {
+        get { CohereLanguage(rawValue: cohereLanguageRaw) ?? .english }
+        set {
+            cohereLanguageRaw = newValue.rawValue
+            objectWillChange.send()
+        }
+    }
     
     @AppStorage("refinementProvider") var refinementProviderRaw = Provider.openAI.rawValue
     @AppStorage("refinementBaseURL") var refinementBaseURL = "https://api.openai.com/v1"

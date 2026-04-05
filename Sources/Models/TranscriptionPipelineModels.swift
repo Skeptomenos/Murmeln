@@ -154,6 +154,7 @@ struct PipelineSettingsSnapshot {
     let whisperKitEnableTimestamps: Bool
     let whisperKitUseVAD: Bool
     let whisperKitLanguages: [WhisperKitLanguage]
+    let cohereLanguage: CohereLanguage
 
     var usesWhisperKit: Bool {
         transcriptionProvider == .whisperKit
@@ -179,7 +180,8 @@ extension AppSettings {
             whisperKitPromptPrefill: whisperKitPromptPrefill,
             whisperKitEnableTimestamps: whisperKitEnableTimestamps,
             whisperKitUseVAD: whisperKitUseVAD,
-            whisperKitLanguages: whisperKitLanguages
+            whisperKitLanguages: whisperKitLanguages,
+            cohereLanguage: cohereLanguage
         )
     }
 }
