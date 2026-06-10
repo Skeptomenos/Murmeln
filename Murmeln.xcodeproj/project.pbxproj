@@ -33,9 +33,9 @@
 		APP026 /* TranscriptionPipelineService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC026 /* TranscriptionPipelineService.swift */; };
 		APP027 /* BackendSettingsSections.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC027 /* BackendSettingsSections.swift */; };
 		APP028 /* CohereMLXService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC028 /* CohereMLXService.swift */; };
+		APP029 /* AppStateDependencies.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC030 /* AppStateDependencies.swift */; };
 		RES001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F2B02ABB2F0409FC00DD12FC /* Assets.xcassets */; };
 		RES002 /* cohere_bridge.py in Resources */ = {isa = PBXBuildFile; fileRef = SRC029 /* cohere_bridge.py */; };
-		PKG001 /* KeyboardShortcuts in Frameworks */ = {isa = PBXBuildFile; productRef = PKG002 /* KeyboardShortcuts */; };
 		PKG004 /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = PKG005 /* WhisperKit */; };
 /* End PBXBuildFile section */
 
@@ -46,6 +46,7 @@
 		SRC001 /* MurmelnApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MurmelnApp.swift; sourceTree = "<group>"; };
 		SRC002 /* AppSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettings.swift; sourceTree = "<group>"; };
 		SRC003 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
+		SRC030 /* AppStateDependencies.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStateDependencies.swift; sourceTree = "<group>"; };
 		SRC022 /* AppIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIdentity.swift; sourceTree = "<group>"; };
 		SRC005 /* AudioService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioService.swift; sourceTree = "<group>"; };
 		SRC006 /* NetworkService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkService.swift; sourceTree = "<group>"; };
@@ -77,7 +78,6 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				PKG001 /* KeyboardShortcuts in Frameworks */,
 				PKG004 /* WhisperKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -114,6 +114,7 @@
 			children = (
 				SRC002 /* AppSettings.swift */,
 				SRC003 /* AppState.swift */,
+				SRC030 /* AppStateDependencies.swift */,
 				SRC022 /* AppIdentity.swift */,
 				SRC025 /* TranscriptionPipelineModels.swift */,
 				SRC011 /* Provider.swift */,
@@ -199,7 +200,6 @@
 			);
 			name = Murmeln;
 			packageProductDependencies = (
-				PKG002 /* KeyboardShortcuts */,
 				PKG005 /* WhisperKit */,
 			);
 			productName = Murmeln;
@@ -231,7 +231,6 @@
 			);
 			mainGroup = ROOT01;
 			packageReferences = (
-				PKG003 /* XCRemoteSwiftPackageReference "KeyboardShortcuts" */,
 				PKG006 /* XCRemoteSwiftPackageReference "WhisperKit" */,
 			);
 			productRefGroup = GRP005 /* Products */;
@@ -251,6 +250,7 @@
 				APP001 /* MurmelnApp.swift in Sources */,
 				APP002 /* AppSettings.swift in Sources */,
 				APP003 /* AppState.swift in Sources */,
+				APP029 /* AppStateDependencies.swift in Sources */,
 				APP022 /* AppIdentity.swift in Sources */,
 				APP005 /* AudioService.swift in Sources */,
 				APP006 /* NetworkService.swift in Sources */,
@@ -504,14 +504,6 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-		PKG003 /* XCRemoteSwiftPackageReference "KeyboardShortcuts" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/sindresorhus/KeyboardShortcuts";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 2.0.0;
-			};
-		};
 		PKG006 /* XCRemoteSwiftPackageReference "WhisperKit" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/argmaxinc/WhisperKit.git";
@@ -523,11 +515,6 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		PKG002 /* KeyboardShortcuts */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = PKG003 /* XCRemoteSwiftPackageReference "KeyboardShortcuts" */;
-			productName = KeyboardShortcuts;
-		};
 		PKG005 /* WhisperKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = PKG006 /* XCRemoteSwiftPackageReference "WhisperKit" */;

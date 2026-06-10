@@ -47,8 +47,10 @@ final class HotkeyService {
     var onLockEngaged: (() -> Void)?
     var onLockDisengaged: (() -> Void)?
     var captureIDFactory: (() -> String?)?
-    
-    private init() {}
+
+    /// Internal (not private) so tests can drive fresh instances with
+    /// synthetic HotkeyModifierEvents instead of sharing global state.
+    init() {}
     
     func start() {
         if flagsMonitor != nil || fnCaptureID != nil || fnDelayedStartTask != nil || fnRecordingDidStart || fnKeyIsDown || rightOptionDown || lastRightOptionTapTime != nil || isLocked {

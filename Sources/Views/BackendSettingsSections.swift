@@ -1,5 +1,26 @@
 import SwiftUI
 
+/// M4: shown while an API key is parked in UserDefaults because the Keychain
+/// rejected the write.
+struct KeychainSecurityNoticeBanner: View {
+    @ObservedObject var settings: AppSettings
+
+    var body: some View {
+        if let notice = settings.keychainSecurityNotice {
+            HStack(spacing: 6) {
+                Image(systemName: "exclamationmark.shield.fill")
+                    .foregroundColor(.orange)
+                Text(notice)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .padding(10)
+            .background(Color.orange.opacity(0.1))
+            .cornerRadius(8)
+        }
+    }
+}
+
 struct CohereMLXSettingsSection: View {
     @ObservedObject var settings: AppSettings
     @ObservedObject var cohereService: CohereMLXService
@@ -88,6 +109,18 @@ struct TranscriptionSettingsSection: View {
 
     let loadTranscriptionModels: () -> Void
 
+    @State private var apiKeyDraft = ""
+    @FocusState private var apiKeyFocused: Bool
+
+    private func commitAPIKey() {
+        let previous = settings.transcriptionAPIKey
+        guard apiKeyDraft != previous else { return }
+        settings.transcriptionAPIKey = apiKeyDraft
+        if AppSettings.shouldTriggerModelDiscovery(committedKey: apiKeyDraft, previousKey: previous) {
+            loadTranscriptionModels()
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             VStack(alignment: .leading, spacing: 4) {
@@ -101,7 +134,12 @@ struct TranscriptionSettingsSection: View {
             .accessibilityElement(children: .combine)
 
             VStack(alignment: .leading, spacing: 12) {
-                Picker("Provider", selection: $settings.transcriptionProviderRaw) {
+                // M6: bind through the transcriptionProvider setter — the single
+                // place that updates raw value, defaults, and the change signal.
+                Picker("Provider", selection: Binding(
+                    get: { settings.transcriptionProvider },
+                    set: { settings.transcriptionProvider = $0 }
+                )) {
                     ForEach(TranscriptionProvider.allCases, id: \.rawValue) { provider in
                         HStack {
                             Text(provider.displayName)
@@ -111,15 +149,11 @@ struct TranscriptionSettingsSection: View {
                                     .foregroundColor(.green)
                             }
                         }
-                        .tag(provider.rawValue)
+                        .tag(provider)
                     }
                 }
                 .pickerStyle(.menu)
-                .onChange(of: settings.transcriptionProviderRaw) { _, newValue in
-                    if let provider = TranscriptionProvider(rawValue: newValue) {
-                        settings.transcriptionBaseURL = provider.defaultBaseURL
-                        settings.transcriptionModel = provider == .whisperKit ? settings.whisperKitModel : provider.defaultModel
-                    }
+                .onChange(of: settings.transcriptionProviderRaw) { _, _ in
                     loadTranscriptionModels()
                 }
 
@@ -152,11 +186,20 @@ struct TranscriptionSettingsSection: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("API Key")
                             .font(.caption.weight(.medium))
-                        SecureField("Enter API key", text: $settings.transcriptionAPIKey)
+                        // M5: edit a local draft; persist + discover models only
+                        // on commit (Enter / focus loss), never per keystroke.
+                        SecureField("Enter API key", text: $apiKeyDraft)
                             .textFieldStyle(.roundedBorder)
-                            .onChange(of: settings.transcriptionAPIKey) { _, _ in
-                                loadTranscriptionModels()
+                            .focused($apiKeyFocused)
+                            .onSubmit { commitAPIKey() }
+                            .onChange(of: apiKeyFocused) { _, focused in
+                                if !focused { commitAPIKey() }
                             }
+                            .onAppear { apiKeyDraft = settings.transcriptionAPIKey }
+                            .onChange(of: settings.transcriptionProviderRaw) { _, _ in
+                                apiKeyDraft = settings.transcriptionAPIKey
+                            }
+                        KeychainSecurityNoticeBanner(settings: settings)
                     }
                 }
 
@@ -289,6 +332,18 @@ struct RefinementSettingsSection: View {
 
     let loadRefinementModels: () -> Void
 
+    @State private var apiKeyDraft = ""
+    @FocusState private var apiKeyFocused: Bool
+
+    private func commitAPIKey() {
+        let previous = settings.refinementAPIKey
+        guard apiKeyDraft != previous else { return }
+        settings.refinementAPIKey = apiKeyDraft
+        if AppSettings.shouldTriggerModelDiscovery(committedKey: apiKeyDraft, previousKey: previous) {
+            loadRefinementModels()
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             VStack(alignment: .leading, spacing: 4) {
@@ -375,11 +430,20 @@ struct RefinementSettingsSection: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("API Key")
                             .font(.caption.weight(.medium))
-                        SecureField("Enter API key", text: $settings.refinementAPIKey)
+                        // M5: edit a local draft; persist + discover models only
+                        // on commit (Enter / focus loss), never per keystroke.
+                        SecureField("Enter API key", text: $apiKeyDraft)
                             .textFieldStyle(.roundedBorder)
-                            .onChange(of: settings.refinementAPIKey) { _, _ in
-                                loadRefinementModels()
+                            .focused($apiKeyFocused)
+                            .onSubmit { commitAPIKey() }
+                            .onChange(of: apiKeyFocused) { _, focused in
+                                if !focused { commitAPIKey() }
                             }
+                            .onAppear { apiKeyDraft = settings.refinementAPIKey }
+                            .onChange(of: settings.refinementProviderRaw) { _, _ in
+                                apiKeyDraft = settings.refinementAPIKey
+                            }
+                        KeychainSecurityNoticeBanner(settings: settings)
                     }
                     .disabled(settings.skipRefinement || settings.transcriptionProvider.supportsRefinementInOneCall)
                     .opacity(settings.skipRefinement || settings.transcriptionProvider.supportsRefinementInOneCall ? 0.5 : 1)

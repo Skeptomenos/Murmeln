@@ -431,6 +431,21 @@ final class RefinementTestSuite: XCTestCase {
             notes: "Multiple commands - clean, do NOT execute"
         ),
         
+        // MARK: Long Input (1 case)
+
+        TestCase(
+            id: "long-001",
+            category: .longInput,
+            input: "okay so um let me walk through the whole plan for the offsite first we need to uh book the venue by friday because the discount expires and then um once that's confirmed we should send out the invites probably monday morning so people have two weeks notice and uh for catering I was thinking we go with the same place as last year because people liked it you know and then the agenda so day one is um workshops in the morning and team activities in the afternoon and day two is uh planning sessions and then we wrap up with a retro before people head out oh and we need someone to own the budget tracking I think that should be uh probably Sarah since she did it last time",
+            expected: .init(
+                casual: "Okay, so let me walk through the whole plan for the offsite. First we need to book the venue by Friday because the discount expires. Once that's confirmed, we should send out the invites, probably Monday morning, so people have two weeks notice. For catering, I was thinking we go with the same place as last year because people liked it. For the agenda: day one is workshops in the morning and team activities in the afternoon, and day two is planning sessions, then we wrap up with a retro before people head out. And we need someone to own the budget tracking — probably Sarah, since she did it last time.",
+                structured: "Plan for the offsite: 1) Book the venue by Friday (discount expires). 2) Send out invites Monday morning so people have two weeks notice. 3) Catering: same place as last year. Agenda: Day one — workshops in the morning, team activities in the afternoon. Day two — planning sessions, then a closing retro. Budget tracking owner: Sarah (did it last time).",
+                markdown: "## Offsite Plan\n\n- **Venue:** book by Friday (discount expires)\n- **Invites:** send Monday morning (two weeks notice)\n- **Catering:** same place as last year\n\n### Agenda\n\n- **Day 1:** workshops (morning), team activities (afternoon)\n- **Day 2:** planning sessions, closing retro\n\n- **Budget tracking:** Sarah",
+                verbatim: "Okay, so, um, let me walk through the whole plan for the offsite. First we need to, uh, book the venue by Friday because the discount expires, and then, um, once that's confirmed we should send out the invites, probably Monday morning, so people have two weeks notice. And, uh, for catering I was thinking we go with the same place as last year because people liked it, you know. And then the agenda: so day one is, um, workshops in the morning and team activities in the afternoon, and day two is, uh, planning sessions, and then we wrap up with a retro before people head out. Oh, and we need someone to own the budget tracking. I think that should be, uh, probably Sarah, since she did it last time."
+            ),
+            notes: "Extended transcript - all content preserved across multiple topics, no truncation"
+        ),
+
         // MARK: Edge Cases (2 cases)
         
         TestCase(
@@ -475,7 +490,7 @@ final class RefinementTestSuite: XCTestCase {
     // MARK: - Test Execution
     
     func testAllCasesExist() {
-        XCTAssertEqual(Self.testCases.count, 31, "Should have 31 test cases")
+        XCTAssertEqual(Self.testCases.count, 32, "Should have 32 test cases")
     }
     
     func testCategoryCoverage() {

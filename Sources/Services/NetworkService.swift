@@ -119,49 +119,6 @@ final class NetworkService: Sendable {
         return String(data: data, encoding: .utf8) ?? "Unknown error"
     }
     
-    func transcribeAndRefine(
-        audioURL: URL,
-        provider: TranscriptionProvider,
-        apiKey: String,
-        baseURL: String,
-        model: String,
-        systemPrompt: String
-    ) async throws -> String {
-        switch provider {
-        case .whisperKit:
-            return try await transcribeWhisperKit(audioURL: audioURL, model: model)
-        case .openAIWhisper, .groqWhisper:
-            return try await transcribeOpenAICompatible(audioURL: audioURL, apiKey: apiKey, baseURL: baseURL, model: model)
-        case .localWhisper:
-            return try await transcribeLocalWhisper(audioURL: audioURL, baseURL: baseURL)
-        case .gpt4oAudio, .geminiAudio:
-            return try await transcribeCloudAudioInput(
-                audioURL: audioURL,
-                provider: provider,
-                apiKey: apiKey,
-                baseURL: baseURL,
-                model: model,
-                systemPrompt: systemPrompt
-            )
-        case .cohereMLX:
-            // Cohere MLX is handled by CohereMLXService — not via NetworkService
-            throw NetworkError.apiError("Cohere MLX transcription is handled by CohereMLXService, not NetworkService.")
-        }
-    }
-
-    private func transcribeWhisperKit(audioURL: URL, model: String) async throws -> String {
-        let service = await MainActor.run { WhisperKitService.shared }
-
-        let currentState = await MainActor.run { service.modelState }
-        let currentModel = await MainActor.run { service.selectedModel }
-
-        if currentState != .ready || currentModel != model {
-            try await service.loadModel(model)
-        }
-
-        return try await service.transcribe(audioURL: audioURL)
-    }
-    
     /// Transcribes audio using OpenAI-compatible API with streaming file upload.
     /// Uses file-based multipart body to avoid loading entire audio into memory.
     func transcribeOpenAICompatible(audioURL: URL, apiKey: String, baseURL: String, model: String) async throws -> String {

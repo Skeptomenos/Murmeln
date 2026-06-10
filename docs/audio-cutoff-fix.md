@@ -1,135 +1,73 @@
-# Audio Cutoff Fix
+# Audio Cutoff Prevention — Current Design
 
-**Date:** 2026-01-14
+**Last updated:** 2026-06-10 (rewritten to match the code; the original 2026-01-14
+analysis described a drain-detection design that has since been removed)
 
-## Problem
+## Problem (historical)
 
-Users experienced audio cutoff at the beginning and end of recordings. The issue was particularly noticeable when:
-- Holding Fn longer than the speech duration (end cutoff of 3+ words)
-- Starting to speak immediately after the recording indicator appeared (beginning cutoff)
+Users experienced audio cutoff at the beginning and end of recordings:
+- End cutoff: trailing words lost when Fn was released while buffers were still in flight.
+- Beginning cutoff: speech started before the engine delivered its first buffer.
 
-## Root Cause Analysis
+## Current Design
 
-### 1. Large Buffer Size (End Cutoff)
+The pipeline in `Sources/Services/AudioService.swift` prevents cutoff with four
+mechanisms:
 
-**Before:** Buffer size was 4096 samples
+### 1. Small buffer size
 
-At 16kHz sample rate: 4096 samples = **256ms per buffer**
-
-If the user releases Fn and the last buffer hasn't been delivered yet, up to 256ms of audio is lost.
-
-### 2. Fixed Tail Buffer (End Cutoff)
-
-**Before:** 
-```swift
-func stopRecording() async -> URL? {
-    try? await Task.sleep(for: .milliseconds(300))
-    // ... stop engine
-}
-```
-
-The 300ms sleep was a race condition. It didn't guarantee the last buffer was written—it just hoped 300ms was enough. If the last buffer arrived at 310ms, it was lost.
-
-### 3. Engine Startup Latency (Beginning Cutoff)
-
-**Before:** Engine started when recording began (after 400ms threshold)
-
-```
-Fn Press → 400ms wait → startRecording() → engine.prepare() → engine.start() → first buffer
-                                                                              ↑
-                                                              50-200ms latency here
-```
-
-The user could start speaking before the first buffer arrived.
-
-## Solution
-
-### 1. Reduced Buffer Size
-
-**After:** Buffer size reduced to 1024 samples
-
-At 16kHz: 1024 samples = **64ms per buffer** (4x improvement)
+The persistent tap uses 1024-sample buffers — **64ms per buffer at 16kHz** — so at
+most one short buffer can ever be "in flight" at release time.
 
 ```swift
 node.installTap(onBus: 0, bufferSize: 1024, format: tapFormat) { ... }
 ```
 
-### 2. Buffer Drain Detection
+### 2. Persistent tap + pre-roll ring (beginning cutoff)
 
-**After:** Intelligent drain detection instead of fixed sleep
+`prepareEngine()` starts the engine and installs a single persistent tap on Fn
+press, **before** the 400ms hold threshold. While not yet recording, the tap
+buffers audio into a bounded pre-roll ring (`preRollDurationSeconds = 0.35`).
+`beginCapture()` flushes the ring into the file and arms one deferred flush so
+buffers that arrive between the synchronous flush and the next tap callback are
+still written in order, before live audio.
 
-```swift
-func stopRecording() async -> URL? {
-    let drainThreshold: TimeInterval = 0.1  // 100ms silence = drained
-    let maxWait: TimeInterval = 0.5         // 500ms max wait
-    
-    while let lastTime = lastBufferTime {
-        let timeSinceLastBuffer = Date().timeIntervalSince(lastTime)
-        
-        if timeSinceLastBuffer >= drainThreshold {
-            break  // Pipeline drained
-        }
-        
-        if Date().timeIntervalSince(startTime) >= maxWait {
-            break  // Timeout
-        }
-        
-        try? await Task.sleep(for: .milliseconds(20))
-    }
-    // ... stop engine
-}
-```
+**DANGER:** this flush ordering is load-bearing — it is what prevents
+beginning-of-audio cutoff. Do not "simplify" it.
 
-The tap callback tracks `lastBufferTime`. We poll until no buffer arrives for 100ms, meaning the pipeline is empty.
+### 3. Fixed stop grace period (end cutoff)
 
-### 3. Engine Warm-up During Hold Threshold
+`stopRecording()` waits a fixed **350ms** (`stopGracePeriod`) before tearing the
+tap down, capturing trailing audio still moving through the engine/converter.
 
-**After:** Engine starts immediately on Fn press, not after 400ms
+This is an intentional, fixed product latency — not a fallback. An earlier
+"drain detection" loop (exit early once no buffer arrives for 120ms) was dead
+code: while the engine runs, the persistent tap delivers buffers every ~64ms,
+so the early exit could never fire before the timeout. It was removed in the
+2026-06 hardening pass.
 
-```
-Fn Press → prepareEngine() → engine running, levels streaming
-         ↓ (400ms threshold)
-Threshold met → beginCapture() → install recording tap (instant)
-```
+### 4. Locked tap state (correctness under concurrency)
 
-The 400ms hold threshold (which filters accidental taps) is now used productively to warm up the audio engine. By the time recording starts, the engine is already running.
+All state shared between the tap callback (audio render thread) and the
+`AudioRecorder` actor lives in `TapState`, guarded by an
+`OSAllocatedUnfairLock`. On stop, `isWriting` flips under the lock, so an
+in-flight callback either completes its write first or diverts its buffer to
+the pre-roll ring, which the final locked flush persists. No audio is dropped
+between "stop requested" and "file finalized".
 
-## Implementation
+## Phases
 
-### New AudioRecorder Methods
-
-| Method | Purpose |
-|--------|---------|
-| `prepareEngine()` | Starts engine, installs level-only tap, returns level stream |
-| `beginCapture()` | Removes level tap, installs recording tap, creates file |
-| `cancelWarmUp()` | Stops engine if user releases before threshold |
-
-### New AppState Methods
-
-| Method | Called When |
-|--------|-------------|
-| `warmUpEngine()` | `onHoldStarted` (Fn press) |
-| `cancelWarmUp()` | `onHoldCancelled` (Fn release < 400ms) |
-| `beginRecording()` | `onKeyDown` (after 400ms threshold) |
-
-### New RecordingPhase
-
-Added `.warmingUp` state between `.idle` and `.recording`.
-
-## Results
-
-| Metric | Before | After |
-|--------|--------|-------|
-| Max buffer latency | 256ms | 64ms |
-| Tail buffer reliability | Race condition | Deterministic |
-| Startup latency | 50-200ms | 0ms |
+| Method | Called when | Purpose |
+|--------|-------------|---------|
+| `prepareEngine()` | Fn press (`onHoldStarted`) | Start engine, install persistent tap, stream levels, fill pre-roll |
+| `beginCapture()` | Hold threshold met (`onKeyDown`) | Create file, flush pre-roll, start writing |
+| `cancelWarmUp()` | Fn release before threshold | Stop engine without saving |
+| `stopRecording()` | Fn release while recording | Grace period, final flushes, finalize file |
 
 ## Tunable Parameters
 
-If issues persist, these can be adjusted in `AudioService.swift`:
-
 | Parameter | Default | Purpose |
 |-----------|---------|---------|
-| `bufferSize` | 1024 | Audio buffer size in samples |
-| `drainThreshold` | 100ms | How long to wait for buffer silence |
-| `maxWait` | 500ms | Maximum drain wait before timeout |
+| `bufferSize` | 1024 | Tap buffer size in samples (64ms at 16kHz) |
+| `preRollDurationSeconds` | 0.35 | Pre-roll ring capacity (beginning-cutoff protection) |
+| `stopGracePeriod` | 0.35 | Fixed trailing-audio wait on stop (end-cutoff protection) |

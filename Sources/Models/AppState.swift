@@ -23,12 +23,14 @@ actor CaptureDiagnostics {
     private let persistedCaptureStateURL: URL
     private let sessionID: String
     private let isEnabled: Bool
+    private let maxLogSizeBytes: Int
 
     init(
         fileURL: URL = AppIdentity.appSupportDirectoryURL.appendingPathComponent("capture-diagnostics.jsonl"),
         persistedCaptureStateURL: URL = AppIdentity.appSupportDirectoryURL.appendingPathComponent("unfinished-capture.json"),
         sessionID: String = UUID().uuidString,
-        isEnabled: Bool = AppIdentity.isDevelopmentBuild || ProcessInfo.processInfo.environment["MURMELN_CAPTURE_DIAGNOSTICS"] == "1"
+        isEnabled: Bool = AppIdentity.isDevelopmentBuild || ProcessInfo.processInfo.environment["MURMELN_CAPTURE_DIAGNOSTICS"] == "1",
+        maxLogSizeBytes: Int = 10 * 1024 * 1024
     ) {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -37,6 +39,7 @@ actor CaptureDiagnostics {
         self.persistedCaptureStateURL = persistedCaptureStateURL
         self.sessionID = sessionID
         self.isEnabled = isEnabled
+        self.maxLogSizeBytes = maxLogSizeBytes
     }
 
     func startSession() {
@@ -134,6 +137,8 @@ actor CaptureDiagnostics {
         let content = line + "\n"
         guard let data = content.data(using: .utf8) else { return }
 
+        rotateLogIfNeeded()
+
         if !FileManager.default.fileExists(atPath: fileURL.path) {
             FileManager.default.createFile(atPath: fileURL.path, contents: data)
             return
@@ -146,6 +151,22 @@ actor CaptureDiagnostics {
             try handle.write(contentsOf: data)
         } catch {
             logger.error("capture diagnostics append failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// M9: rotate the diagnostics log at `maxLogSizeBytes` — one previous
+    /// generation is kept as `<name>.1`, so disk usage is bounded at ~2x max.
+    private func rotateLogIfNeeded() {
+        guard let size = (try? FileManager.default.attributesOfItem(atPath: fileURL.path)[.size]) as? Int,
+              size >= maxLogSizeBytes else {
+            return
+        }
+        let rotatedURL = fileURL.appendingPathExtension("1")
+        try? FileManager.default.removeItem(at: rotatedURL)
+        do {
+            try FileManager.default.moveItem(at: fileURL, to: rotatedURL)
+        } catch {
+            logger.error("capture diagnostics rotation failed: \(error.localizedDescription, privacy: .public)")
         }
     }
 
@@ -308,9 +329,12 @@ final class AppState: ObservableObject {
         recordingPhase == .processing
     }
     
-    private let audioRecorder = AudioRecorder()
-    private let pipelineService = TranscriptionPipelineService.shared
-    private let overlay = OverlayWindowController.shared
+    private let audioRecorder: any AudioCapturing
+    private let pipelineService: any TranscriptionPipelineProviding
+    private let overlay: any OverlayPresenting
+    private let pasteService: any PasteServicing
+    private let historyStore: any HistoryStoring
+    private let permissionService: any MicrophonePermissionChecking
     private var recordingTask: Task<Void, Never>?
     private var warmUpTask: Task<Void, Never>?
     private var warmUpReady = false
@@ -323,7 +347,22 @@ final class AppState: ObservableObject {
     private var capturedPresetsWithPrompts: [(id: UUID, name: String, prompt: String)] = []
     private var activeCaptureID: String?
     
-    private init() {}
+    /// Production wiring uses the `.shared` defaults; tests inject mocks.
+    init(
+        audioRecorder: any AudioCapturing = AudioRecorder(),
+        pipelineService: any TranscriptionPipelineProviding = TranscriptionPipelineService.shared,
+        overlay: any OverlayPresenting = OverlayWindowController.shared,
+        pasteService: any PasteServicing = PasteService.shared,
+        historyStore: any HistoryStoring = HistoryStore.shared,
+        permissionService: any MicrophonePermissionChecking = PermissionService.shared
+    ) {
+        self.audioRecorder = audioRecorder
+        self.pipelineService = pipelineService
+        self.overlay = overlay
+        self.pasteService = pasteService
+        self.historyStore = historyStore
+        self.permissionService = permissionService
+    }
 
     private func ensureCaptureID() -> String {
         if let activeCaptureID {
@@ -505,7 +544,7 @@ final class AppState: ObservableObject {
         recordingPhase = .warmingUp
         
         warmUpTask = Task {
-            let hasPermission = await PermissionService.shared.checkMicrophonePermission()
+            let hasPermission = await permissionService.checkMicrophonePermission()
             guard hasPermission else {
                 lastError = "Microphone access denied. Open System Settings → Privacy & Security → Microphone to grant access."
                 recordingPhase = .idle
@@ -537,9 +576,13 @@ final class AppState: ObservableObject {
                     startWarmRecording(captureID: captureID, warmUpWaitMs: warmUpWaitMs)
                 }
                 
-                // Show overlay during warm-up for visual feedback
-                overlay.show()
-                
+                // M7: show the overlay only if the warm-up is still alive — a
+                // quick release may already have cancelled and hidden it, and
+                // an unguarded show() here would orphan the overlay on screen.
+                if !Task.isCancelled, recordingPhase == .warmingUp || recordingPhase == .recording {
+                    overlay.show()
+                }
+
                 // Stream levels during warm-up (visual feedback only, not recording)
                 for await level in levelStream {
                     audioLevel = level
@@ -633,7 +676,20 @@ final class AppState: ObservableObject {
         recordingPhase = .requestingPermission
         
         recordingTask = Task {
-            let hasPermission = await PermissionService.shared.checkMicrophonePermission()
+            let hasPermission = await permissionService.checkMicrophonePermission()
+
+            // H2/spec-002 guard: a quick lock-disengage cancels this task and
+            // resolves the capture while we awaited the permission check. Without
+            // this re-check the cancelled task flips the phase back to .recording
+            // and starts a zombie engine.
+            guard !Task.isCancelled, recordingPhase == .requestingPermission else {
+                logDiagnostics("app.recording.legacy_cancelled_during_permission", captureID: captureID, metadata: [
+                    "phase": phaseName(recordingPhase),
+                    "task_cancelled": String(Task.isCancelled)
+                ])
+                return
+            }
+
             guard hasPermission else {
                 lastError = "Microphone access denied. Open System Settings → Privacy & Security → Microphone to grant access."
                 recordingPhase = .idle
@@ -641,7 +697,7 @@ final class AppState: ObservableObject {
                 clearCaptureID(captureID)
                 return
             }
-            
+
             do {
                 #if DEBUG
                 print("📝 Starting recording with preset: \(capturedPresetName)")
@@ -650,9 +706,18 @@ final class AppState: ObservableObject {
                 lastError = nil
                 overlay.show()
                 announceForAccessibility("Recording started")
-                
+
                 let highQuality = AppSettings.shared.highQualityAudio
                 let levelStream = try await audioRecorder.startRecording(highQuality: highQuality, captureID: captureID)
+
+                // H2 guard, second await: if stopAndProcess raced the engine
+                // start, shut the freshly started engine down instead of leaking it.
+                if Task.isCancelled {
+                    _ = await audioRecorder.stopRecording(captureID: captureID)
+                    logDiagnostics("app.recording.legacy_cancelled_during_start", captureID: captureID)
+                    return
+                }
+
                 #if DEBUG
                 print("✅ Recording started")
                 #endif
@@ -905,6 +970,21 @@ final class AppState: ObservableObject {
                 var finalPresetName = capturedPresetName
                 var finalSystemPrompt = capturedSystemPrompt
                 var effectiveSystemPrompt = capturedSystemPrompt
+                var refinementFailed = false
+
+                // H3 guard: a failed refinement must never lose the successful
+                // transcript — degrade to the raw text and keep going.
+                let degradeToRawTranscript = { (error: Error) in
+                    refinementFailed = true
+                    finalResult = originalText
+                    finalPresetName = "\(self.capturedPresetName) (refinement failed — raw)"
+                    finalSystemPrompt = self.capturedSystemPrompt
+                    effectiveSystemPrompt = self.capturedSystemPrompt
+                    self.logDiagnostics("app.refinement.failed_degraded_to_raw", captureID: captureID, metadata: [
+                        "preset": self.capturedPresetName,
+                        "error": error.localizedDescription
+                    ])
+                }
 
                 switch transcriptionResult.runContext.pipelineMode {
                 case .transcribeOnly:
@@ -981,42 +1061,48 @@ final class AppState: ObservableObject {
                                     "error": failure.message
                                 ])
                             }
-                        } catch let error as ParallelRefinementError {
+                        } catch {
                             logDiagnostics("app.refinement.selected_failed", captureID: captureID, metadata: [
                                 "preset": capturedPresetName,
                                 "preset_id": capturedPresetID.uuidString,
                                 "error": error.localizedDescription
                             ])
-                            throw error
+                            degradeToRawTranscript(error)
                         }
                     } else {
-                        let enhancedPrompt = promptWithDictionary(capturedSystemPrompt)
-                        let refinementResult = try await pipelineService.executeRefinement(
-                            request: RefinementRequest(
-                                captureID: captureID,
-                                text: originalText,
-                                systemPrompt: enhancedPrompt,
-                                settings: pipelineSettings
+                        do {
+                            let enhancedPrompt = promptWithDictionary(capturedSystemPrompt)
+                            let refinementResult = try await pipelineService.executeRefinement(
+                                request: RefinementRequest(
+                                    captureID: captureID,
+                                    text: originalText,
+                                    systemPrompt: enhancedPrompt,
+                                    settings: pipelineSettings
+                                )
                             )
-                        )
-                        aggregateRefinementTiming = refinementResult.timing
-                        selectedResultReadyAtNs = refinementResult.timing.finishedAt
-                        auditFanoutFinishedAtNs = refinementResult.timing.finishedAt
-                        auditVariantSuccessCount = 1
-                        auditVariantFailureCount = 0
-                        finalResult = refinementResult.text
-                        finalSystemPrompt = capturedSystemPrompt
-                        effectiveSystemPrompt = enhancedPrompt
+                            aggregateRefinementTiming = refinementResult.timing
+                            selectedResultReadyAtNs = refinementResult.timing.finishedAt
+                            auditFanoutFinishedAtNs = refinementResult.timing.finishedAt
+                            auditVariantSuccessCount = 1
+                            auditVariantFailureCount = 0
+                            finalResult = refinementResult.text
+                            finalSystemPrompt = capturedSystemPrompt
+                            effectiveSystemPrompt = enhancedPrompt
+                        } catch {
+                            degradeToRawTranscript(error)
+                        }
                     }
 
-                    let refinementElapsedMs = aggregateRefinementTiming?.elapsedMs ?? 0
-                    logDiagnostics("app.refinement.completed", captureID: captureID, metadata: [
-                        "elapsed_ms": String(refinementElapsedMs),
-                        "parallel_enabled": String(pipelineSettings.parallelRefinementEnabled),
-                        "variant_count": String(variants.count),
-                        "variant_success_count": String(auditVariantSuccessCount),
-                        "variant_failure_count": String(auditVariantFailureCount)
-                    ])
+                    if !refinementFailed {
+                        let refinementElapsedMs = aggregateRefinementTiming?.elapsedMs ?? 0
+                        logDiagnostics("app.refinement.completed", captureID: captureID, metadata: [
+                            "elapsed_ms": String(refinementElapsedMs),
+                            "parallel_enabled": String(pipelineSettings.parallelRefinementEnabled),
+                            "variant_count": String(variants.count),
+                            "variant_success_count": String(auditVariantSuccessCount),
+                            "variant_failure_count": String(auditVariantFailureCount)
+                        ])
+                    }
                 }
 
                 #if DEBUG
@@ -1035,7 +1121,7 @@ final class AppState: ObservableObject {
                 }
 
                 let pasteStartNs = DispatchTime.now().uptimeNanoseconds
-                let pasteTiming = await PasteService.shared.pasteAndRestore(text: finalResult, captureID: captureID)
+                let pasteTiming = await pasteService.pasteAndRestore(text: finalResult, captureID: captureID)
                 if pasteTiming.succeeded {
                     announceForAccessibility("Text pasted")
                 }
@@ -1122,7 +1208,7 @@ final class AppState: ObservableObject {
                     )
                 )
 
-                HistoryStore.shared.add(
+                historyStore.add(
                     original: originalText,
                     refined: finalResult,
                     presetName: finalPresetName,
@@ -1134,7 +1220,9 @@ final class AppState: ObservableObject {
                 )
                 
                 if completion.userFacingMessage == nil {
-                    lastError = nil
+                    // Keep the degraded-refinement notice visible in the UI even
+                    // though the raw transcript pasted successfully.
+                    lastError = refinementFailed ? "Refinement failed — pasted the raw transcript." : nil
                 }
             } catch {
                 #if DEBUG
