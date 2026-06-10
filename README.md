@@ -5,81 +5,44 @@
 <h1 align="center">Murmeln</h1>
 
 <p align="center">
-  <strong>Push-to-talk dictation for macOS — local-first on Apple Silicon, cloud when needed</strong>
+  <strong>Push-to-talk dictation for macOS — on-device first on Apple Silicon</strong>
 </p>
 
 <p align="center">
-  An open-source alternative to Wispr and similar apps.<br>
-  Hold <kbd>Fn</kbd> to record, or double-tap <kbd>Right Option</kbd> for hands-free mode.
+  Hold <kbd>Fn</kbd>, speak, release. Your words are pasted where you're typing.<br>
+  An open-source, local-first alternative to cloud dictation apps.
 </p>
-
----
-
-## Why Murmeln?
-
-Love the idea of voice dictation apps but want to:
-- **Run locally on Apple Silicon** instead of defaulting to cloud?
-- **Use your own API keys** instead of paying subscription fees?
-- **Choose your provider** — WhisperKit, OpenAI, Groq, Gemini, or self-hosted?
-- **Keep it simple** — no account, no cloud sync, just dictation?
-
-Murmeln is for you. It is a local-first dictation tool that still supports BYOAPI cloud workflows when you want them.
 
 ---
 
 ## Mission
 
-Murmeln turns spoken thought into pasted text with as little friction as possible. The product goal is to feel trustworthy, fast, and invisible in daily use: hold a key, speak, release, keep typing.
+Murmeln turns spoken thought into pasted text with as little friction as possible — hold a key, speak, release, keep typing. It should feel trustworthy, fast, and invisible.
 
-The best Murmeln experience should be Apple-Silicon-local-first. Cloud and local-server backends remain supported, but they are extensions and fallback paths, not the center of the long-term product direction.
-
----
-
-## Features
-
-| Feature | Description |
-|---------|-------------|
-| **Push-to-Talk** | Hold Fn key to record, release to process |
-| **Lock Recording** | Double-tap Right Option for hands-free recording |
-| **Transcription Providers** | WhisperKit (On-Device), OpenAI Whisper, Groq, GPT-4o Audio, Gemini 2.0 Flash, or a compatible Local Whisper server |
-| **Refinement Providers** | OpenAI, Google, Groq, or Ollama for text cleanup after transcription |
-| **Prompt Presets** | Casual, Structured, Markdown, Verbatim, or Custom (editable) |
-| **Raw Mode** | Skip LLM refinement entirely for pure transcription |
-| **Smart VAD** | Skips empty recordings, trims silence for faster processing |
-| **Auto-Paste** | Transcribed text is pasted directly into your focused app |
-| **Visual Feedback** | Minimal line indicator under notch shows status |
-| **Parallel Audit** | Optional side-by-side history view of multiple preset refinements |
-| **Optimized Audio** | 16kHz recording for faster processing |
-| **Menu Bar App** | Quick access with direct history and restart options |
-| **Auto-Update Check** | Checks GitHub for new versions on launch |
-| **Personal Dictionary** | Teach the refiner how to spell names and terms |
-| **Prompt Safety Instructions** | Built-in presets tell the model to treat dictated content as text, not commands |
+The best Murmeln experience runs **on-device on Apple Silicon**: your audio is transcribed locally and never leaves your Mac. Cloud and local-server backends remain supported as alternatives, but on-device is the center of the product.
 
 ---
 
-## Current Supported State
+## How it feels
 
-- The installed `/Applications/Murmeln.app` currently supports WhisperKit on-device transcription, cloud transcription providers, and local-server workflows.
-- The checked-in repo does not yet cleanly reproduce the installed WhisperKit build path; `Local Whisper Server` is currently the most reproducible local transcription path from source.
-- Refinement remains optional. You can use cloud providers, Ollama, or skip refinement entirely with Raw Mode.
-- The app is actively used, but reliability and performance work is still ongoing. Short utterances can still lose words, and repo/build truth is still being reconciled with runtime truth.
+**Push-to-talk** — Focus any text field, hold <kbd>Fn</kbd> (>400ms), speak, release. The text appears where your cursor is.
+
+**Hands-free (lock mode)** — Double-tap <kbd>Right Option</kbd> to start recording without holding anything; tap it again to stop and paste. Good for longer dictation.
+
+A minimal line indicator under the notch shows recording / processing state, so you always know what Murmeln is doing without it getting in your way.
+
+If Murmeln can't deliver the paste because Accessibility isn't granted or you're in a password field, it tells you and leaves the transcript on your clipboard — so a manual <kbd>⌘</kbd><kbd>V</kbd> recovers your words instead of losing them.
 
 ---
 
 ## Quick Start
 
-### 1. Install
+### 1. Install the app
 
-**Download the latest release:**
-
-👉 [**Download the latest Murmeln release**](https://github.com/Skeptomenos/Murmeln/releases/latest)
-
-1. Download the latest release zip
-2. Unzip and drag `Murmeln.app` to `/Applications`
-3. Right-click → **Open** (required for unsigned apps)
+👉 [**Download the latest release**](https://github.com/Skeptomenos/Murmeln/releases/latest), open the DMG, and drag `Murmeln.app` to `/Applications`. Right-click → **Open** the first time (the app is unsigned).
 
 <details>
-<summary><strong>Build from source</strong></summary>
+<summary>Build from source</summary>
 
 ```bash
 git clone https://github.com/Skeptomenos/Murmeln.git
@@ -89,222 +52,73 @@ cp -r build/Build/Products/Release/Murmeln.app /Applications/
 ```
 </details>
 
-### 2. Configure
+### 2. Set up on-device transcription (recommended)
 
-1. Launch Murmeln (appears in menu bar)
-2. Click the mic icon → **Settings...**
-3. Add your API key for your preferred provider
+Murmeln's primary backend is **Cohere on-device via MLX** — fast, fully local, multilingual, and the recommended way to use the app. It needs a one-time setup:
 
-### 3. Use
+```bash
+# 1. Install the on-device speech engine (Python 3.10+, Apple Silicon)
+pip install mlx-audio
 
-**Push-to-Talk Mode:**
-1. Focus any text field
-2. **Hold Fn** (>400ms) → speak → **release Fn**
-3. Text appears automatically
+# 2. Accept the model terms once at:
+#    https://huggingface.co/CohereLabs/cohere-transcribe-03-2026
+# 3. Authenticate Hugging Face so the model can download:
+hf auth login
+```
 
-**Lock Recording Mode:**
-1. Focus any text field
-2. **Double-tap Right Option** → speak hands-free
-3. **Tap Right Option** again to stop
-4. Text appears automatically
+Then launch Murmeln → menu bar mic icon → **Settings…** → **Transcription** → select **Cohere (On-Device)**. The model downloads on first use and stays loaded for instant transcription afterwards.
 
-**History & Audit Trail:**
-1. Click **Show History** in the menu bar
-2. When **Parallel Audit** is enabled, compare what multiple presets produced from the same transcript
-3. Click **Copy Full Audit Log** to get a formatted report of all variants for prompt tuning
+> Prefer zero setup? Choose **WhisperKit (On-Device)** instead — it runs entirely in-app with no Python and no account, just a slightly slower model download. Or use a cloud provider with your own API key (see [Backends](#backends)).
 
----
+### 3. Grant permissions
 
-## Current Provider Model
-
-### Transcription Providers
-
-| Provider | Type | Notes |
-|----------|------|-------|
-| **WhisperKit (On-Device)** | Local native | Active in the installed app; checked-in repo/build reconciliation is still in progress |
-| **Gemini 2.0 Flash** | Cloud | Transcription + refinement in one call |
-| **Groq Whisper** | Cloud | Fast transcription only |
-| **OpenAI Whisper** | Cloud | Transcription only |
-| **GPT-4o Audio** | Cloud | Transcription + refinement in one call |
-| **Local Whisper Server** | Local server | Expects a compatible server on `localhost:8080` |
-
-### Refinement Providers
-
-| Provider | Type | Notes |
-|----------|------|-------|
-| **OpenAI** | Cloud | Chat-model cleanup |
-| **Google AI** | Cloud | Gemini text cleanup |
-| **Groq** | Cloud | Fast chat-model cleanup |
-| **Ollama (Local)** | Local server | Local refinement only, not transcription |
-
-> **Current local note:** The installed app currently supports both WhisperKit on-device transcription and local-server workflows (`Local Whisper` and `Ollama`). The checked-in repo/build path for WhisperKit is still being reconciled, so the most reproducible local path from source today is `Local Whisper Server`.
-
-> **Tip:** For speed, use **Groq Whisper** with `whisper-large-v3-turbo`. For simplicity, use **Gemini 2.0 Flash** (one API call). For free local refinement, use **Ollama**. Enable **Raw Mode** to skip refinement entirely.
+| Permission | Why |
+|------------|-----|
+| **Microphone** | Record your voice (prompted on first use) |
+| **Accessibility** | Global <kbd>Fn</kbd> hotkey — System Settings → Privacy & Security → Accessibility |
 
 ---
 
-## Prompt Presets
+## Backends
 
-Choose how your dictation is refined:
+On-device is the recommended path; cloud and local-server backends are supported alternatives when you want them.
 
-| Preset | Best For | Behavior |
-|--------|----------|----------|
-| **Casual** | WhatsApp, Chat | Natural, conversational cleanup |
-| **Structured** | Notes, Lists | Formats bullet points, numbered lists |
-| **Markdown** | Structured Notes | Headers and bullet points for clear structure |
-| **Verbatim** | Exact wording | Only removes filler words |
-| **Custom** | Your needs | Create your own presets |
+| Backend | Type | Notes |
+|---------|------|-------|
+| **Cohere (On-Device)** | Local · MLX | **Recommended.** Fast, multilingual, runs on-device. Needs the one-time setup above. |
+| **WhisperKit (On-Device)** | Local · CoreML | Zero-config local option, downloads its model in-app. |
+| **Cloud (OpenAI · Groq · Gemini · GPT-4o)** | Cloud | Bring your own API key. Gemini and GPT-4o transcribe + refine in one call. |
+| **Local Whisper Server** | Local server | Point at a compatible server on `localhost`. |
 
-> Built-in presets include few-shot examples, priority hierarchies, and safety instructions that tell the model to treat dictated content as text. Create custom presets with the + button.
-
-### Raw Mode (Skip Refinement)
-
-Enable **Skip Refinement** in Settings → Refinement to bypass LLM processing entirely. This gives you the raw Whisper transcript without any AI cleanup — useful when:
-- You want verbatim output without any changes
-- LLM refinement is altering your intent
-- You need maximum speed
-
-### Voice Activity Detection
-
-Murmeln automatically:
-- **Skips empty recordings** — No more "thank you" or dots when you accidentally trigger recording
-- **Trims silence** — Removes silence from start/end of recordings for faster API processing (typically 20-50% smaller files)
-- **Tail buffer logic** — Attempts to capture trailing speech after key release, though short-utterance cutoff is still under investigation
-
-### Personal Dictionary
-
-Teach the refiner how to spell names, technical terms, and brand names that are often misspelled:
-
-1. Go to **Settings → Prompt**
-2. Enable **Personal Dictionary**
-3. Add words like "Kubernetes", "GraphQL", or colleague names
-4. The refiner will use your exact spelling when it hears similar-sounding words
-
-> **Tip:** Add up to 20 words. Great for names, acronyms, and domain-specific terminology.
-
-### Ollama Integration (Free Local Refinement)
-
-Use Ollama for completely free, local text refinement:
-
-1. Install Ollama: `brew install ollama && ollama serve`
-2. In Murmeln Settings → Refinement → Select **Ollama**
-3. Use the built-in model manager to:
-   - **Download recommended models** (gemma2:2b, phi3:mini, qwen2.5:3b)
-   - **Update models** to latest versions
-   - **Keep models loaded** in GPU memory for instant responses
-
-> **Recommended:** `gemma2:2b` for fast responses (~300ms when loaded)
+**Optional refinement** cleans up the raw transcript (grammar, filler words, formatting) using OpenAI, Google, Groq, or local **Ollama** — or turn it off entirely with **Raw Mode** for verbatim, maximum-speed output.
 
 ---
 
-## Accessibility
+## Good to know
 
-Murmeln includes accessibility features for users of assistive technologies:
+- **Prompt presets** shape how dictation is refined — *Casual*, *Structured*, *Markdown*, *Verbatim*, or your own custom presets. Built-in presets treat dictated content as text, never as commands.
+- **Personal dictionary** — teach the refiner to spell names, acronyms, and technical terms correctly (Settings → Prompt).
+- **History** — review past dictations from the menu bar; with Parallel Audit enabled, compare what different presets produced from the same transcript.
+- **Update check** — Murmeln checks GitHub on launch and, when a newer version is out, opens the release page so you can download it.
 
-| Feature | Description |
-|---------|-------------|
-| **VoiceOver Support** | All interactive elements have accessibility labels and hints |
-| **State Announcements** | Recording start, processing, and paste completion are announced |
-| **Keyboard Navigation** | Arrow keys navigate history, Cmd+C copies selected entry |
-| **Dynamic Type** | Text scales with system font size preferences |
-| **Semantic Structure** | Headers and sections are properly marked for screen readers |
+### Limitation: password fields
 
-### Keyboard Shortcuts (History Window)
-
-| Shortcut | Action |
-|----------|--------|
-| <kbd>↑</kbd> / <kbd>↓</kbd> | Navigate between entries |
-| <kbd>⌘</kbd>+<kbd>C</kbd> | Copy selected entry |
-
----
-
-## Permissions
-
-Murmeln needs three permissions to work:
-
-| Permission | Why | How to Grant |
-|------------|-----|--------------|
-| **Microphone** | Record your voice | Prompt on first use |
-| **Accessibility** | Global Fn key hotkey | System Settings → Privacy & Security → Accessibility |
-| **Automation** | Auto-paste text | Prompt on first use |
-
----
-
-## Troubleshooting
-
-<details>
-<summary><strong>Fn key not working</strong></summary>
-
-1. Open **System Settings → Privacy & Security → Accessibility**
-2. Find Murmeln and toggle it **off** then **on**
-3. Restart Murmeln
-</details>
-
-<details>
-<summary><strong>Text not pasting</strong></summary>
-
-1. Allow Murmeln to control System Events when prompted
-2. Make sure the target app has an active text field
-</details>
-
-<details>
-<summary><strong>Microphone permission keeps asking</strong></summary>
-
-This happens with unsigned builds. For persistent permission, the app needs code signing with a Developer ID.
-</details>
-
----
-
-## Known Limitations
-
-### Hotkey Disabled in Password Fields
-
-The Fn key hotkey will not work when you're focused on a password field or other 
-"Secure Input" context. This is a macOS security feature that prevents apps from 
-monitoring keystrokes in sensitive fields.
-
-**Affected contexts:**
-- Password fields in any application
-- Browser password autofill dialogs
-- Terminal.app (when running `sudo` or `ssh`)
-- Password manager unlock screens
-- System authentication dialogs
-
-**Workaround:** Click outside the password field before using Murmeln, or use the 
-menu bar to manually trigger recording.
-
-### Short Utterances Can Still Lose Words
-
-Very short or fast dictation can still lose opening or ending words in some cases. This is an active reliability issue under investigation.
-
-### Local Transcription Build Caveat
-
-The installed app currently supports WhisperKit on-device transcription. The checked-in repo still reproduces the `Local Whisper Server` path more reliably than the WhisperKit build path, so local development and local runtime truth are not fully reconciled yet.
+The <kbd>Fn</kbd> hotkey can't fire while a password field or other macOS "Secure Input" context is focused (Terminal under `sudo`/`ssh`, password managers, auth dialogs). Click outside the secure field first, or trigger recording from the menu bar.
 
 ---
 
 ## Requirements
 
 - macOS 14.0 (Sonoma) or later
-- API key for your chosen cloud provider, unless you use a local-server path
-- A compatible local server if you use `Local Whisper` or `Ollama`
-
----
-
-## Tech Stack
-
-- **Swift 6** with strict concurrency
-- **SwiftUI** for the UI
-- **Actor-based** audio recording
-- **Async/await** throughout
+- On-device backends (Cohere/MLX, WhisperKit) require **Apple Silicon**; cloud and local-server backends also run on Intel Macs
+- For Cohere on-device: Python 3.10+ with `mlx-audio`, plus a free Hugging Face account to download the (gated) model once
+- For cloud backends: an API key for your chosen provider
 
 ---
 
 ## License
 
-MIT — Use it, fork it, improve it.
-
----
+MIT — use it, fork it, improve it.
 
 <p align="center">
   Built with ❤️ for fast, frictionless dictation.
