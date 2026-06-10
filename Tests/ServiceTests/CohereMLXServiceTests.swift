@@ -50,6 +50,49 @@ import Foundation
         await #expect(throws: CohereMLXError.self) { try await task.value }
     }
 
+    @Test func deadBridgeWriteThrowsInsteadOfCrashing() async {
+        let svc = CohereMLXService()
+        svc.handleOutput("READY\n")
+        svc.installBrokenTestStdinPipe()
+
+        // Pre-fix this crashed the process (ObjC NSFileHandleOperationException
+        // from FileHandle.write on a dead pipe). It must throw a typed error
+        // and flip modelState to .failed instead.
+        await #expect(throws: CohereMLXError.self) {
+            try await svc.transcribe(audioURL: URL(fileURLWithPath: "/tmp/a.wav"))
+        }
+        guard case .failed = svc.modelState else {
+            Issue.record("Expected .failed modelState after dead-bridge write, got \(svc.modelState)")
+            return
+        }
+        #expect(svc.pendingContinuation_testAccess == nil)
+    }
+
+    /// Mirrors cohere_bridge.py: `.replace("\\", "\\\\").replace("\n", "\\n")`.
+    private func bridgeEscape(_ s: String) -> String {
+        s.replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\n", with: "\\n")
+    }
+
+    @Test(
+        "Bridge payload round-trips through escape/unescape (M3)",
+        arguments: [
+            "plain text",
+            "line one\nline two",
+            "a\\n",                    // literal backslash + n — the M3 corruption case
+            "trailing backslash \\",
+            "\\\\n",                  // backslash, backslash, n
+            "\\n\\n",                 // two literal backslash-n sequences
+            "mixed \\real\n and \\n literal",
+            "",
+            "unicode ümlaut \\n ✓"
+        ]
+    )
+    func bridgePayloadRoundTrips(original: String) {
+        let unescaped = CohereMLXService.unescapeBridgePayload(bridgeEscape(original))
+        #expect(unescaped == original)
+    }
+
     @Test func transcribeThrowsWhenNotReady() async {
         let svc = CohereMLXService()
         // modelState is .notLoaded — should throw immediately

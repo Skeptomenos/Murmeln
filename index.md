@@ -8,11 +8,12 @@
 - **Tech:** Swift 6, SwiftUI, macOS, Apple Silicon
 - **README:** `README.md`
 - **Active roadmap Linear:** `DEV-33` — Murmeln truth pass and improvement roadmap
-- **Active phase Linear:** `DEV-48` — Phase 7B: Cohere/MLX first-class integration (partially complete)
+- **Active phase Linear:** `DEV-53` — Murmeln: hardening and self-correction-loop adoption
+- **Paused phase Linear:** `DEV-48` — Phase 7B: Cohere/MLX first-class integration (paused 2026-06-10)
 - **Last completed phase Linear:** `DEV-47` — Phase 7A: Cohere/MLX feasibility (POC passed, formal benchmark bypassed)
-- **Active phase plan:** `_planning/plans/2026-04-05-murmeln-phase-7b-cohere-mlx-first-class-integration.md`
+- **Active phase plan:** `_planning/plans/2026-06-10-murmeln-hardening-and-loop-adoption.md`
 - **Last completed phase plan:** `_planning/plans/2026-04-05-murmeln-phase-7a-cohere-mlx-feasibility-and-benchmarking.md`
-- **Recommended execution branch:** TBD per remaining Phase 7B scope item
+- **Recommended execution branch:** `apps/murmeln/hardening-loop-adoption`
 
 ## Commands
 
@@ -77,12 +78,13 @@ Use a lightweight router-plus-layers model.
 | Router | `index.md` | Points to the currently active planning files | Active file changes |
 | Roadmap | `_planning/plans/2026-03-28-murmeln-plan.md` | Strategy, phases, priorities, directives | Scope or priority changes |
 | Findings | `_planning/plans/2026-03-28-murmeln-findings.md` | Durable discoveries, evidence, and investigation notes | After investigation work |
-| Phase Plan | `_planning/plans/2026-04-05-murmeln-phase-7b-cohere-mlx-first-class-integration.md` | Execution-ready plan for the current phase | When the active phase changes |
+| Phase Plan | `_planning/plans/2026-06-10-murmeln-hardening-and-loop-adoption.md` | Execution-ready plan for the current phase | When the active phase changes |
 
 External tracker:
 
 - `DEV-33` — umbrella roadmap tracking in Linear
-- `DEV-48` — active Phase 7B: Cohere/MLX first-class integration
+- `DEV-53` — active: hardening and self-correction-loop adoption
+- `DEV-48` — paused Phase 7B: Cohere/MLX first-class integration
 - `DEV-47` — completed Phase 7A: Cohere/MLX feasibility (POC passed, benchmark bypassed)
 - `DEV-40` — completed Phase 6 execution tracking in Linear
 - `DEV-39` — completed Phase 3 execution tracking in Linear

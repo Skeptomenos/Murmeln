@@ -161,3 +161,111 @@ struct KeychainErrorTests {
         #expect(error.errorDescription?.contains("-25300") == true)
     }
 }
+
+// MARK: - M4: Keychain fallback behavior
+
+/// Mock keychain that can fail saves and later "heal".
+final class MockKeychain: KeychainStoring, @unchecked Sendable {
+    var saveShouldThrow: Bool
+    private(set) var storage: [String: String] = [:]
+
+    init(saveShouldThrow: Bool) {
+        self.saveShouldThrow = saveShouldThrow
+    }
+
+    func save(_ value: String, forKey key: String) throws {
+        if saveShouldThrow { throw KeychainError.saveFailed(-25291) }
+        storage[key] = value
+    }
+
+    func retrieve(forKey key: String) -> String? { storage[key] }
+
+    func delete(forKey key: String) throws { storage[key] = nil }
+}
+
+@MainActor
+@Suite("Keychain Fallback Tests", .serialized)
+struct KeychainFallbackTests {
+
+    private func withCleanDefaults(_ settings: AppSettings, _ body: (String) throws -> Void) rethrows {
+        let key = "transcriptionAPIKey_\(settings.transcriptionProviderRaw)"
+        let previous = UserDefaults.standard.string(forKey: key)
+        UserDefaults.standard.removeObject(forKey: key)
+        defer {
+            if let previous {
+                UserDefaults.standard.set(previous, forKey: key)
+            } else {
+                UserDefaults.standard.removeObject(forKey: key)
+            }
+        }
+        try body(key)
+    }
+
+    @Test("Keychain save failure falls back to UserDefaults and surfaces a notice")
+    func failingKeychainSurfacesNotice() throws {
+        let keychain = MockKeychain(saveShouldThrow: true)
+        let settings = AppSettings(keychain: keychain)
+
+        try withCleanDefaults(settings) { key in
+            settings.transcriptionAPIKey = "sk-test-fallback-key-123456"
+
+            #expect(UserDefaults.standard.string(forKey: key) == "sk-test-fallback-key-123456")
+            #expect(settings.keychainSecurityNotice != nil)
+            #expect(keychain.storage[key] == nil)
+            // The key is still readable through the fallback path.
+            #expect(settings.transcriptionAPIKey == "sk-test-fallback-key-123456")
+        }
+    }
+
+    @Test("UserDefaults-resident key migrates back once the Keychain heals")
+    func healedKeychainMigratesKeyBack() throws {
+        let keychain = MockKeychain(saveShouldThrow: true)
+        let settings = AppSettings(keychain: keychain)
+
+        try withCleanDefaults(settings) { key in
+            settings.transcriptionAPIKey = "sk-test-migration-key-123456"
+            #expect(UserDefaults.standard.string(forKey: key) != nil)
+
+            keychain.saveShouldThrow = false
+            // Next read migrates the parked key back into the Keychain.
+            #expect(settings.transcriptionAPIKey == "sk-test-migration-key-123456")
+            #expect(keychain.storage[key] == "sk-test-migration-key-123456")
+            #expect(UserDefaults.standard.string(forKey: key) == nil)
+        }
+    }
+}
+
+// MARK: - M5: API key commit heuristics
+
+@Suite("API Key Discovery Heuristics Tests")
+struct APIKeyDiscoveryHeuristicsTests {
+
+    @Test("Short prefixes are not plausible keys")
+    func shortPrefixNotPlausible() {
+        #expect(AppSettings.isPlausibleAPIKey("sk-abc") == false)
+    }
+
+    @Test("Empty and whitespace keys are not plausible")
+    func emptyNotPlausible() {
+        #expect(AppSettings.isPlausibleAPIKey("") == false)
+        #expect(AppSettings.isPlausibleAPIKey("   ") == false)
+    }
+
+    @Test("Keys with embedded whitespace are not plausible")
+    func embeddedWhitespaceNotPlausible() {
+        #expect(AppSettings.isPlausibleAPIKey("sk-abc def ghi jkl mno pqr") == false)
+    }
+
+    @Test("A realistic-length key is plausible")
+    func realisticKeyPlausible() {
+        #expect(AppSettings.isPlausibleAPIKey("sk-proj-abcdef1234567890abcdef") == true)
+    }
+
+    @Test("Discovery fires only on a changed, plausible key")
+    func discoveryOnlyOnChangedPlausibleKey() {
+        #expect(AppSettings.shouldTriggerModelDiscovery(committedKey: "sk-proj-abcdef1234567890abcdef", previousKey: "") == true)
+        #expect(AppSettings.shouldTriggerModelDiscovery(committedKey: "sk-proj-abcdef1234567890abcdef", previousKey: "sk-proj-abcdef1234567890abcdef") == false)
+        #expect(AppSettings.shouldTriggerModelDiscovery(committedKey: "sk-half", previousKey: "") == false)
+        #expect(AppSettings.shouldTriggerModelDiscovery(committedKey: "", previousKey: "sk-proj-abcdef1234567890abcdef") == false)
+    }
+}

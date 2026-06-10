@@ -405,6 +405,18 @@ struct CaptureCompletionOutcome: Sendable, Equatable {
         }
 
         let trimmedText = transcriptionText.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // A non-empty transcript that did not paste is a real delivery failure
+        // (no Accessibility, Secure Input, CGEvent failure); the text stays on
+        // the clipboard instead of being restored away.
+        if !trimmedText.isEmpty {
+            return CaptureCompletionOutcome(
+                completionOutcome: "completed_no_paste",
+                completionReason: "paste_failed",
+                userFacingMessage: "Paste failed — the text is on your clipboard."
+            )
+        }
+
         if trimmedText.isEmpty,
            speechDetected,
            processedAudioDurationMs > 0,

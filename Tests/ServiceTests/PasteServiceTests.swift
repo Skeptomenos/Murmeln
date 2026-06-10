@@ -90,6 +90,49 @@ struct KeyboardLayoutResolverTests {
     }
 }
 
+@Suite("Paste Preflight Tests")
+struct PastePreflightTests {
+
+    @Test("Trusted process without secure input has no blocker")
+    func trustedNoSecureInputPasses() {
+        #expect(PasteService.preflightBlocker(axTrusted: true, secureInputActive: false) == nil)
+    }
+
+    @Test("Missing Accessibility trust blocks paste")
+    func missingAccessibilityBlocks() {
+        #expect(PasteService.preflightBlocker(axTrusted: false, secureInputActive: false) == .accessibilityNotTrusted)
+    }
+
+    @Test("Secure Input blocks paste")
+    func secureInputBlocks() {
+        #expect(PasteService.preflightBlocker(axTrusted: true, secureInputActive: true) == .secureInputActive)
+    }
+
+    @Test("Accessibility trust is reported before secure input")
+    func accessibilityReportedFirst() {
+        #expect(PasteService.preflightBlocker(axTrusted: false, secureInputActive: true) == .accessibilityNotTrusted)
+    }
+}
+
+@Suite("Clipboard Restore Decision Tests")
+struct ClipboardRestoreDecisionTests {
+
+    @Test("Unchanged changeCount restores the saved clipboard")
+    func unchangedChangeCountRestores() {
+        #expect(PasteService.shouldRestoreClipboard(changeCountAtWrite: 7, currentChangeCount: 7) == true)
+    }
+
+    @Test("A user copy during the paste window skips the restore")
+    func changedChangeCountSkipsRestore() {
+        #expect(PasteService.shouldRestoreClipboard(changeCountAtWrite: 7, currentChangeCount: 8) == false)
+    }
+
+    @Test("Any drift, even backwards, skips the restore")
+    func backwardsDriftSkipsRestore() {
+        #expect(PasteService.shouldRestoreClipboard(changeCountAtWrite: 7, currentChangeCount: 6) == false)
+    }
+}
+
 @Suite("Clipboard Preservation Tests")
 struct ClipboardPreservationTests {
     
@@ -121,19 +164,11 @@ struct ClipboardPreservationTests {
         }
     }
     
-    @Test("Whitespace-only text trimmed is empty")
-    func whitespaceOnlyTrimmedIsEmpty() {
-        // Test the core logic: whitespace-only text should be detected as empty
-        // This is what causes paste() to return early
-        let whitespaceText = "   \n\t  "
-        let trimmed = whitespaceText.trimmingCharacters(in: .whitespacesAndNewlines)
-        #expect(trimmed.isEmpty, "Whitespace-only text should be empty after trimming")
-        
-        // Also verify various whitespace combinations
-        let testCases = ["", " ", "\t", "\n", "  \n\t  ", "\r\n"]
-        for testCase in testCases {
-            let result = testCase.trimmingCharacters(in: .whitespacesAndNewlines)
-            #expect(result.isEmpty, "'\(testCase.debugDescription)' should be empty after trimming")
-        }
+    @Test("Whitespace-only text is not pasted")
+    @MainActor
+    func whitespaceOnlyTextNotPasted() async {
+        let timing = await PasteService.shared.pasteAndRestore(text: "   \n\t  ", captureID: nil)
+        #expect(timing.succeeded == false)
+        #expect(timing.blocker == nil)
     }
 }

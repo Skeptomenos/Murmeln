@@ -23,7 +23,14 @@ enum KeychainError: Error, LocalizedError {
 }
 
 /// Service for securely storing API keys in the macOS Keychain
-final class KeychainService: Sendable {
+/// Seam for AppSettings so tests can simulate a failing/healing Keychain.
+protocol KeychainStoring: Sendable {
+    func save(_ value: String, forKey key: String) throws
+    func retrieve(forKey key: String) -> String?
+    func delete(forKey key: String) throws
+}
+
+final class KeychainService: KeychainStoring, Sendable {
     static let shared = KeychainService()
     
     /// The service identifier for Keychain items
