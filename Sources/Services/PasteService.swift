@@ -142,37 +142,10 @@ struct PasteTiming: Sendable {
     let succeeded: Bool
     let commandSentElapsedMs: UInt64
     let totalElapsedMs: UInt64
-    var blocker: PasteBlocker? = nil
-}
-
-/// A detectable reason a synthetic Cmd+V cannot be delivered.
-/// Paste delivery cannot be positively confirmed (the target app reads the
-/// pasteboard, it never writes), so honest success means ruling out every
-/// failure mode we can detect. The Tier 2 dogfood checklist covers the rest.
-enum PasteBlocker: String, Sendable {
-    case clipboardWriteFailed = "clipboard_write_failed"
-    case accessibilityNotTrusted = "accessibility_not_trusted"
-    case secureInputActive = "secure_input_active"
-    case keyEventCreationFailed = "key_event_creation_failed"
 }
 
 final class PasteService: Sendable {
     @MainActor static let shared = PasteService()
-
-    /// Pure preflight decision: can a synthetic Cmd+V be delivered at all?
-    static func preflightBlocker(axTrusted: Bool, secureInputActive: Bool) -> PasteBlocker? {
-        if !axTrusted { return .accessibilityNotTrusted }
-        if secureInputActive { return .secureInputActive }
-        return nil
-    }
-
-    /// Pure restore decision: restore the saved clipboard only if the
-    /// pasteboard still holds our transcript write. If the changeCount moved,
-    /// someone (the user copying, another app) wrote newer content during the
-    /// paste window — restoring would clobber it.
-    static func shouldRestoreClipboard(changeCountAtWrite: Int, currentChangeCount: Int) -> Bool {
-        currentChangeCount == changeCountAtWrite
-    }
     
     /// Pastes text and restores the original clipboard contents afterward
     func paste(text: String, captureID: String? = nil) {
@@ -213,64 +186,29 @@ final class PasteService: Sendable {
 
         // Set new content
         pasteboard.clearContents()
-        let wroteTranscript = pasteboard.setString(text, forType: .string)
-        if !wroteTranscript {
-            return failPaste(.clipboardWriteFailed, captureID: captureID, pasteStartNs: pasteStartNs)
-        }
-        let changeCountAtWrite = pasteboard.changeCount
-
-        // Preflight: a synthetic Cmd+V cannot be delivered without Accessibility
-        // trust, and Secure Input swallows it silently. On failure the transcript
-        // stays on the clipboard (no restore) so the user can paste manually.
-        if let blocker = Self.preflightBlocker(
-            axTrusted: AXIsProcessTrusted(),
-            secureInputActive: IsSecureEventInputEnabled()
-        ) {
-            return failPaste(blocker, captureID: captureID, pasteStartNs: pasteStartNs)
-        }
+        pasteboard.setString(text, forType: .string)
 
         // Wait for clipboard to settle, then simulate paste
         try? await Task.sleep(for: .milliseconds(100))
-        let keyEventsPosted = self.simulatePaste()
+        self.simulatePaste()
         let pasteTriggeredNs = DispatchTime.now().uptimeNanoseconds
         let commandElapsedMs = (pasteTriggeredNs - pasteStartNs) / 1_000_000
-        if !keyEventsPosted {
-            return failPaste(
-                .keyEventCreationFailed,
-                captureID: captureID,
-                pasteStartNs: pasteStartNs,
-                commandSentElapsedMs: commandElapsedMs
-            )
-        }
         logDiagnostics("paste.command_sent", captureID: captureID, metadata: [
             "elapsed_ms": String(commandElapsedMs)
         ])
 
-        // Wait for paste to complete, then restore the original clipboard —
-        // but only if nothing else wrote to it during the window (M2).
+        // Wait for paste to complete, then restore original clipboard
         try? await Task.sleep(for: .milliseconds(200))
-        let restoredItemCount: Int
-        if Self.shouldRestoreClipboard(changeCountAtWrite: changeCountAtWrite, currentChangeCount: pasteboard.changeCount) {
-            restoreClipboard(savedItems, to: pasteboard)
-            restoredItemCount = savedItems.count
-            #if DEBUG
-            print("📋 Restored \(savedItems.count) clipboard item(s)")
-            #endif
-        } else {
-            restoredItemCount = 0
-            #if DEBUG
-            print("📋 Restore skipped — clipboard changed during paste window")
-            #endif
-            logDiagnostics("paste.restore_skipped", captureID: captureID, metadata: [
-                "reason": "clipboard_changed_during_paste"
-            ])
-        }
+        restoreClipboard(savedItems, to: pasteboard)
+        #if DEBUG
+        print("📋 Restored \(savedItems.count) clipboard item(s)")
+        #endif
 
         let pasteEndNs = DispatchTime.now().uptimeNanoseconds
         let totalElapsedMs = (pasteEndNs - pasteStartNs) / 1_000_000
         logDiagnostics("paste.complete", captureID: captureID, metadata: [
             "elapsed_ms": String(totalElapsedMs),
-            "restored_items": String(restoredItemCount),
+            "restored_items": String(savedItems.count),
             "succeeded": String(true)
         ])
 
@@ -278,34 +216,6 @@ final class PasteService: Sendable {
             succeeded: true,
             commandSentElapsedMs: commandElapsedMs,
             totalElapsedMs: totalElapsedMs
-        )
-    }
-
-    /// Records an honest paste failure. The saved clipboard is deliberately NOT
-    /// restored: the transcript must survive on the clipboard, losing the user's
-    /// previous clipboard item is the lesser harm than losing the dictation.
-    @MainActor
-    private func failPaste(
-        _ blocker: PasteBlocker,
-        captureID: String?,
-        pasteStartNs: UInt64,
-        commandSentElapsedMs: UInt64 = 0
-    ) -> PasteTiming {
-        let totalElapsedMs = (DispatchTime.now().uptimeNanoseconds - pasteStartNs) / 1_000_000
-        #if DEBUG
-        print("⚠️ Paste failed (\(blocker.rawValue)) — transcript left on clipboard")
-        #endif
-        logDiagnostics("paste.failed", captureID: captureID, metadata: [
-            "reason": blocker.rawValue,
-            "clipboard_preserved": String(true),
-            "elapsed_ms": String(totalElapsedMs),
-            "succeeded": String(false)
-        ])
-        return PasteTiming(
-            succeeded: false,
-            commandSentElapsedMs: commandSentElapsedMs,
-            totalElapsedMs: totalElapsedMs,
-            blocker: blocker
         )
     }
     
@@ -353,39 +263,38 @@ final class PasteService: Sendable {
     // MARK: - Paste Simulation
     
     @MainActor
-    private func simulatePaste() -> Bool {
+    private func simulatePaste() {
         // Try dynamic key code resolution first (works on all keyboard layouts)
         if let vKeyCode = KeyboardLayoutResolver.keyCode(for: "v") {
             #if DEBUG
             print("⌨️ Simulating paste via CGEvent with resolved key code: \(vKeyCode)")
             #endif
-            return simulatePasteWithKeyCode(vKeyCode)
+            simulatePasteWithKeyCode(vKeyCode)
+            return
         }
-
+        
         // Fallback 1: Try hardcoded US QWERTY key code (works for most users)
         #if DEBUG
         print("⚠️ KeyboardLayoutResolver failed, trying hardcoded kVK_ANSI_V")
         #endif
-        return simulatePasteWithKeyCode(CGKeyCode(kVK_ANSI_V))
-
-        // Note: If CGEvent paste fails (e.g., in Secure Input mode),
+        simulatePasteWithKeyCode(CGKeyCode(kVK_ANSI_V))
+        
+        // Note: If CGEvent paste fails (e.g., in Secure Input mode), 
         // there's no reliable fallback. AppleScript keystroke also fails
         // in Secure Input contexts for the same security reasons.
     }
-
-    private func simulatePasteWithKeyCode(_ keyCode: CGKeyCode) -> Bool {
+    
+    private func simulatePasteWithKeyCode(_ keyCode: CGKeyCode) {
         let source = CGEventSource(stateID: .hidSystemState)
-
-        guard let cmdVDown = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: true),
-              let cmdVUp = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: false) else {
-            return false
-        }
-        cmdVDown.flags = .maskCommand
-        cmdVUp.flags = .maskCommand
-
-        cmdVDown.post(tap: .cgSessionEventTap)
-        cmdVUp.post(tap: .cgSessionEventTap)
-        return true
+        
+        let cmdVDown = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: true)
+        cmdVDown?.flags = .maskCommand
+        
+        let cmdVUp = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: false)
+        cmdVUp?.flags = .maskCommand
+        
+        cmdVDown?.post(tap: .cgSessionEventTap)
+        cmdVUp?.post(tap: .cgSessionEventTap)
     }
 
     private func logDiagnostics(_ event: String, captureID: String?, metadata: [String: String] = [:]) {
@@ -394,4 +303,37 @@ final class PasteService: Sendable {
         }
     }
     
+    /// AppleScript fallback for paste - slower but layout-agnostic.
+    /// Note: This also fails in Secure Input contexts, so it's not a true fallback
+    /// for CGEvent failures, but it can help in edge cases where Carbon APIs fail.
+    @MainActor
+    private func simulatePasteViaAppleScript() -> Bool {
+        let script = """
+        tell application "System Events"
+            keystroke "v" using {command down}
+        end tell
+        """
+        
+        guard let appleScript = NSAppleScript(source: script) else {
+            #if DEBUG
+            print("⚠️ Failed to create AppleScript for paste")
+            #endif
+            return false
+        }
+        
+        var error: NSDictionary?
+        appleScript.executeAndReturnError(&error)
+        
+        if let error = error {
+            #if DEBUG
+            print("⚠️ AppleScript paste failed: \(error)")
+            #endif
+            return false
+        }
+        
+        #if DEBUG
+        print("✅ AppleScript paste succeeded")
+        #endif
+        return true
+    }
 }

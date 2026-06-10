@@ -31,20 +31,6 @@ struct CaptureCompletionOutcomeTests {
         #expect(outcome.userFacingMessage == nil)
     }
 
-    @Test("Non-empty transcript with failed paste reports paste_failed and keeps text on clipboard")
-    func failedPasteWithTranscriptReportsPasteFailed() {
-        let outcome = CaptureCompletionOutcome.classify(
-            transcriptionText: "hello world",
-            pasteSucceeded: false,
-            processedAudioDurationMs: 2_500,
-            speechDetected: true
-        )
-
-        #expect(outcome.completionOutcome == "completed_no_paste")
-        #expect(outcome.completionReason == "paste_failed")
-        #expect(outcome.userFacingMessage == "Paste failed — the text is on your clipboard.")
-    }
-
     @Test("Successful paste keeps paste-completed outcome")
     func successfulPasteKeepsCompletedOutcome() {
         let outcome = CaptureCompletionOutcome.classify(

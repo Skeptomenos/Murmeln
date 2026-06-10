@@ -422,37 +422,3 @@ struct AppSettingsTests {
         #expect(defaultValue == true)
     }
 }
-
-// MARK: - M6: Provider switch single setter path
-
-@MainActor
-@Suite("Provider Switch Tests", .serialized)
-struct ProviderSwitchTests {
-
-    @Test("transcriptionProvider setter updates raw value, defaults, and fires the change signal")
-    func setterIsTheSingleSourceOfTruth() {
-        let settings = AppSettings()
-        let previousRaw = settings.transcriptionProviderRaw
-        let previousURL = settings.transcriptionBaseURL
-        let previousModel = settings.transcriptionModel
-        defer {
-            settings.transcriptionProviderRaw = previousRaw
-            settings.transcriptionBaseURL = previousURL
-            settings.transcriptionModel = previousModel
-        }
-
-        var signaled: [TranscriptionProvider] = []
-        let cancellable = settings.transcriptionProviderChanged.sink { signaled.append($0) }
-        defer { cancellable.cancel() }
-
-        let target: TranscriptionProvider = previousRaw == TranscriptionProvider.groqWhisper.rawValue
-            ? .openAIWhisper
-            : .groqWhisper
-        settings.transcriptionProvider = target
-
-        #expect(settings.transcriptionProviderRaw == target.rawValue)
-        #expect(settings.transcriptionBaseURL == target.defaultBaseURL)
-        #expect(settings.transcriptionModel == target.defaultModel)
-        #expect(signaled == [target])
-    }
-}

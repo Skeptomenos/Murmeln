@@ -43,7 +43,7 @@ final class CohereMLXService: ObservableObject {
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         proc.arguments = ["python3", scriptURL.path]
-        proc.environment = await CohereMLXService.bridgeEnvironment()
+        proc.environment = CohereMLXService.bridgeEnvironment()
 
         let stdin = Pipe()
         let stdout = Pipe()
@@ -136,20 +136,9 @@ final class CohereMLXService: ObservableObject {
             throw CohereMLXError.encodingFailed
         }
 
-        // A write to a dead bridge raises SIGPIPE and kills the process with
-        // the legacy `write(_:)` API; ignore SIGPIPE and use the throwing API
-        // so a dead bridge becomes a typed error + .failed state instead.
-        signal(SIGPIPE, SIG_IGN)
-
         return try await withCheckedThrowingContinuation { continuation in
             self.pendingContinuation = continuation
-            do {
-                try pipe.fileHandleForWriting.write(contentsOf: data)
-            } catch {
-                self.pendingContinuation = nil
-                self.modelState = .failed("Bridge pipe write failed: \(error.localizedDescription)")
-                continuation.resume(throwing: CohereMLXError.bridgeWriteFailed(error.localizedDescription))
-            }
+            pipe.fileHandleForWriting.write(data)
         }
     }
 
@@ -170,54 +159,31 @@ final class CohereMLXService: ObservableObject {
         stdoutBuffer = ""
     }
 
-    // P0-2 / M3: Unescape protocol payloads. The bridge escapes `\` before
-    // `\n` (cohere_bridge.py), so decoding must be a single left-to-right
-    // pass — two sequential replacements corrupt literal "\n" sequences.
-    nonisolated static func unescapeBridgePayload(_ payload: String) -> String {
-        var out = ""
-        out.reserveCapacity(payload.count)
-        var index = payload.startIndex
-        while index < payload.endIndex {
-            let character = payload[index]
-            let next = payload.index(after: index)
-            if character == "\\", next < payload.endIndex {
-                switch payload[next] {
-                case "n":
-                    out.append("\n")
-                    index = payload.index(after: next)
-                    continue
-                case "\\":
-                    out.append("\\")
-                    index = payload.index(after: next)
-                    continue
-                default:
-                    break
-                }
-            }
-            out.append(character)
-            index = next
-        }
-        return out
-    }
-
+    // P0-2: Unescape \\n back to real newlines in protocol messages
     func processLine(_ line: String) {
         if line == "READY" {
             modelState = .ready
             return
         }
         if line.hasPrefix("LOAD_ERROR|") {
-            let msg = Self.unescapeBridgePayload(String(line.dropFirst("LOAD_ERROR|".count)))
+            let msg = String(line.dropFirst("LOAD_ERROR|".count))
+                .replacingOccurrences(of: "\\n", with: "\n")
+                .replacingOccurrences(of: "\\\\", with: "\\")
             modelState = .failed(msg)
             return
         }
         if line.hasPrefix("OK|") {
-            let transcript = Self.unescapeBridgePayload(String(line.dropFirst("OK|".count)))
+            let transcript = String(line.dropFirst("OK|".count))
+                .replacingOccurrences(of: "\\n", with: "\n")
+                .replacingOccurrences(of: "\\\\", with: "\\")
             pendingContinuation?.resume(returning: transcript)
             pendingContinuation = nil
             return
         }
         if line.hasPrefix("ERROR|") {
-            let msg = Self.unescapeBridgePayload(String(line.dropFirst("ERROR|".count)))
+            let msg = String(line.dropFirst("ERROR|".count))
+                .replacingOccurrences(of: "\\n", with: "\n")
+                .replacingOccurrences(of: "\\\\", with: "\\")
             pendingContinuation?.resume(throwing: CohereMLXError.transcriptionFailed(msg))
             pendingContinuation = nil
         }
@@ -243,40 +209,16 @@ final class CohereMLXService: ObservableObject {
     func installTestStdinPipe() {
         stdinPipe = Pipe()
     }
-
-    /// Installs a stdinPipe whose read end is already closed, so any write
-    /// fails like a dead bridge process (EPIPE). For test use only.
-    func installBrokenTestStdinPipe() {
-        let pipe = Pipe()
-        try? pipe.fileHandleForReading.close()
-        stdinPipe = pipe
-    }
     #endif
 
     // MARK: - Helpers
-
-    private nonisolated static let bridgeEnvironmentCache = OSAllocatedUnfairLock<[String: String]?>(initialState: nil)
-
-    /// Async wrapper: the login-shell probe blocks on `waitUntilExit`, which
-    /// previously ran synchronously on the MainActor. Resolve it off-main once
-    /// and cache the result for the process lifetime.
-    nonisolated static func bridgeEnvironment() async -> [String: String] {
-        if let cached = bridgeEnvironmentCache.withLock({ $0 }) {
-            return cached
-        }
-        let resolved = await Task.detached(priority: .userInitiated) {
-            resolveBridgeEnvironment()
-        }.value
-        bridgeEnvironmentCache.withLock { $0 = resolved }
-        return resolved
-    }
 
     /// Resolve the user's login-shell PATH so `/usr/bin/env python3` finds
     /// the same Python the user has in their terminal (homebrew, pyenv, conda,
     /// framework install, etc.). macOS GUI apps inherit a minimal environment
     /// that typically only contains `/usr/bin`, which points at the system
     /// Python 3.9 — usually missing `mlx_audio`.
-    private nonisolated static func resolveBridgeEnvironment() -> [String: String] {
+    private nonisolated static func bridgeEnvironment() -> [String: String] {
         var env = ProcessInfo.processInfo.environment
 
         let shell = env["SHELL"] ?? "/bin/zsh"
@@ -333,7 +275,6 @@ enum CohereMLXError: Error, LocalizedError, Equatable {
     case transcriptionInFlight   // P0-1
     case bridgeStopped           // P0-3
     case bridgeCrashed           // P0-3
-    case bridgeWriteFailed(String) // H5
 
     var errorDescription: String? {
         switch self {
@@ -343,7 +284,6 @@ enum CohereMLXError: Error, LocalizedError, Equatable {
         case .transcriptionInFlight: return "A transcription is already in progress."
         case .bridgeStopped: return "Cohere bridge was stopped during transcription."
         case .bridgeCrashed: return "Cohere bridge process exited unexpectedly."
-        case .bridgeWriteFailed(let msg): return "Cohere bridge is unreachable: \(msg)"
         }
     }
 }

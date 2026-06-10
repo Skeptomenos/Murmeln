@@ -9,7 +9,8 @@ struct HotkeyServiceTests {
     @Test("Hold threshold default is 400ms")
     @MainActor
     func holdThresholdDefault() {
-        let service = HotkeyService()
+        let service = HotkeyService.shared
+        reset(service)
 
         #expect(service.holdThreshold == 0.4)
     }
@@ -17,7 +18,8 @@ struct HotkeyServiceTests {
     @Test("Double-tap threshold default is 400ms")
     @MainActor
     func doubleTapThresholdDefault() {
-        let service = HotkeyService()
+        let service = HotkeyService.shared
+        reset(service)
 
         #expect(service.doubleTapThreshold == 0.4)
     }
@@ -25,7 +27,9 @@ struct HotkeyServiceTests {
     @Test("Quick Fn tap cancels pending hold without starting recording")
     @MainActor
     func fnTapBeforeThresholdCancelsHold() async throws {
-        let service = HotkeyService()
+        let service = HotkeyService.shared
+        reset(service)
+        defer { reset(service) }
 
         service.holdThreshold = 0.05
 
@@ -51,7 +55,9 @@ struct HotkeyServiceTests {
     @Test("Fn hold starts recording after threshold and release stops it")
     @MainActor
     func fnHoldStartsRecordingAfterThresholdAndReleaseStopsIt() async throws {
-        let service = HotkeyService()
+        let service = HotkeyService.shared
+        reset(service)
+        defer { reset(service) }
 
         service.holdThreshold = 0.02
 
@@ -74,7 +80,9 @@ struct HotkeyServiceTests {
     @Test("Right Option double tap engages lock mode")
     @MainActor
     func rightOptionDoubleTapEngagesLock() {
-        let service = HotkeyService()
+        let service = HotkeyService.shared
+        reset(service)
+        defer { reset(service) }
 
         service.doubleTapThreshold = 1.0
 
@@ -93,7 +101,9 @@ struct HotkeyServiceTests {
     @Test("Right Option tap while locked disengages lock and stops recording")
     @MainActor
     func rightOptionTapWhileLockedDisengagesAndStops() {
-        let service = HotkeyService()
+        let service = HotkeyService.shared
+        reset(service)
+        defer { reset(service) }
 
         service.doubleTapThreshold = 1.0
 
@@ -119,7 +129,9 @@ struct HotkeyServiceTests {
     @Test("Fn press is ignored while lock mode is active")
     @MainActor
     func fnPressIgnoredWhileLocked() async throws {
-        let service = HotkeyService()
+        let service = HotkeyService.shared
+        reset(service)
+        defer { reset(service) }
 
         service.doubleTapThreshold = 1.0
         service.holdThreshold = 0.02
@@ -141,6 +153,20 @@ struct HotkeyServiceTests {
         #expect(holdStartedCount == 0)
         #expect(keyDownCount == 1)
         #expect(keyUpCount == 0)
+    }
+
+    @MainActor
+    private func reset(_ service: HotkeyService) {
+        service.stop(reason: .manualStop)
+        service.holdThreshold = 0.4
+        service.doubleTapThreshold = 0.4
+        service.onKeyDown = nil
+        service.onKeyUp = nil
+        service.onHoldStarted = nil
+        service.onHoldCancelled = nil
+        service.onLockEngaged = nil
+        service.onLockDisengaged = nil
+        service.captureIDFactory = nil
     }
 
     private func fnEvent(isPressed: Bool) -> HotkeyModifierEvent {

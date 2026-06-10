@@ -96,29 +96,4 @@ struct CaptureDiagnosticsTests {
                 return try #require(jsonObject as? [String: Any])
             }
     }
-    @Test("Diagnostics log rotates at the size cap (M9)")
-    func diagnosticsLogRotatesAtSizeCap() async throws {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("capture-diagnostics-rotation-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: directory) }
-
-        let diagnosticsURL = directory.appendingPathComponent("capture-diagnostics.jsonl")
-        let rotatedURL = diagnosticsURL.appendingPathExtension("1")
-        let diagnostics = CaptureDiagnostics(
-            fileURL: diagnosticsURL,
-            persistedCaptureStateURL: directory.appendingPathComponent("unfinished-capture.json"),
-            sessionID: "session-rotation",
-            isEnabled: true,
-            maxLogSizeBytes: 512
-        )
-
-        for i in 0..<40 {
-            await diagnostics.mark("rotation.test.event", metadata: ["i": String(i), "padding": String(repeating: "x", count: 64)])
-        }
-
-        #expect(FileManager.default.fileExists(atPath: rotatedURL.path), "rotated generation should exist")
-        let mainSize = ((try? FileManager.default.attributesOfItem(atPath: diagnosticsURL.path)[.size]) as? Int) ?? .max
-        #expect(mainSize < 1_024, "active log should have been reset by rotation")
-    }
 }

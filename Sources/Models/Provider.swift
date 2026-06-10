@@ -88,6 +88,10 @@ enum TranscriptionProvider: String, CaseIterable, Codable, Sendable {
         }
     }
 
+    @available(*, deprecated, message: "Use isLocalNativeProvider or isLegacyCloudAudioInputProvider.")
+    var isNativeAudioModel: Bool {
+        isLocalNativeProvider || isLegacyCloudAudioInputProvider
+    }
     
     var supportsRefinementInOneCall: Bool {
         switch self {

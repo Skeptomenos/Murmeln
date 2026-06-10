@@ -14,7 +14,7 @@ The long-term direction is Apple-Silicon-local-first. Cloud and local-server bac
 - The app also supports cloud transcription providers and local-server transcription via `Local Whisper Server`.
 - Refinement is a separate layer and can use cloud providers, Ollama, or be skipped entirely with Raw Mode.
 - The checked-in Xcode project now builds both `Murmeln` and `Murmeln Dev`, and the touched reliability test suites pass with the restored WhisperKit dependency path.
-- Full `swift test` passes; `bash validate.sh` is the single validation gate (build, tests, Dev-scheme build, doc drift checks, hygiene).
+- Full `swift test` still has a known unrelated failure in `RefinementTestSuite.testCategoryCoverage`.
 - Current residual user-facing issues are occasional recognition misses, rare transcription-side latency outliers, and workflow polish items such as configurable paste delimiters.
 
 ## System Shape

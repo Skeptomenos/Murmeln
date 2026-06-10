@@ -28,6 +28,24 @@ struct MurmelnApp: App {
     }
 }
 
+extension AppState {
+    /// Simplified state for UI display (maps from internal RecordingPhase)
+    enum DisplayState {
+        case idle, recording, processing
+    }
+    
+    var currentState: DisplayState {
+        switch recordingPhase {
+        case .idle:
+            return .idle
+        case .warmingUp, .requestingPermission, .recording:
+            return .recording
+        case .processing:
+            return .processing
+        }
+    }
+}
+
 struct MenuContent: View {
     @ObservedObject private var appState = AppState.shared
     @ObservedObject private var overlay = OverlayWindowController.shared
@@ -135,9 +153,13 @@ struct MenuContent: View {
 class AppDelegate: NSObject, NSApplicationDelegate {
     private var terminationInFlight = false
     private var cancellables = Set<AnyCancellable>()
+    // P1-6: Track last observed provider to avoid spurious bridge lifecycle checks.
+    // Initialized in applicationDidFinishLaunching (main thread).
+    private var lastObservedProvider: String = ""
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+        lastObservedProvider = AppSettings.shared.transcriptionProviderRaw
 
         Task {
             await CaptureDiagnostics.shared.startSession()
@@ -202,11 +224,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        // P1-6 / M6: react to explicit provider changes from the single setter
-        // path — no objectWillChange sniffing, no raw-value bookkeeping.
-        AppSettings.shared.transcriptionProviderChanged
-            .sink { provider in
+        // P1-6: Observe provider changes — only react when transcriptionProviderRaw actually changes
+        AppSettings.shared.objectWillChange
+            .sink { [weak self] in
                 Task { @MainActor in
+                    guard let self else { return }
+                    let current = AppSettings.shared.transcriptionProviderRaw
+                    guard current != self.lastObservedProvider else { return }
+                    self.lastObservedProvider = current
+
+                    let provider = AppSettings.shared.transcriptionProvider
                     if provider == .cohereMLX {
                         // P1-7: Log bridge start errors
                         do {

@@ -1,8 +1,4 @@
 import SwiftUI
-import Combine
-import os
-
-private let settingsLogger = Logger(subsystem: AppIdentity.loggerSubsystem, category: "AppSettings")
 
 enum WhisperKitProfile: String, CaseIterable, Codable {
     case fast = "Fast"
@@ -231,13 +227,6 @@ Transcript:
 final class AppSettings: ObservableObject {
     static let shared = AppSettings()
     nonisolated static let whisperKitAutoDetectLanguageSelection = "Auto Detect"
-
-    private let keychain: any KeychainStoring
-
-    /// Non-nil while an API key sits in UserDefaults because the Keychain
-    /// rejected it (M4). Shown as a security banner in settings; cleared once
-    /// the key moves back into the Keychain.
-    @Published var keychainSecurityNotice: String?
     
     @AppStorage("transcriptionProvider") var transcriptionProviderRaw = TranscriptionProvider.openAIWhisper.rawValue
     @AppStorage("transcriptionBaseURL") var transcriptionBaseURL = "https://api.openai.com/v1"
@@ -469,21 +458,13 @@ final class AppSettings: ObservableObject {
         set { setAPIKey(newValue, for: refinementProviderRaw, isTranscription: false) }
     }
     
-    /// M6: explicit provider-change signal. Consumers (bridge lifecycle in
-    /// MurmelnApp) subscribe to this instead of sniffing `objectWillChange`.
-    let transcriptionProviderChanged = PassthroughSubject<TranscriptionProvider, Never>()
-
     var transcriptionProvider: TranscriptionProvider {
         get { TranscriptionProvider(rawValue: transcriptionProviderRaw) ?? .openAIWhisper }
         set {
-            // Single source of truth for a provider switch: raw value, defaults,
-            // and the change signal all happen here — UI must bind through this
-            // setter, never to `transcriptionProviderRaw` directly.
             transcriptionProviderRaw = newValue.rawValue
             transcriptionBaseURL = newValue.defaultBaseURL
             transcriptionModel = newValue == .whisperKit ? whisperKitModel : newValue.defaultModel
             objectWillChange.send()
-            transcriptionProviderChanged.send(newValue)
         }
     }
     
@@ -499,44 +480,34 @@ final class AppSettings: ObservableObject {
     private func getAPIKey(for providerRaw: String, isTranscription: Bool) -> String {
         let prefix = isTranscription ? "transcription" : "refinement"
         let key = "\(prefix)APIKey_\(providerRaw)"
-
+        
         // Try Keychain first (secure storage)
-        if let keychainValue = keychain.retrieve(forKey: key) {
+        if let keychainValue = KeychainService.shared.retrieve(forKey: key) {
             return keychainValue
         }
-
-        // A key parked in UserDefaults (after a Keychain failure, or from a
-        // pre-Keychain version) migrates back the moment the Keychain accepts
-        // a write again (M4).
-        if let fallbackValue = UserDefaults.standard.string(forKey: key), !fallbackValue.isEmpty {
-            if (try? keychain.save(fallbackValue, forKey: key)) != nil {
-                UserDefaults.standard.removeObject(forKey: key)
-                settingsLogger.info("Migrated \(key, privacy: .public) from UserDefaults back into the Keychain")
-            }
-            return fallbackValue
-        }
-        return ""
+        
+        // Fallback to UserDefaults for migration compatibility
+        return UserDefaults.standard.string(forKey: key) ?? ""
     }
-
+    
     private func setAPIKey(_ value: String, for providerRaw: String, isTranscription: Bool) {
         let prefix = isTranscription ? "transcription" : "refinement"
         let key = "\(prefix)APIKey_\(providerRaw)"
-
+        
         // Save to Keychain (secure storage)
         do {
             if value.isEmpty {
-                try keychain.delete(forKey: key)
+                try KeychainService.shared.delete(forKey: key)
             } else {
-                try keychain.save(value, forKey: key)
+                try KeychainService.shared.save(value, forKey: key)
             }
             // Remove from UserDefaults after successful Keychain save
             UserDefaults.standard.removeObject(forKey: key)
-            keychainSecurityNotice = nil
         } catch {
-            // Keep the key usable, but loudly: log in release builds and
-            // surface a security notice in the UI instead of failing silently.
-            settingsLogger.error("Keychain save failed for \(key, privacy: .public): \(error.localizedDescription, privacy: .public) — falling back to UserDefaults")
-            keychainSecurityNotice = "Couldn't store the API key in the Keychain — it's temporarily kept in app preferences (less secure). It will move back automatically once the Keychain is writable."
+            #if DEBUG
+            print("⚠️ Keychain save failed, falling back to UserDefaults: \(error)")
+            #endif
+            // Fallback to UserDefaults if Keychain fails
             UserDefaults.standard.set(value, forKey: key)
         }
         objectWillChange.send()
@@ -576,27 +547,10 @@ final class AppSettings: ObservableObject {
         }
     }
     
-    /// Internal init with a keychain seam: tests inject a failing/healing
-    /// mock; production uses the `.shared` default.
-    init(keychain: any KeychainStoring = KeychainService.shared) {
-        self.keychain = keychain
+    private init() {
         loadCustomPresets()
         loadPresetOverrides()
         migrateAPIKeysToKeychain()
-    }
-
-    /// M5: a key is worth sending to a provider's models endpoint only if it
-    /// plausibly is a complete secret, not a half-typed prefix.
-    nonisolated static func isPlausibleAPIKey(_ key: String) -> Bool {
-        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.count >= 20 else { return false }
-        return !trimmed.contains(where: { $0.isWhitespace })
-    }
-
-    /// M5: model discovery fires only when a committed key actually changed
-    /// and looks complete.
-    nonisolated static func shouldTriggerModelDiscovery(committedKey: String, previousKey: String) -> Bool {
-        committedKey != previousKey && isPlausibleAPIKey(committedKey)
     }
 
     nonisolated static func whisperKitLanguageSelectionRaw(for languages: [WhisperKitLanguage]) -> String {
@@ -667,7 +621,7 @@ final class AppSettings: ObservableObject {
             let key = "transcriptionAPIKey_\(providerRaw)"
             if let value = UserDefaults.standard.string(forKey: key), !value.isEmpty {
                 do {
-                    try keychain.save(value, forKey: key)
+                    try KeychainService.shared.save(value, forKey: key)
                     UserDefaults.standard.removeObject(forKey: key)
                     #if DEBUG
                     print("✅ Migrated \(key) to Keychain")
@@ -686,7 +640,7 @@ final class AppSettings: ObservableObject {
             let key = "refinementAPIKey_\(providerRaw)"
             if let value = UserDefaults.standard.string(forKey: key), !value.isEmpty {
                 do {
-                    try keychain.save(value, forKey: key)
+                    try KeychainService.shared.save(value, forKey: key)
                     UserDefaults.standard.removeObject(forKey: key)
                     #if DEBUG
                     print("✅ Migrated \(key) to Keychain")
