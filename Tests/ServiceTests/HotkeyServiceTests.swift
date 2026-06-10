@@ -1,234 +1,191 @@
+import AppKit
+import Carbon.HIToolbox
 import Testing
-import Foundation
 @testable import mrml
 
-// MARK: - HotkeyService Tests
-
-@Suite("HotkeyService Tests")
+@Suite("HotkeyService Tests", .serialized)
 struct HotkeyServiceTests {
-    
-    // MARK: - Threshold Configuration Tests
-    
+
     @Test("Hold threshold default is 400ms")
-    func holdThresholdDefault() async {
-        let service = await HotkeyService.shared
-        let threshold = await service.holdThreshold
-        #expect(threshold == 0.4)
+    @MainActor
+    func holdThresholdDefault() {
+        let service = HotkeyService.shared
+        reset(service)
+
+        #expect(service.holdThreshold == 0.4)
     }
-    
+
     @Test("Double-tap threshold default is 400ms")
-    func doubleTapThresholdDefault() async {
-        let service = await HotkeyService.shared
-        let threshold = await service.doubleTapThreshold
-        #expect(threshold == 0.4)
+    @MainActor
+    func doubleTapThresholdDefault() {
+        let service = HotkeyService.shared
+        reset(service)
+
+        #expect(service.doubleTapThreshold == 0.4)
     }
-    
-    @Test("Thresholds are within usable range")
-    func thresholdsWithinUsableRange() async {
-        let service = await HotkeyService.shared
-        let holdThreshold = await service.holdThreshold
-        let doubleTapThreshold = await service.doubleTapThreshold
-        
-        #expect(holdThreshold >= 0.2)
-        #expect(holdThreshold <= 1.0)
-        #expect(doubleTapThreshold >= 0.2)
-        #expect(doubleTapThreshold <= 1.0)
+
+    @Test("Quick Fn tap cancels pending hold without starting recording")
+    @MainActor
+    func fnTapBeforeThresholdCancelsHold() async throws {
+        let service = HotkeyService.shared
+        reset(service)
+        defer { reset(service) }
+
+        service.holdThreshold = 0.05
+
+        var holdStartedCount = 0
+        var holdCancelledCount = 0
+        var keyDownCount = 0
+        var keyUpCount = 0
+        service.onHoldStarted = { holdStartedCount += 1 }
+        service.onHoldCancelled = { holdCancelledCount += 1 }
+        service.onKeyDown = { keyDownCount += 1 }
+        service.onKeyUp = { keyUpCount += 1 }
+
+        service.handleModifierEvent(fnEvent(isPressed: true))
+        service.handleModifierEvent(fnEvent(isPressed: false))
+        try await Task.sleep(for: .milliseconds(80))
+
+        #expect(holdStartedCount == 1)
+        #expect(holdCancelledCount == 1)
+        #expect(keyDownCount == 0)
+        #expect(keyUpCount == 0)
     }
-    
-    // MARK: - Callback Properties Tests
-    
-    @Test("All six callback properties exist and are settable")
-    func callbackPropertiesExist() async {
-        let service = await HotkeyService.shared
-        
-        await MainActor.run {
-            service.onKeyDown = {}
-            service.onKeyUp = {}
-            service.onHoldStarted = {}
-            service.onHoldCancelled = {}
-            service.onLockEngaged = {}
-            service.onLockDisengaged = {}
-        }
-        
-        #expect(Bool(true))
+
+    @Test("Fn hold starts recording after threshold and release stops it")
+    @MainActor
+    func fnHoldStartsRecordingAfterThresholdAndReleaseStopsIt() async throws {
+        let service = HotkeyService.shared
+        reset(service)
+        defer { reset(service) }
+
+        service.holdThreshold = 0.02
+
+        var holdStartedCount = 0
+        var keyDownCount = 0
+        var keyUpCount = 0
+        service.onHoldStarted = { holdStartedCount += 1 }
+        service.onKeyDown = { keyDownCount += 1 }
+        service.onKeyUp = { keyUpCount += 1 }
+
+        service.handleModifierEvent(fnEvent(isPressed: true))
+        try await Task.sleep(for: .milliseconds(60))
+        service.handleModifierEvent(fnEvent(isPressed: false))
+
+        #expect(holdStartedCount == 1)
+        #expect(keyDownCount == 1)
+        #expect(keyUpCount == 1)
     }
-    
-    // MARK: - Hold Duration Logic Tests
-    
-    @Test("Quick tap below threshold should not trigger recording")
-    func quickTapBelowThreshold() {
-        let holdThreshold: TimeInterval = 0.4
-        let quickTapDuration: TimeInterval = 0.1
-        
-        let shouldStartRecording = quickTapDuration >= holdThreshold
-        #expect(shouldStartRecording == false)
+
+    @Test("Right Option double tap engages lock mode")
+    @MainActor
+    func rightOptionDoubleTapEngagesLock() {
+        let service = HotkeyService.shared
+        reset(service)
+        defer { reset(service) }
+
+        service.doubleTapThreshold = 1.0
+
+        var lockEngagedCount = 0
+        var keyDownCount = 0
+        service.onLockEngaged = { lockEngagedCount += 1 }
+        service.onKeyDown = { keyDownCount += 1 }
+
+        performRightOptionTap(on: service)
+        performRightOptionTap(on: service)
+
+        #expect(lockEngagedCount == 1)
+        #expect(keyDownCount == 1)
     }
-    
-    @Test("Hold beyond threshold should start recording")
-    func holdBeyondThreshold() {
-        let holdThreshold: TimeInterval = 0.4
-        let holdDuration: TimeInterval = 0.5
-        
-        let shouldStartRecording = holdDuration >= holdThreshold
-        #expect(shouldStartRecording == true)
+
+    @Test("Right Option tap while locked disengages lock and stops recording")
+    @MainActor
+    func rightOptionTapWhileLockedDisengagesAndStops() {
+        let service = HotkeyService.shared
+        reset(service)
+        defer { reset(service) }
+
+        service.doubleTapThreshold = 1.0
+
+        var lockEngagedCount = 0
+        var lockDisengagedCount = 0
+        var keyDownCount = 0
+        var keyUpCount = 0
+        service.onLockEngaged = { lockEngagedCount += 1 }
+        service.onLockDisengaged = { lockDisengagedCount += 1 }
+        service.onKeyDown = { keyDownCount += 1 }
+        service.onKeyUp = { keyUpCount += 1 }
+
+        performRightOptionTap(on: service)
+        performRightOptionTap(on: service)
+        performRightOptionTap(on: service)
+
+        #expect(lockEngagedCount == 1)
+        #expect(lockDisengagedCount == 1)
+        #expect(keyDownCount == 1)
+        #expect(keyUpCount == 1)
     }
-    
-    @Test("Hold exactly at threshold should start recording")
-    func holdExactlyAtThreshold() {
-        let holdThreshold: TimeInterval = 0.4
-        let holdDuration: TimeInterval = 0.4
-        
-        let shouldStartRecording = holdDuration >= holdThreshold
-        #expect(shouldStartRecording == true)
+
+    @Test("Fn press is ignored while lock mode is active")
+    @MainActor
+    func fnPressIgnoredWhileLocked() async throws {
+        let service = HotkeyService.shared
+        reset(service)
+        defer { reset(service) }
+
+        service.doubleTapThreshold = 1.0
+        service.holdThreshold = 0.02
+
+        var holdStartedCount = 0
+        var keyDownCount = 0
+        var keyUpCount = 0
+        service.onHoldStarted = { holdStartedCount += 1 }
+        service.onKeyDown = { keyDownCount += 1 }
+        service.onKeyUp = { keyUpCount += 1 }
+
+        performRightOptionTap(on: service)
+        performRightOptionTap(on: service)
+
+        service.handleModifierEvent(fnEvent(isPressed: true))
+        try await Task.sleep(for: .milliseconds(60))
+        service.handleModifierEvent(fnEvent(isPressed: false))
+
+        #expect(holdStartedCount == 0)
+        #expect(keyDownCount == 1)
+        #expect(keyUpCount == 0)
     }
-    
-    @Test("Very short tap (100ms) should not trigger")
-    func veryShortTap() {
-        let holdThreshold: TimeInterval = 0.4
-        let tapDuration: TimeInterval = 0.1
-        
-        #expect(tapDuration < holdThreshold)
+
+    @MainActor
+    private func reset(_ service: HotkeyService) {
+        service.stop(reason: .manualStop)
+        service.holdThreshold = 0.4
+        service.doubleTapThreshold = 0.4
+        service.onKeyDown = nil
+        service.onKeyUp = nil
+        service.onHoldStarted = nil
+        service.onHoldCancelled = nil
+        service.onLockEngaged = nil
+        service.onLockDisengaged = nil
+        service.captureIDFactory = nil
     }
-    
-    @Test("Long hold (1 second) should trigger")
-    func longHold() {
-        let holdThreshold: TimeInterval = 0.4
-        let holdDuration: TimeInterval = 1.0
-        
-        #expect(holdDuration >= holdThreshold)
+
+    private func fnEvent(isPressed: Bool) -> HotkeyModifierEvent {
+        HotkeyModifierEvent(
+            keyCode: UInt16(kVK_Function),
+            modifierFlags: isPressed ? [.function] : []
+        )
     }
-    
-    // MARK: - Double-Tap Lock Mode Logic Tests
-    
-    @Test("Double-tap within threshold engages lock")
-    func doubleTapWithinThreshold() {
-        let doubleTapThreshold: TimeInterval = 0.4
-        let timeBetweenTaps: TimeInterval = 0.2
-        
-        let isDoubleTap = timeBetweenTaps < doubleTapThreshold
-        #expect(isDoubleTap == true)
+
+    private func rightOptionEvent(isPressed: Bool) -> HotkeyModifierEvent {
+        HotkeyModifierEvent(
+            keyCode: UInt16(kVK_RightOption),
+            modifierFlags: isPressed ? [.option] : []
+        )
     }
-    
-    @Test("Slow taps outside threshold do not engage lock")
-    func slowTapsOutsideThreshold() {
-        let doubleTapThreshold: TimeInterval = 0.4
-        let timeBetweenTaps: TimeInterval = 0.6
-        
-        let isDoubleTap = timeBetweenTaps < doubleTapThreshold
-        #expect(isDoubleTap == false)
-    }
-    
-    @Test("Taps exactly at threshold do not engage lock")
-    func tapsExactlyAtThreshold() {
-        let doubleTapThreshold: TimeInterval = 0.4
-        let timeBetweenTaps: TimeInterval = 0.4
-        
-        let isDoubleTap = timeBetweenTaps < doubleTapThreshold
-        #expect(isDoubleTap == false)
-    }
-    
-    @Test("Very fast double-tap (100ms) engages lock")
-    func veryFastDoubleTap() {
-        let doubleTapThreshold: TimeInterval = 0.4
-        let timeBetweenTaps: TimeInterval = 0.1
-        
-        #expect(timeBetweenTaps < doubleTapThreshold)
-    }
-    
-    // MARK: - Lock Mode State Machine Tests
-    
-    @Test("Lock mode state transitions: engage then disengage")
-    func lockModeStateTransitions() {
-        var isLocked = false
-        var recordingActive = false
-        
-        isLocked = true
-        recordingActive = true
-        #expect(isLocked == true)
-        #expect(recordingActive == true)
-        
-        isLocked = false
-        recordingActive = false
-        #expect(isLocked == false)
-        #expect(recordingActive == false)
-    }
-    
-    @Test("Lock mode continues recording independent of Fn key")
-    func lockModeIndependentOfFnKey() {
-        let isLocked = true
-        let fnKeyHeld = false
-        let recordingActive = true
-        
-        let shouldContinueRecording = isLocked || fnKeyHeld
-        #expect(shouldContinueRecording == true)
-        #expect(recordingActive == true)
-    }
-    
-    @Test("Single tap after lock disengages and stops recording")
-    func singleTapDisengagesLock() {
-        var isLocked = true
-        var recordingActive = true
-        
-        isLocked = false
-        recordingActive = false
-        
-        #expect(isLocked == false)
-        #expect(recordingActive == false)
-    }
-    
-    @Test("Fn key press during lock mode is ignored")
-    func fnKeyIgnoredDuringLock() {
-        let isLocked = true
-        let fnKeyPressed = true
-        
-        let shouldStartNewRecording = fnKeyPressed && !isLocked
-        #expect(shouldStartNewRecording == false)
-    }
-    
-    // MARK: - State Reset Tests
-    
-    @Test("Stop resets all state")
-    func stopResetsAllState() {
-        var fnKeyIsDown = true
-        var fnRecordingDidStart = true
-        var rightOptionDown = true
-        var lastRightOptionTapTime: Date? = Date()
-        var isLocked = true
-        
-        fnKeyIsDown = false
-        fnRecordingDidStart = false
-        rightOptionDown = false
-        lastRightOptionTapTime = nil
-        isLocked = false
-        
-        #expect(fnKeyIsDown == false)
-        #expect(fnRecordingDidStart == false)
-        #expect(rightOptionDown == false)
-        #expect(lastRightOptionTapTime == nil)
-        #expect(isLocked == false)
-    }
-    
-    // MARK: - Time Interval Calculation Tests
-    
-    @Test("Time interval calculation between taps")
-    func timeIntervalCalculation() {
-        let firstTap = Date()
-        let secondTap = firstTap.addingTimeInterval(0.2)
-        
-        let interval = secondTap.timeIntervalSince(firstTap)
-        
-        #expect(interval >= 0.19)
-        #expect(interval <= 0.21)
-    }
-    
-    @Test("Time interval for slow taps")
-    func timeIntervalSlowTaps() {
-        let firstTap = Date()
-        let secondTap = firstTap.addingTimeInterval(0.6)
-        
-        let interval = secondTap.timeIntervalSince(firstTap)
-        
-        #expect(interval >= 0.59)
-        #expect(interval <= 0.61)
+
+    @MainActor
+    private func performRightOptionTap(on service: HotkeyService) {
+        service.handleModifierEvent(rightOptionEvent(isPressed: true))
+        service.handleModifierEvent(rightOptionEvent(isPressed: false))
     }
 }

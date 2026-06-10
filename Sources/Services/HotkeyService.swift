@@ -7,6 +7,20 @@ enum HotkeyServiceStopReason: String, Sendable {
     case manualStop = "manual_stop"
 }
 
+struct HotkeyModifierEvent {
+    let keyCode: UInt16
+    let modifierFlags: NSEvent.ModifierFlags
+
+    init(keyCode: UInt16, modifierFlags: NSEvent.ModifierFlags) {
+        self.keyCode = keyCode
+        self.modifierFlags = modifierFlags
+    }
+
+    init(event: NSEvent) {
+        self.init(keyCode: event.keyCode, modifierFlags: event.modifierFlags)
+    }
+}
+
 @MainActor
 final class HotkeyService {
     static let shared = HotkeyService()
@@ -56,11 +70,15 @@ final class HotkeyService {
     }
     
     private func handleFlagsChanged(_ event: NSEvent) {
+        handleModifierEvent(HotkeyModifierEvent(event: event))
+    }
+
+    func handleModifierEvent(_ event: HotkeyModifierEvent) {
         handleFnKey(event)
         handleRightOptionKey(event)
     }
     
-    private func handleFnKey(_ event: NSEvent) {
+    private func handleFnKey(_ event: HotkeyModifierEvent) {
         let fnPressed = event.modifierFlags.contains(.function)
         let noOtherModifiers = !event.modifierFlags.contains(.command) &&
                                !event.modifierFlags.contains(.option) &&
@@ -170,7 +188,7 @@ final class HotkeyService {
         fnCaptureID = nil
     }
     
-    private func handleRightOptionKey(_ event: NSEvent) {
+    private func handleRightOptionKey(_ event: HotkeyModifierEvent) {
         // Only handle events for the Right Option key specifically
         guard event.keyCode == kVK_RightOption else { return }
         

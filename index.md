@@ -1,6 +1,6 @@
 # Murmeln Index
 
-> Last updated: 2026-04-05
+> Last updated: 2026-06-10
 
 ## Project
 
@@ -26,11 +26,11 @@ xcodebuild -scheme Murmeln -configuration Release -derivedDataPath build build
 # Run all tests
 swift test
 
-# Run a single test file
-swift test --filter AppStateTests
+# Run a single test suite
+swift test --filter "HotkeyServiceTests"
 
 # Run a single test method
-swift test --filter "AppStateTests/initialStateIsIdle"
+swift test --filter "HotkeyServiceTests/fnHoldStartsRecordingAfterThresholdAndReleaseStopsIt"
 
 # Run tests matching pattern
 swift test --filter "HotkeyService"
@@ -46,6 +46,7 @@ cp -r build/Build/Products/Release/Murmeln.app /Applications/
 - `docs/` — public design notes, pipeline docs, and historical implementation references
 - `_planning/` — private planning docs, findings, and execution plans
 - `specs/` — task-level spec/history docs
+- `specs_archive/` — archived specs and v2.x implementation log
 - `tasks/` — older PRD-style planning notes
 
 ## Key Docs
@@ -65,7 +66,7 @@ When docs disagree, use this order:
 2. `docs/architecture-overview.md` — current top-layer technical truth
 3. `_planning/plans/2026-03-28-murmeln-findings.md` — evidence and unresolved contradictions
 4. `_planning/plans/2026-03-28-murmeln-plan.md` — strategy, priorities, and phase ordering
-5. Deep references like `docs/audio-pipeline.md`, `docs/state-machine-diagram.md`, `specs/README.md`, and `IMPLEMENTATION_PLAN.md` — useful context, but not authoritative when stale
+5. Deep references like `docs/audio-pipeline.md`, `docs/state-machine-diagram.md`, `specs/README.md`, and `specs_archive/IMPLEMENTATION_PLAN.md` — useful context, but not authoritative when stale
 
 ## Planning Memory System
 

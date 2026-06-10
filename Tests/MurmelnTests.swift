@@ -1,7 +1,5 @@
 import Testing
 import Foundation
-import AppKit
-import AVFoundation
 @testable import mrml
 
 // MARK: - Provider Tests
@@ -236,11 +234,6 @@ struct EdgeCaseTests {
         #expect(result?.text == longText)
     }
     
-    @Test("Special characters in prompts")
-    func specialCharsInPrompt() {
-        let prompt = "Fix this: \"quotes\", \\slashes\\, and {brackets}."
-        #expect(!prompt.isEmpty)
-    }
 }
 
 // MARK: - URL Construction Tests
@@ -318,40 +311,6 @@ struct ReliabilityTests {
     }
 }
 
-// MARK: - Audio Level Calculation Tests
-
-@Suite("Audio Level Calculation Tests")
-struct AudioLevelTests {
-    
-    @Test("RMS calculation edge case: empty buffer returns zero")
-    func rmsEmptyBuffer() {
-        let frameLength: Float = 0
-        let sum: Float = 0
-        let rms = frameLength > 0 ? sqrt(sum / frameLength) : 0
-        #expect(rms == 0)
-    }
-    
-    @Test("Visualizer bar height calculation")
-    func visualizerCalculation() {
-        let baseHeight: CGFloat = 4
-        let maxHeight: CGFloat = 20
-        let normalizedLevel: Float = 0.5 
-        
-        let barCount = 5
-        for index in 0..<barCount {
-            let indexFactor = Float(index) / Float(barCount - 1)
-            let centerDistance = abs(indexFactor - 0.5) * 2
-            let heightMultiplier = 1.0 - (centerDistance * 0.3)
-            
-            let dynamicHeight = CGFloat(normalizedLevel * heightMultiplier) * (maxHeight - baseHeight)
-            let finalHeight = baseHeight + dynamicHeight
-            
-            #expect(finalHeight >= baseHeight)
-            #expect(finalHeight <= maxHeight)
-        }
-    }
-}
-
 // MARK: - Multipart Form Data Tests
 
 @Suite("Multipart Form Data Tests")
@@ -383,51 +342,6 @@ struct MultipartFormDataTests {
         #expect(bodyString.contains("Content-Disposition: form-data"))
         #expect(bodyString.contains("filename=\"recording.wav\""))
         #expect(bodyString.contains("--test-boundary--"))
-    }
-}
-
-// MARK: - Concurrency Safety Tests
-
-@Suite("Concurrency Safety Tests")
-struct ConcurrencySafetyTests {
-    
-    @Test("NetworkService is Sendable")
-    func networkServiceSendable() {
-        let _: any Sendable = NetworkService.shared
-        #expect(true)
-    }
-    
-    @Test("NetworkService singleton is accessible without await")
-    func networkServiceNotMainActor() {
-        let _: any Sendable = NetworkService.shared
-        #expect(Bool(true))
-    }
-    
-    @Test("PasteService is Sendable")
-    func pasteServiceSendable() async {
-        let _: any Sendable = await PasteService.shared
-        #expect(true)
-    }
-    
-    @Test("PermissionService is Sendable")
-    func permissionServiceSendable() {
-        let _: any Sendable = PermissionService.shared
-        #expect(true)
-    }
-    
-    @Test("HotkeyService uses Task-based delayed start")
-    @MainActor
-    func hotkeyServiceTaskBased() async {
-        let service = HotkeyService.shared
-        #expect(service.holdThreshold == 0.4)
-        #expect(service.doubleTapThreshold == 0.4)
-    }
-    
-    @Test("AudioRecorder is an actor")
-    func audioRecorderIsActor() async {
-        let recorder = AudioRecorder()
-        let url = await recorder.stopRecording()
-        #expect(url == nil)
     }
 }
 
@@ -471,151 +385,6 @@ struct OverlayStateTests {
     }
 }
 
-// MARK: - HotkeyService Configuration Tests
-
-@Suite("HotkeyService Configuration Tests")
-struct HotkeyServiceConfigTests {
-    
-    @Test("Hold threshold default is 400ms")
-    func holdThresholdDefault() async {
-        let service = await HotkeyService.shared
-        #expect(await service.holdThreshold == 0.4)
-    }
-    
-    @Test("Double-tap threshold default is 400ms")
-    func doubleTapThresholdDefault() async {
-        let service = await HotkeyService.shared
-        #expect(await service.doubleTapThreshold == 0.4)
-    }
-    
-    @Test("HotkeyService exposes all six callback properties")
-    func callbacksExist() async {
-        let service = await HotkeyService.shared
-        await MainActor.run {
-            service.onKeyDown = {}
-            service.onKeyUp = {}
-            service.onHoldStarted = {}
-            service.onHoldCancelled = {}
-            service.onLockEngaged = {}
-            service.onLockDisengaged = {}
-        }
-        #expect(Bool(true))
-    }
-}
-
-// MARK: - Delayed Recording Start Tests
-
-@Suite("Delayed Recording Start Tests")
-struct DelayedRecordingStartTests {
-    
-    @Test("100ms tap (below 400ms threshold) should not trigger recording")
-    func quickTapBehavior() {
-        let holdThreshold: TimeInterval = 0.4
-        let quickTapDuration: TimeInterval = 0.1
-        
-        let shouldStartRecording = quickTapDuration >= holdThreshold
-        #expect(shouldStartRecording == false)
-    }
-    
-    @Test("500ms hold (above 400ms threshold) should start recording")
-    func holdBeyondThreshold() {
-        let holdThreshold: TimeInterval = 0.4
-        let holdDuration: TimeInterval = 0.5
-        
-        let shouldStartRecording = holdDuration >= holdThreshold
-        #expect(shouldStartRecording == true)
-    }
-    
-    @Test("400ms hold (exactly at threshold) should start recording")
-    func holdExactlyAtThreshold() {
-        let holdThreshold: TimeInterval = 0.4
-        let holdDuration: TimeInterval = 0.4
-        
-        let shouldStartRecording = holdDuration >= holdThreshold
-        #expect(shouldStartRecording == true)
-    }
-    
-    @Test("Threshold is between 200ms and 1000ms for usability")
-    func thresholdReasonableness() {
-        let holdThreshold: TimeInterval = 0.4
-        
-        #expect(holdThreshold >= 0.2)
-        #expect(holdThreshold <= 1.0)
-    }
-}
-
-// MARK: - Feature 2: Right Option Double-Tap Lock Mode Tests
-
-@Suite("Right Option Lock Mode Tests")
-struct RightOptionLockModeTests {
-    
-    @Test("200ms between taps (within 400ms threshold) engages lock")
-    func doubleTapEngagesLock() {
-        let doubleTapThreshold: TimeInterval = 0.4
-        let timeBetweenTaps: TimeInterval = 0.2
-        
-        let isDoubleTap = timeBetweenTaps < doubleTapThreshold
-        #expect(isDoubleTap == true)
-    }
-    
-    @Test("600ms between taps (outside 400ms threshold) does not engage lock")
-    func slowTapsNoLock() {
-        let doubleTapThreshold: TimeInterval = 0.4
-        let timeBetweenTaps: TimeInterval = 0.6
-        
-        let isDoubleTap = timeBetweenTaps < doubleTapThreshold
-        #expect(isDoubleTap == false)
-    }
-    
-    @Test("400ms between taps (exactly at threshold) does not engage lock")
-    func tapAtThresholdNoLock() {
-        let doubleTapThreshold: TimeInterval = 0.4
-        let timeBetweenTaps: TimeInterval = 0.4
-        
-        let isDoubleTap = timeBetweenTaps < doubleTapThreshold
-        #expect(isDoubleTap == false)
-    }
-    
-    @Test("Lock mode state machine: engage then disengage")
-    func lockModeStateTransitions() {
-        var isLocked = false
-        var recordingActive = false
-        
-        isLocked = true
-        recordingActive = true
-        #expect(isLocked == true)
-        #expect(recordingActive == true)
-        
-        isLocked = false
-        recordingActive = false
-        #expect(isLocked == false)
-        #expect(recordingActive == false)
-    }
-    
-    @Test("Lock mode continues recording independent of Fn key")
-    func handsFreeRecording() {
-        let isLocked = true
-        let fnKeyHeld = false
-        let recordingActive = true
-        
-        let shouldContinueRecording = isLocked || fnKeyHeld
-        #expect(shouldContinueRecording == true)
-        #expect(recordingActive == true)
-    }
-    
-    @Test("Single Right Option tap after lock disengages and stops recording")
-    func singleTapDisengagesLock() {
-        var isLocked = true
-        var recordingActive = true
-        
-        isLocked = false
-        recordingActive = false
-        
-        #expect(isLocked == false)
-        #expect(recordingActive == false)
-    }
-}
-
 // MARK: - Thin Line Indicator Tests
 
 @Suite("Thin Line Indicator Tests")
@@ -642,48 +411,9 @@ struct ThinLineIndicatorTests {
         #expect(OverlayState.processing != OverlayState.listening)
     }
     
-    @Test("Idle state exists for subtle always-visible indicator")
-    func idleStateSubtle() {
-        #expect(OverlayState.idle == OverlayState.idle)
-    }
-    
     @Test("Waiting state differs from idle for pre-threshold feedback")
     func waitingStateIndicatesPending() {
         #expect(OverlayState.waiting != OverlayState.idle)
-    }
-}
-
-// MARK: - Integration Simulation Tests
-
-@Suite("Integration Simulation Tests")
-struct IntegrationSimulationTests {
-    
-    @Test("Transcription flow: provider selection affects API path")
-    func transcriptionFlowProviderSelection() {
-        let openAIPath = "/audio/transcriptions"
-        let localPath = "/inference"
-        let geminiPath = ":generateContent"
-        
-        #expect(openAIPath != localPath)
-        #expect(localPath != geminiPath)
-    }
-    
-    @Test("Refinement flow: one-call vs two-call")
-    func refinementFlowDecision() {
-        let oneCallProviders = TranscriptionProvider.allCases.filter { $0.supportsRefinementInOneCall }
-        let twoCallProviders = TranscriptionProvider.allCases.filter { !$0.supportsRefinementInOneCall }
-        
-        #expect(oneCallProviders.count == 2)
-        // whisperKit, cohereMLX, openAIWhisper, groqWhisper, localWhisper = 5 two-call providers
-        #expect(twoCallProviders.count == 5)
-    }
-    
-    @Test("Provider to refinement provider mapping")
-    func providerMapping() {
-        for provider in Provider.allCases {
-            #expect(!provider.defaultBaseURL.isEmpty)
-            #expect(!provider.modelsEndpoint.isEmpty)
-        }
     }
 }
 
@@ -1098,105 +828,5 @@ struct URLValidationTests {
         #expect(URLValidation.isValid("not a url") == false)
         #expect(URLValidation.isValid("ftp://files.example.com") == false)
         #expect(URLValidation.isValid("api.openai.com") == false)
-    }
-}
-
-// MARK: - Audio Memory Optimization Tests
-
-@Suite("Audio Memory Optimization Tests")
-struct AudioMemoryOptimizationTests {
-    
-    @Test("Chunk size calculation for 16kHz sample rate")
-    func chunkSizeAt16kHz() {
-        // 10 seconds at 16kHz = 160,000 frames
-        let sampleRate: Double = 16000
-        let chunkDuration: Double = 10.0
-        let expectedChunkSize = Int(sampleRate * chunkDuration)
-        
-        #expect(expectedChunkSize == 160_000)
-    }
-    
-    @Test("Chunk size calculation for 44.1kHz sample rate")
-    func chunkSizeAt44kHz() {
-        // 10 seconds at 44.1kHz = 441,000 frames
-        let sampleRate: Double = 44100
-        let chunkDuration: Double = 10.0
-        let expectedChunkSize = Int(sampleRate * chunkDuration)
-        
-        #expect(expectedChunkSize == 441_000)
-    }
-    
-    @Test("Window size for RMS calculation is 20ms")
-    func windowSizeCalculation() {
-        // 20ms window at 16kHz = 320 frames
-        let sampleRate: Double = 16000
-        let windowDuration: Double = 0.02  // 20ms
-        let expectedWindowSize = Int(sampleRate * windowDuration)
-        
-        #expect(expectedWindowSize == 320)
-    }
-    
-    @Test("Padding frames calculation for trim boundaries")
-    func paddingFramesCalculation() {
-        let sampleRate: Double = 16000
-        
-        // Start padding: 150ms
-        let startPadding = Int(sampleRate * 0.15)
-        #expect(startPadding == 2400)
-        
-        // End padding: 800ms
-        let endPadding = Int(sampleRate * 0.8)
-        #expect(endPadding == 12800)
-    }
-    
-    @Test("Minimum trimmed duration is 300ms")
-    func minimumTrimmedDuration() {
-        let sampleRate: Double = 16000
-        let minDuration: Double = 0.3  // 300ms
-        let minFrames = Int(sampleRate * minDuration)
-        
-        #expect(minFrames == 4800)
-    }
-    
-    @Test("RMS threshold values are sensible")
-    func rmsThresholdValues() {
-        // hasAudibleSpeech threshold
-        let speechThreshold: Float = 0.005
-        #expect(speechThreshold > 0)
-        #expect(speechThreshold < 0.1)
-        
-        // trimSilence threshold
-        let silenceThreshold: Float = 0.01
-        #expect(silenceThreshold > speechThreshold)
-        #expect(silenceThreshold < 0.1)
-    }
-}
-
-// MARK: - Streaming Upload Tests
-
-@Suite("Streaming Upload Tests")
-struct StreamingUploadTests {
-    
-    @Test("Multipart boundary is valid UUID format")
-    func multipartBoundaryFormat() {
-        let boundary = UUID().uuidString
-        
-        // UUID string should be 36 characters (32 hex + 4 hyphens)
-        #expect(boundary.count == 36)
-        
-        // Should not contain characters that would break multipart parsing
-        #expect(!boundary.contains("\r"))
-        #expect(!boundary.contains("\n"))
-        #expect(!boundary.contains("\""))
-    }
-    
-    @Test("Chunk size for file streaming is 64KB")
-    func fileStreamingChunkSize() {
-        let chunkSize = 64 * 1024
-        
-        #expect(chunkSize == 65536)
-        // 64KB is a good balance between memory usage and I/O efficiency
-        #expect(chunkSize >= 4096)  // At least 4KB
-        #expect(chunkSize <= 1024 * 1024)  // At most 1MB
     }
 }

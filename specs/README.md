@@ -99,4 +99,4 @@ Previous specs (001-005) were fully implemented and have been moved to `specs_ar
 - 004-accessibility-improvements.md ✅
 - 005-swift6-concurrency-audit.md ✅
 
-See `IMPLEMENTATION_PLAN.md` for detailed implementation guidance.
+See `../specs_archive/IMPLEMENTATION_PLAN.md` for the archived v2.x implementation log.

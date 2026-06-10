@@ -3,68 +3,6 @@ import Foundation
 import AppKit
 @testable import mrml
 
-@Suite("PasteService Tests")
-struct PasteServiceTests {
-    
-    @Test("PasteService is Sendable")
-    @MainActor
-    func pasteServiceSendable() {
-        let _: any Sendable = PasteService.shared
-        #expect(true)
-    }
-    
-    @Test("SavedClipboardItem is Sendable")
-    func savedClipboardItemSendable() {
-        let item = SavedClipboardItem(types: [], dataByType: [:])
-        let _: any Sendable = item
-        #expect(true)
-    }
-    
-    @Test("SavedClipboardItem stores types correctly")
-    func savedClipboardItemTypes() {
-        let types: [NSPasteboard.PasteboardType] = [.string, .html]
-        let item = SavedClipboardItem(types: types, dataByType: [:])
-        #expect(item.types.count == 2)
-        #expect(item.types.contains(.string))
-        #expect(item.types.contains(.html))
-    }
-    
-    @Test("SavedClipboardItem stores data correctly")
-    func savedClipboardItemData() {
-        let testData = "Hello, World!".data(using: .utf8)!
-        let dataByType: [NSPasteboard.PasteboardType: Data] = [.string: testData]
-        let item = SavedClipboardItem(types: [.string], dataByType: dataByType)
-        
-        #expect(item.dataByType[.string] == testData)
-    }
-    
-    @Test("SavedClipboardItem handles multiple types")
-    func savedClipboardItemMultipleTypes() {
-        let stringData = "Plain text".data(using: .utf8)!
-        let htmlData = "<p>HTML</p>".data(using: .utf8)!
-        
-        let types: [NSPasteboard.PasteboardType] = [.string, .html]
-        let dataByType: [NSPasteboard.PasteboardType: Data] = [
-            .string: stringData,
-            .html: htmlData
-        ]
-        
-        let item = SavedClipboardItem(types: types, dataByType: dataByType)
-        
-        #expect(item.types.count == 2)
-        #expect(item.dataByType.count == 2)
-        #expect(item.dataByType[.string] == stringData)
-        #expect(item.dataByType[.html] == htmlData)
-    }
-    
-    @Test("SavedClipboardItem handles empty clipboard")
-    func savedClipboardItemEmpty() {
-        let item = SavedClipboardItem(types: [], dataByType: [:])
-        #expect(item.types.isEmpty)
-        #expect(item.dataByType.isEmpty)
-    }
-}
-
 @Suite("KeyboardLayoutResolver Tests")
 struct KeyboardLayoutResolverTests {
     

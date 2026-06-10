@@ -338,22 +338,6 @@ struct HistoryStorageTests {
         #expect(decoded.entries.count == 1)
     }
     
-    @Test("HistoryStorage is Sendable")
-    func isSendable() {
-        let entries = [
-            HistoryEntry(original: "test", refined: "Test.", presetName: "Casual", systemPrompt: "Prompt", variants: nil, variantPrompts: nil)
-        ]
-        let storage = HistoryStorage(entries: entries)
-        
-        // This test verifies Sendable conformance at compile time
-        Task.detached {
-            _ = storage.version
-            _ = storage.entries.count
-        }
-        
-        #expect(storage.version == 1)
-    }
-    
     @Test("HistoryStorage with variants encodes correctly")
     func variantsEncodeCorrectly() throws {
         let variants = ["Casual": "Hello.", "Structured": "- Hello"]

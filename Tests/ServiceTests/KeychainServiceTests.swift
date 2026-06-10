@@ -5,12 +5,6 @@ import Foundation
 @Suite("KeychainService Tests")
 struct KeychainServiceTests {
     
-    @Test("KeychainService is Sendable")
-    func keychainServiceSendable() {
-        let _: any Sendable = KeychainService.shared
-        #expect(true)
-    }
-    
     @Test("KeychainService singleton is accessible")
     func keychainServiceSingleton() {
         let service = KeychainService.shared
@@ -59,9 +53,8 @@ struct KeychainServiceTests {
     @Test("Delete non-existent key does not throw")
     func deleteNonExistent() throws {
         let nonExistentKey = "non_existent_delete_\(UUID().uuidString)"
-        // Should not throw
         try KeychainService.shared.delete(forKey: nonExistentKey)
-        #expect(true)
+        #expect(KeychainService.shared.retrieve(forKey: nonExistentKey) == nil)
     }
     
     @Test("Exists returns true for existing key")
