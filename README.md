@@ -54,21 +54,9 @@ cp -r build/Build/Products/Release/Murmeln.app /Applications/
 
 ### 2. Set up on-device transcription (recommended)
 
-Murmeln's primary backend is **Cohere on-device via MLX** — fast, fully local, multilingual, and the recommended way to use the app. It needs a one-time setup:
+Launch Murmeln → menu bar mic icon → **Settings…** → **Transcription**. Pick an on-device model and click **Download Model**. Murmeln shows live progress, continues downloads while you inspect another model, and lets you cancel an active download or delete an installed model later.
 
-```bash
-# 1. Install the on-device speech engine (Python 3.10+, Apple Silicon)
-pip install mlx-audio
-
-# 2. Accept the model terms once at:
-#    https://huggingface.co/CohereLabs/cohere-transcribe-03-2026
-# 3. Authenticate Hugging Face so the model can download:
-hf auth login
-```
-
-Then launch Murmeln → menu bar mic icon → **Settings…** → **Transcription** → select **Cohere (On-Device)**. The model downloads on first use and stays loaded for instant transcription afterwards.
-
-> Prefer zero setup? Choose **WhisperKit (On-Device)** instead — it runs entirely in-app with no Python and no account, just a slightly slower model download. Or use a cloud provider with your own API key (see [Backends](#backends)).
+**Parakeet v3 (Multilingual)** is the default: it is fast, supports 25 languages, and auto-detects the spoken language. No account, terminal setup, or external runtime is required.
 
 ### 3. Grant permissions
 
@@ -79,14 +67,25 @@ Then launch Murmeln → menu bar mic icon → **Settings…** → **Transcriptio
 
 ---
 
-## Backends
+## On-device model catalog
 
-On-device is the recommended path; cloud and local-server backends are supported alternatives when you want them.
+All catalog models run in-process on Apple Silicon and download from the Settings UI.
+
+| Model | Download | Languages | Notes |
+|-------|----------|-----------|-------|
+| **Parakeet v3 (Multilingual)** | ~470 MB | 25 | **Default.** Fast and language auto-detecting. |
+| **Parakeet v2 (English)** | ~470 MB | English | Slightly higher English accuracy than v3. |
+| **Cohere Transcribe INT8** | ~2.1 GB | 14 | Requires an explicit language. The first use after each app launch can take about 90 seconds and briefly use substantial memory. |
+| **WhisperKit (Whisper)** | ~600 MB* | English, German, French, Spanish, Italian | Pick the dictation language explicitly; short utterances are unreliable with auto-detection. |
+
+\*The concrete WhisperKit variant determines the exact download size.
+
+## Other backends
+
+Cloud and local-server backends remain available when you want them.
 
 | Backend | Type | Notes |
 |---------|------|-------|
-| **Cohere (On-Device)** | Local · MLX | **Recommended.** Fast, multilingual, runs on-device. Needs the one-time setup above. |
-| **WhisperKit (On-Device)** | Local · CoreML | Zero-config local option, downloads its model in-app. |
 | **Cloud (OpenAI · Groq · Gemini · GPT-4o)** | Cloud | Bring your own API key. Gemini and GPT-4o transcribe + refine in one call. |
 | **Local Whisper Server** | Local server | Point at a compatible server on `localhost`. |
 
@@ -109,9 +108,8 @@ The <kbd>Fn</kbd> hotkey can't fire while a password field or other macOS "Secur
 
 ## Requirements
 
-- macOS 14.0 (Sonoma) or later
-- On-device backends (Cohere/MLX, WhisperKit) require **Apple Silicon**; cloud and local-server backends also run on Intel Macs
-- For Cohere on-device: Python 3.10+ with `mlx-audio`, plus a free Hugging Face account to download the (gated) model once
+- macOS 26.0 or later
+- Apple Silicon
 - For cloud backends: an API key for your chosen provider
 
 ---

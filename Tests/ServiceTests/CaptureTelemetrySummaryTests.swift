@@ -9,7 +9,7 @@ struct CaptureTelemetrySummaryTests {
     func twoCallSummaryIncludesRefinementAttribution() async throws {
         let network = MockLegacyTranscriptionNetworkingForSummaryTests()
         let whisper = SummaryTestWhisperKitService()
-        let service = TranscriptionPipelineService(network: network, whisperKitService: whisper, cohereMLXService: CohereMLXService())
+        let service = TranscriptionPipelineService(network: network, whisperKitService: whisper)
 
         let settings = PipelineSettingsSnapshot(
             transcriptionProvider: .openAIWhisper,
@@ -27,8 +27,7 @@ struct CaptureTelemetrySummaryTests {
             whisperKitPromptPrefill: false,
             whisperKitEnableTimestamps: false,
             whisperKitUseVAD: true,
-            whisperKitLanguages: [.english],
-            cohereLanguage: .english
+            whisperKitLanguages: [.english]
         )
 
         let transcription = try await service.executeTranscription(
@@ -236,4 +235,5 @@ private final class SummaryTestWhisperKitService: WhisperKitTranscribing {
 
     func loadModel(_ variant: String) async throws {}
     func transcribe(audioURL: URL) async throws -> String { "whisper" }
+    func transcribe(audioURL: URL, languageCode: String?) async throws -> String { "whisper" }
 }

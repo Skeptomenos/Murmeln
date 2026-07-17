@@ -196,6 +196,9 @@ final class WhisperKitService: ObservableObject {
     
     // Download task for cancellation
     private var downloadTask: Task<URL, Error>?
+    private var downloadGeneration: UInt64 = 0
+    private var loadGeneration: UInt64 = 0
+    private let modelsDirectoryOverride: URL?
     
     // Worker actor
     private let worker = WhisperKitWorker()
@@ -212,7 +215,7 @@ final class WhisperKitService: ObservableObject {
         case error(String)
     }
     
-    enum ServiceError: Error, LocalizedError {
+    enum ServiceError: Error, LocalizedError, Equatable {
         case modelNotLoaded
         case modelNotFound(String)
         case transcriptionFailed
@@ -229,6 +232,9 @@ final class WhisperKitService: ObservableObject {
     }
     
     private var modelsDirectory: URL {
+        if let modelsDirectoryOverride {
+            return modelsDirectoryOverride
+        }
         let appSupportDir = AppIdentity.appSupportDirectoryURL
         let modelsDir = appSupportDir.appendingPathComponent("Models")
         
@@ -239,7 +245,8 @@ final class WhisperKitService: ObservableObject {
         return modelsDir
     }
     
-    init() {
+    init(modelsDirectory: URL? = nil) {
+        modelsDirectoryOverride = modelsDirectory
         Task {
             scanDownloadedModels()
         }
@@ -264,6 +271,31 @@ final class WhisperKitService: ObservableObject {
 
     @MainActor
     static func prepareDecoding(settings: PipelineSettingsSnapshot) -> WhisperKitPreparedDecoding {
+        prepareDecoding(
+            settings: settings,
+            languageContext: resolveLanguageContext(settings.whisperKitLanguages)
+        )
+    }
+
+    @MainActor
+    static func prepareDecoding(
+        settings: PipelineSettingsSnapshot,
+        languageCode: String?
+    ) -> WhisperKitPreparedDecoding {
+        prepareDecoding(
+            settings: settings,
+            languageContext: (
+                languageCode == nil ? .autoDetect : .explicit,
+                languageCode
+            )
+        )
+    }
+
+    @MainActor
+    private static func prepareDecoding(
+        settings: PipelineSettingsSnapshot,
+        languageContext: (TranscriptionLanguageMode, String?)
+    ) -> WhisperKitPreparedDecoding {
         let rawSuppressTokens: [Int]
         var decodingOptions: DecodingOptions
 
@@ -334,7 +366,7 @@ final class WhisperKitService: ObservableObject {
         let normalization = normalizeSuppressTokens(rawSuppressTokens)
         decodingOptions.supressTokens = normalization.normalizedTokens
 
-        let (languageMode, languageCode) = resolveLanguageContext(settings.whisperKitLanguages)
+        let (languageMode, languageCode) = languageContext
         if let languageCode {
             decodingOptions.language = languageCode
             decodingOptions.detectLanguage = false
@@ -453,18 +485,21 @@ final class WhisperKitService: ObservableObject {
     
     // Download a model with progress
     func downloadModel(_ variant: String) async throws -> URL {
+        downloadGeneration &+= 1
+        let generation = downloadGeneration
         modelState = .downloading
         isDownloading = true
         downloadProgress = 0
         downloadStatus = "Starting download..."
         
         // Create cancellable task
-        let task = Task<URL, Error> {
+        let task = Task<URL, Error> { [self] in
             // Use a Sendable closure that captures necessary MainActor state safely
             let progressCallback: @Sendable (Progress) -> Void = { progress in
-                Task { @MainActor in
-                    WhisperKitService.shared.downloadProgress = progress.fractionCompleted
-                    WhisperKitService.shared.downloadStatus = "\(Int(progress.fractionCompleted * 100))%"
+                Task { @MainActor [weak self] in
+                    guard let self, self.downloadGeneration == generation else { return }
+                    self.downloadProgress = progress.fractionCompleted
+                    self.downloadStatus = "\(Int(progress.fractionCompleted * 100))%"
                 }
             }
             
@@ -488,6 +523,9 @@ final class WhisperKitService: ObservableObject {
         
         do {
             let modelFolder = try await task.value
+            guard generation == downloadGeneration else {
+                throw ServiceError.downloadCancelled
+            }
             
             // Mark as downloaded in AppSettings
             var current = AppSettings.shared.installedWhisperModels
@@ -501,31 +539,58 @@ final class WhisperKitService: ObservableObject {
             isDownloading = false
             downloadTask = nil
             return modelFolder
-        } catch is CancellationError {
-            modelState = .unloaded
-            isDownloading = false
-            downloadTask = nil
-            downloadStatus = "Download cancelled"
-            throw ServiceError.downloadCancelled
         } catch {
-            modelState = .error(error.localizedDescription)
-            isDownloading = false
-            downloadTask = nil
+            let cancelled = Task.isCancelled
+                || error is CancellationError
+                || (error as? ServiceError) == .downloadCancelled
+            if generation == downloadGeneration {
+                modelState = cancelled ? .unloaded : .error(error.localizedDescription)
+                isDownloading = false
+                downloadTask = nil
+                if cancelled {
+                    downloadStatus = "Download cancelled"
+                }
+            }
+            if cancelled {
+                throw ServiceError.downloadCancelled
+            }
             throw error
         }
     }
     
     /// Cancel the current download
     func cancelDownload() {
-        downloadTask?.cancel()
-        downloadTask = nil
+        guard let downloadTask else { return }
+        downloadGeneration &+= 1
+        downloadTask.cancel()
+        self.downloadTask = nil
         isDownloading = false
         downloadStatus = "Cancelled"
         modelState = .unloaded
     }
+
+    /// Delete one concrete WhisperKit variant and reconcile the persisted
+    /// installed-model index. Production and Dev identities resolve separate
+    /// `modelsDirectory` roots through AppIdentity.
+    func deleteModel(_ variant: String) async throws {
+        if selectedModel == variant {
+            await unloadModel()
+        }
+
+        let modelFolder = modelsDirectory
+            .appendingPathComponent("models/argmaxinc/whisperkit-coreml")
+            .appendingPathComponent(variant)
+        if FileManager.default.fileExists(atPath: modelFolder.path) {
+            try FileManager.default.removeItem(at: modelFolder)
+        }
+
+        AppSettings.shared.installedWhisperModels.removeAll { $0 == variant }
+        scanDownloadedModels()
+    }
     
     /// Unload the current model to free memory
     func unloadModel() async {
+        loadGeneration &+= 1
         await worker.unload()
         modelState = .unloaded
         selectedModel = ""
@@ -543,15 +608,26 @@ final class WhisperKitService: ObservableObject {
         if modelState == .ready && selectedModel != variant {
             await unloadModel()
         }
+
+        loadGeneration &+= 1
+        let generation = loadGeneration
         
         modelState = .loading
         selectedModel = variant
         
         do {
             try await worker.loadModel(variant, modelsDirectory: modelsDirectory)
+            guard generation == loadGeneration else {
+                if modelState != .ready {
+                    await worker.unload()
+                }
+                return
+            }
             modelState = .ready
         } catch {
-            modelState = .error(error.localizedDescription)
+            if generation == loadGeneration {
+                modelState = .error(error.localizedDescription)
+            }
             throw error
         }
     }
@@ -559,6 +635,14 @@ final class WhisperKitService: ObservableObject {
     // Transcribe audio file
     func transcribe(audioURL: URL) async throws -> String {
         let preparedDecoding = prepareDecoding(settings: AppSettings.shared.pipelineSettingsSnapshot())
+        return try await transcribe(audioURL: audioURL, preparedDecoding: preparedDecoding)
+    }
+
+    func transcribe(audioURL: URL, languageCode: String?) async throws -> String {
+        let preparedDecoding = Self.prepareDecoding(
+            settings: AppSettings.shared.pipelineSettingsSnapshot(),
+            languageCode: languageCode
+        )
         return try await transcribe(audioURL: audioURL, preparedDecoding: preparedDecoding)
     }
 

@@ -46,9 +46,6 @@ actor ModelDiscoveryService {
             return await fetchGeminiAudioModels(apiKey: apiKey, baseURL: baseURL)
         case .localWhisper:
             return [ModelInfo(id: "default", name: "Local Whisper")]
-        case .cohereMLX:
-            // Cohere MLX has a fixed model — no discovery needed
-            return [ModelInfo(id: CohereMLXService.modelID, name: "Cohere Transcribe 03-2026")]
         }
     }
 

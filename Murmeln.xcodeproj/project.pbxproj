@@ -32,11 +32,17 @@
 		APP025 /* TranscriptionPipelineModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC025 /* TranscriptionPipelineModels.swift */; };
 		APP026 /* TranscriptionPipelineService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC026 /* TranscriptionPipelineService.swift */; };
 		APP027 /* BackendSettingsSections.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC027 /* BackendSettingsSections.swift */; };
-		APP028 /* CohereMLXService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC028 /* CohereMLXService.swift */; };
 		APP029 /* AppStateDependencies.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC030 /* AppStateDependencies.swift */; };
+		APP030 /* ModelCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC031 /* ModelCatalog.swift */; };
+		APP031 /* TranscriptionRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC032 /* TranscriptionRuntime.swift */; };
+		APP032 /* WhisperKitRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC033 /* WhisperKitRuntime.swift */; };
+		APP033 /* FluidAudioRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC034 /* FluidAudioRuntime.swift */; };
+		APP034 /* AudioChunkingRoute.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC035 /* AudioChunkingRoute.swift */; };
+		APP035 /* RuntimeStatusModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC036 /* RuntimeStatusModel.swift */; };
+		APP036 /* CatalogDownloadManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC037 /* CatalogDownloadManager.swift */; };
 		RES001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F2B02ABB2F0409FC00DD12FC /* Assets.xcassets */; };
-		RES002 /* cohere_bridge.py in Resources */ = {isa = PBXBuildFile; fileRef = SRC029 /* cohere_bridge.py */; };
 		PKG004 /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = PKG005 /* WhisperKit */; };
+		PKG007 /* FluidAudio in Frameworks */ = {isa = PBXBuildFile; productRef = PKG008 /* FluidAudio */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -47,6 +53,13 @@
 		SRC002 /* AppSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettings.swift; sourceTree = "<group>"; };
 		SRC003 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
 		SRC030 /* AppStateDependencies.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStateDependencies.swift; sourceTree = "<group>"; };
+		SRC031 /* ModelCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelCatalog.swift; sourceTree = "<group>"; };
+		SRC032 /* TranscriptionRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionRuntime.swift; sourceTree = "<group>"; };
+		SRC033 /* WhisperKitRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperKitRuntime.swift; sourceTree = "<group>"; };
+		SRC034 /* FluidAudioRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FluidAudioRuntime.swift; sourceTree = "<group>"; };
+		SRC035 /* AudioChunkingRoute.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioChunkingRoute.swift; sourceTree = "<group>"; };
+		SRC036 /* RuntimeStatusModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RuntimeStatusModel.swift; sourceTree = "<group>"; };
+		SRC037 /* CatalogDownloadManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogDownloadManager.swift; sourceTree = "<group>"; };
 		SRC022 /* AppIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIdentity.swift; sourceTree = "<group>"; };
 		SRC005 /* AudioService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioService.swift; sourceTree = "<group>"; };
 		SRC006 /* NetworkService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkService.swift; sourceTree = "<group>"; };
@@ -69,8 +82,6 @@
 		SRC025 /* TranscriptionPipelineModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionPipelineModels.swift; sourceTree = "<group>"; };
 		SRC026 /* TranscriptionPipelineService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionPipelineService.swift; sourceTree = "<group>"; };
 		SRC027 /* BackendSettingsSections.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackendSettingsSections.swift; sourceTree = "<group>"; };
-		SRC028 /* CohereMLXService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CohereMLXService.swift; sourceTree = "<group>"; };
-		SRC029 /* cohere_bridge.py */ = {isa = PBXFileReference; lastKnownFileType = text.script.python; path = cohere_bridge.py; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -79,6 +90,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				PKG004 /* WhisperKit in Frameworks */,
+				PKG007 /* FluidAudio in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -90,7 +102,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				RES001 /* Assets.xcassets in Resources */,
-				RES002 /* cohere_bridge.py in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -104,7 +115,6 @@
 				GRP002 /* Models */,
 				GRP003 /* Services */,
 				GRP004 /* Views */,
-				GRP006 /* Resources */,
 			);
 			path = Sources;
 			sourceTree = "<group>";
@@ -115,6 +125,7 @@
 				SRC002 /* AppSettings.swift */,
 				SRC003 /* AppState.swift */,
 				SRC030 /* AppStateDependencies.swift */,
+				SRC031 /* ModelCatalog.swift */,
 				SRC022 /* AppIdentity.swift */,
 				SRC025 /* TranscriptionPipelineModels.swift */,
 				SRC011 /* Provider.swift */,
@@ -138,7 +149,11 @@
 				SRC021 /* KeychainService.swift */,
 				SRC023 /* WhisperKitService.swift */,
 				SRC026 /* TranscriptionPipelineService.swift */,
-				SRC028 /* CohereMLXService.swift */,
+				SRC032 /* TranscriptionRuntime.swift */,
+				SRC033 /* WhisperKitRuntime.swift */,
+				SRC034 /* FluidAudioRuntime.swift */,
+				SRC035 /* AudioChunkingRoute.swift */,
+				SRC037 /* CatalogDownloadManager.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -152,6 +167,7 @@
 				SRC018 /* HistoryWindow.swift */,
 				SRC024 /* WhisperKitSetupView.swift */,
 				SRC027 /* BackendSettingsSections.swift */,
+				SRC036 /* RuntimeStatusModel.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -163,14 +179,6 @@
 				PROD02 /* Murmeln Dev.app */,
 			);
 			name = Products;
-			sourceTree = "<group>";
-		};
-		GRP006 /* Resources */ = {
-			isa = PBXGroup;
-			children = (
-				SRC029 /* cohere_bridge.py */,
-			);
-			path = Resources;
 			sourceTree = "<group>";
 		};
 		ROOT01 = {
@@ -201,6 +209,7 @@
 			name = Murmeln;
 			packageProductDependencies = (
 				PKG005 /* WhisperKit */,
+				PKG008 /* FluidAudio */,
 			);
 			productName = Murmeln;
 			productReference = PROD01 /* Murmeln.app */;
@@ -232,6 +241,7 @@
 			mainGroup = ROOT01;
 			packageReferences = (
 				PKG006 /* XCRemoteSwiftPackageReference "WhisperKit" */,
+				PKG009 /* XCRemoteSwiftPackageReference "FluidAudio" */,
 			);
 			productRefGroup = GRP005 /* Products */;
 			projectDirPath = "";
@@ -251,6 +261,13 @@
 				APP002 /* AppSettings.swift in Sources */,
 				APP003 /* AppState.swift in Sources */,
 				APP029 /* AppStateDependencies.swift in Sources */,
+				APP030 /* ModelCatalog.swift in Sources */,
+				APP031 /* TranscriptionRuntime.swift in Sources */,
+				APP032 /* WhisperKitRuntime.swift in Sources */,
+				APP033 /* FluidAudioRuntime.swift in Sources */,
+				APP034 /* AudioChunkingRoute.swift in Sources */,
+				APP035 /* RuntimeStatusModel.swift in Sources */,
+				APP036 /* CatalogDownloadManager.swift in Sources */,
 				APP022 /* AppIdentity.swift in Sources */,
 				APP005 /* AudioService.swift in Sources */,
 				APP006 /* NetworkService.swift in Sources */,
@@ -273,7 +290,6 @@
 				APP025 /* TranscriptionPipelineModels.swift in Sources */,
 				APP026 /* TranscriptionPipelineService.swift in Sources */,
 				APP027 /* BackendSettingsSections.swift in Sources */,
-				APP028 /* CohereMLXService.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -322,7 +338,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -352,7 +368,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				SDKROOT = macosx;
@@ -512,6 +528,14 @@
 				minimumVersion = 0.16.0;
 			};
 		};
+		PKG009 /* XCRemoteSwiftPackageReference "FluidAudio" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/FluidInference/FluidAudio.git";
+			requirement = {
+				kind = exactVersion;
+				version = 0.15.5;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -519,6 +543,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = PKG006 /* XCRemoteSwiftPackageReference "WhisperKit" */;
 			productName = WhisperKit;
+		};
+		PKG008 /* FluidAudio */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = PKG009 /* XCRemoteSwiftPackageReference "FluidAudio" */;
+			productName = FluidAudio;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

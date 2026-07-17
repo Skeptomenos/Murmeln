@@ -239,6 +239,52 @@ struct TranscriptionPipelineServiceTests {
         #expect(result.runContext.languageCode == nil)
     }
 
+    @Test("WhisperKit run emits additive runtime telemetry field")
+    func executeTranscriptionEmitsRuntimeField() async throws {
+        let whisper = MockWhisperKitService()
+        whisper.modelState = .ready
+        whisper.selectedModel = "openai_whisper-small"
+        let service = makeService(whisper: whisper)
+
+        let result = try await service.executeTranscription(
+            request: makeTranscriptionRequest(
+                settings: makeSettings(transcriptionProvider: .whisperKit, transcriptionModel: "openai_whisper-small")
+            )
+        )
+
+        #expect(result.runContext.runtimeID == "whisperkit")
+        #expect(result.runContext.quantization == nil)
+
+        let summary = CaptureTelemetrySummary(
+            captureID: "capture-1",
+            context: result.runContext,
+            timeline: CaptureStageTimeline(
+                stopRequestedAt: 1, audioReadyAt: 2,
+                backendLoadStartedAt: nil, backendLoadFinishedAt: nil,
+                transcriptionStartedAt: 3, transcriptionFinishedAt: 4,
+                refinementStartedAt: nil, refinementFinishedAt: nil,
+                finalResultReadyAt: 5, pasteCommandSentAt: 6,
+                pasteCompletedAt: 7, pasteSucceeded: true
+            )
+        )
+        #expect(summary.metadata["runtime"] == "whisperkit")
+        #expect(summary.metadata["quantization"] == nil)
+    }
+
+    @Test("Legacy cloud runs carry no runtime field")
+    func legacyCloudHasNoRuntimeField() async throws {
+        let network = MockLegacyTranscriptionNetworking()
+        let service = makeService(network: network)
+
+        let result = try await service.executeTranscription(
+            request: makeTranscriptionRequest(
+                settings: makeSettings(transcriptionProvider: .openAIWhisper)
+            )
+        )
+
+        #expect(result.runContext.runtimeID == nil)
+    }
+
     @Test("WhisperKit backend fingerprint uses actual normalized decode request")
     func executeTranscriptionWhisperKitFingerprintReflectsActualDecodeRequest() async throws {
         let network = MockLegacyTranscriptionNetworking()
@@ -275,7 +321,7 @@ struct TranscriptionPipelineServiceTests {
         network: LegacyTranscriptionNetworking = MockLegacyTranscriptionNetworking(),
         whisper: WhisperKitTranscribing = MockWhisperKitService()
     ) -> TranscriptionPipelineService {
-        TranscriptionPipelineService(network: network, whisperKitService: whisper, cohereMLXService: CohereMLXService())
+        TranscriptionPipelineService(network: network, whisperKitService: whisper)
     }
 
     private func makeTranscriptionRequest(
@@ -295,8 +341,7 @@ struct TranscriptionPipelineServiceTests {
         transcriptionProvider: TranscriptionProvider = .openAIWhisper,
         transcriptionModel: String = "whisper-1",
         skipRefinement: Bool = false,
-        whisperKitLanguages: [WhisperKitLanguage] = [.english],
-        cohereLanguage: CohereLanguage = .english
+        whisperKitLanguages: [WhisperKitLanguage] = [.english]
     ) -> PipelineSettingsSnapshot {
         PipelineSettingsSnapshot(
             transcriptionProvider: transcriptionProvider,
@@ -314,8 +359,7 @@ struct TranscriptionPipelineServiceTests {
             whisperKitPromptPrefill: false,
             whisperKitEnableTimestamps: false,
             whisperKitUseVAD: true,
-            whisperKitLanguages: whisperKitLanguages,
-            cohereLanguage: cohereLanguage
+            whisperKitLanguages: whisperKitLanguages
         )
     }
 }
@@ -387,6 +431,10 @@ private final class MockWhisperKitService: WhisperKitTranscribing {
     func transcribe(audioURL: URL) async throws -> String {
         transcribeCalls += 1
         return transcribeResult
+    }
+
+    func transcribe(audioURL: URL, languageCode: String?) async throws -> String {
+        try await transcribe(audioURL: audioURL)
     }
 
     func transcribe(audioURL: URL, preparedDecoding: WhisperKitPreparedDecoding) async throws -> String {

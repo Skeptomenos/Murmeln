@@ -29,42 +29,6 @@ enum WhisperKitLanguage: String, CaseIterable, Codable, Hashable {
     }
 }
 
-enum CohereLanguage: String, CaseIterable, Codable, Hashable {
-    case english = "English"
-    case french = "French"
-    case german = "German"
-    case spanish = "Spanish"
-    case italian = "Italian"
-    case portuguese = "Portuguese"
-    case dutch = "Dutch"
-    case japanese = "Japanese"
-    case korean = "Korean"
-    case chinese = "Chinese"
-    case hindi = "Hindi"
-    case russian = "Russian"
-    case turkish = "Turkish"
-    case polish = "Polish"
-
-    var code: String {
-        switch self {
-        case .english: return "en"
-        case .french: return "fr"
-        case .german: return "de"
-        case .spanish: return "es"
-        case .italian: return "it"
-        case .portuguese: return "pt"
-        case .dutch: return "nl"
-        case .japanese: return "ja"
-        case .korean: return "ko"
-        case .chinese: return "zh"
-        case .hindi: return "hi"
-        case .russian: return "ru"
-        case .turkish: return "tr"
-        case .polish: return "pl"
-        }
-    }
-}
-
 struct PromptPreset: Codable, Identifiable, Hashable {
     let id: UUID
     var name: String
@@ -231,8 +195,11 @@ Transcript:
 final class AppSettings: ObservableObject {
     static let shared = AppSettings()
     nonisolated static let whisperKitAutoDetectLanguageSelection = "Auto Detect"
+    nonisolated static let skipRefinementDefault = true
+    private static let skipRefinementKey = "skipRefinement"
 
     private let keychain: any KeychainStoring
+    private let defaults: UserDefaults
 
     /// Non-nil while an API key sits in UserDefaults because the Keychain
     /// rejected it (M4). Shown as a security banner in settings; cleared once
@@ -252,16 +219,6 @@ final class AppSettings: ObservableObject {
     @AppStorage("whisperKitLanguagesJSON") private var whisperKitLanguagesJSON = "[\"German\",\"English\"]"
     @AppStorage("installedWhisperModelsJSON") private var installedWhisperModelsJSON = "[]"
     
-    @AppStorage("cohereLanguageRaw") private var cohereLanguageRaw = CohereLanguage.english.rawValue
-
-    var cohereLanguage: CohereLanguage {
-        get { CohereLanguage(rawValue: cohereLanguageRaw) ?? .english }
-        set {
-            cohereLanguageRaw = newValue.rawValue
-            objectWillChange.send()
-        }
-    }
-    
     @AppStorage("refinementProvider") var refinementProviderRaw = Provider.openAI.rawValue
     @AppStorage("refinementBaseURL") var refinementBaseURL = "https://api.openai.com/v1"
     @AppStorage("refinementModel") var refinementModel = "gpt-4o-mini"
@@ -271,7 +228,9 @@ final class AppSettings: ObservableObject {
     @AppStorage("selectedPresetId") private var selectedPresetIdRaw = "00000000-0000-0000-0000-000000000001"
     @AppStorage("highQualityAudio") var highQualityAudio = false
     @AppStorage("parallelRefinementEnabled") var parallelRefinementEnabled = true
-    @AppStorage("skipRefinement") var skipRefinement = false
+    @Published var skipRefinement: Bool {
+        didSet { defaults.set(skipRefinement, forKey: Self.skipRefinementKey) }
+    }
     @AppStorage("disableSilenceTrimming") var disableSilenceTrimming = false
     @AppStorage("personalDictionaryEnabled") var personalDictionaryEnabled = true
     @AppStorage("personalDictionaryJSON") private var personalDictionaryJSON = "[]"
@@ -473,6 +432,180 @@ final class AppSettings: ObservableObject {
     /// MurmelnApp) subscribe to this instead of sniffing `objectWillChange`.
     let transcriptionProviderChanged = PassthroughSubject<TranscriptionProvider, Never>()
 
+    // MARK: Phase 8 — catalog model selection
+
+    /// Catalog model ID when a local-native catalog model is selected;
+    /// empty when a legacy cloud/server provider is active. Persisted raw so
+    /// the value survives catalog changes (unknown IDs fall back at read).
+    @AppStorage("selectedModelID") var selectedModelIDRaw = ""
+    /// "auto" or an ISO 639-1 code; interpreted per model capability via
+    /// `resolvedLanguageCode(preferred:for:)`.
+    @AppStorage("preferredLanguage") var preferredLanguage = "auto"
+    @AppStorage("catalogMigrationDone") private var catalogMigrationDone = false
+
+    /// M6 discipline for model switches: raw value + change signal happen
+    /// here and only here. UI binds through this setter.
+    let selectedModelChanged = PassthroughSubject<TranscriptionModelID, Never>()
+    let transcriptionSelectionChanged = PassthroughSubject<TranscriptionSelectionTransition, Never>()
+
+    var selectedModelID: TranscriptionModelID? {
+        get {
+            guard !selectedModelIDRaw.isEmpty else { return nil }
+            let id = TranscriptionModelID(rawValue: selectedModelIDRaw)
+            return ModelCatalog.entry(for: id) != nil ? id : nil
+        }
+        set {
+            let previous = transcriptionSelection
+            guard let newValue else {
+                selectedModelIDRaw = ""
+                objectWillChange.send()
+                sendSelectionTransition(from: previous)
+                return
+            }
+            selectedModelIDRaw = newValue.rawValue
+            objectWillChange.send()
+            selectedModelChanged.send(newValue)
+            sendSelectionTransition(from: previous)
+        }
+    }
+
+    /// The one selection the transcription pane binds to: either a catalog
+    /// model (local-native) or a legacy provider (cloud/server).
+    enum TranscriptionSelection: Hashable {
+        case catalog(TranscriptionModelID)
+        case legacy(TranscriptionProvider)
+    }
+
+    struct TranscriptionSelectionTransition: Equatable {
+        let previous: TranscriptionSelection
+        let current: TranscriptionSelection
+    }
+
+    var transcriptionSelection: TranscriptionSelection {
+        get {
+            if let modelID = selectedModelID {
+                return .catalog(modelID)
+            }
+            return .legacy(transcriptionProvider)
+        }
+        set {
+            switch newValue {
+            case .catalog(let modelID):
+                selectedModelID = modelID
+            case .legacy(let provider):
+                let previous = transcriptionSelection
+                selectedModelIDRaw = ""
+                transcriptionProvider = provider
+                sendSelectionTransition(from: previous)
+            }
+        }
+    }
+
+    private func sendSelectionTransition(from previous: TranscriptionSelection) {
+        let current = transcriptionSelection
+        guard previous != current else { return }
+        transcriptionSelectionChanged.send(.init(previous: previous, current: current))
+    }
+
+    struct CatalogMigrationOutcome: Equatable {
+        let selectedModelID: String
+        let preferredLanguage: String
+    }
+
+    /// Pure mapping from legacy persisted values to the catalog pair.
+    /// nil = no migration (fresh install, legacy cloud/server, or unknown).
+    nonisolated static func catalogMigration(
+        providerRaw: String?,
+        whisperKitLanguagesJSON: String?,
+        cohereLanguageRaw: String?
+    ) -> CatalogMigrationOutcome? {
+        switch providerRaw {
+        case TranscriptionProvider.whisperKit.rawValue:
+            var language = "auto"
+            if let json = whisperKitLanguagesJSON,
+               let data = json.data(using: .utf8),
+               let decoded = try? JSONDecoder().decode([WhisperKitLanguage].self, from: data),
+               decoded.count == 1, let only = decoded.first {
+                language = only.code
+            }
+            return CatalogMigrationOutcome(selectedModelID: "whisperkit", preferredLanguage: language)
+        case "Cohere MLX (On-Device)":
+            let legacyLanguageCodes = [
+                "English": "en", "French": "fr", "German": "de", "Spanish": "es",
+                "Italian": "it", "Portuguese": "pt", "Dutch": "nl", "Japanese": "ja",
+                "Korean": "ko", "Chinese": "zh", "Polish": "pl",
+                // The catalog Cohere model does not support these three
+                // legacy choices; persist its explicit safe default instead
+                // of leaving an unsupported code that the UI cannot display.
+                "Hindi": "en", "Russian": "en", "Turkish": "en",
+            ]
+            let language = cohereLanguageRaw.flatMap { legacyLanguageCodes[$0] } ?? "en"
+            return CatalogMigrationOutcome(
+                selectedModelID: "cohere-transcribe-03-2026-int8",
+                preferredLanguage: language)
+        default:
+            return nil
+        }
+    }
+
+    /// Language actually passed to the runtime for a given model:
+    /// hint-required models resolve "auto" to their per-model default (en);
+    /// auto-detect models pass nil for "auto" (the model detects).
+    nonisolated static func resolvedLanguageCode(
+        preferred: String,
+        for modelID: TranscriptionModelID
+    ) -> String? {
+        guard let entry = ModelCatalog.entry(for: modelID) else { return nil }
+        let supportedPreference = entry.languages.contains(preferred) ? preferred : "auto"
+        switch entry.languageMode {
+        case .hintRequired:
+            return supportedPreference == "auto" ? "en" : supportedPreference
+        case .autoDetect:
+            return supportedPreference == "auto" ? nil : supportedPreference
+        }
+    }
+
+    /// Slice 5 default flip: fresh installs (no legacy provider persisted,
+    /// no catalog selection) land on the catalog default model. Existing
+    /// users — legacy or catalog — are never flipped. Returns the model ID
+    /// to select, or nil when no flip applies.
+    nonisolated static func initialSelection(
+        providerRaw: String?,
+        selectedModelIDRaw: String
+    ) -> String? {
+        guard providerRaw == nil, selectedModelIDRaw.isEmpty else { return nil }
+        return ModelCatalog.defaultModelID.rawValue
+    }
+
+    /// One-time migration of legacy per-backend settings to the catalog pair.
+    /// Retired keys are read directly here; no writable legacy setting remains.
+    private func migrateToCatalogSelectionIfNeeded() {
+        guard !catalogMigrationDone else { return }
+        catalogMigrationDone = true
+
+        let persistedProvider = UserDefaults.standard.string(forKey: "transcriptionProvider")
+
+        if let outcome = Self.catalogMigration(
+            providerRaw: persistedProvider,
+            whisperKitLanguagesJSON: UserDefaults.standard.string(forKey: "whisperKitLanguagesJSON"),
+            cohereLanguageRaw: UserDefaults.standard.string(forKey: "cohereLanguageRaw")
+        ) {
+            selectedModelIDRaw = outcome.selectedModelID
+            preferredLanguage = outcome.preferredLanguage
+            settingsLogger.info("Migrated legacy provider '\(persistedProvider ?? "-", privacy: .public)' to catalog model '\(outcome.selectedModelID, privacy: .public)'")
+            return
+        }
+
+        // Slice 5: fresh install → catalog default (Parakeet v3 per Slice 0a).
+        if let initial = Self.initialSelection(
+            providerRaw: persistedProvider,
+            selectedModelIDRaw: selectedModelIDRaw
+        ) {
+            selectedModelIDRaw = initial
+            settingsLogger.info("Fresh install: defaulting to catalog model '\(initial, privacy: .public)'")
+        }
+    }
+
     var transcriptionProvider: TranscriptionProvider {
         get { TranscriptionProvider(rawValue: transcriptionProviderRaw) ?? .openAIWhisper }
         set {
@@ -576,13 +709,26 @@ final class AppSettings: ObservableObject {
         }
     }
     
-    /// Internal init with a keychain seam: tests inject a failing/healing
-    /// mock; production uses the `.shared` default.
-    init(keychain: any KeychainStoring = KeychainService.shared) {
+    /// Internal seams let tests isolate Keychain and UserDefaults state;
+    /// production uses the shared services by default.
+    init(
+        keychain: any KeychainStoring = KeychainService.shared,
+        defaults: UserDefaults = .standard
+    ) {
         self.keychain = keychain
+        self.defaults = defaults
+        self.skipRefinement = Self.storedSkipRefinement(in: defaults)
         loadCustomPresets()
         loadPresetOverrides()
         migrateAPIKeysToKeychain()
+        migrateToCatalogSelectionIfNeeded()
+    }
+
+    private static func storedSkipRefinement(in defaults: UserDefaults) -> Bool {
+        guard defaults.object(forKey: skipRefinementKey) != nil else {
+            return skipRefinementDefault
+        }
+        return defaults.bool(forKey: skipRefinementKey)
     }
 
     /// M5: a key is worth sending to a provider's models endpoint only if it

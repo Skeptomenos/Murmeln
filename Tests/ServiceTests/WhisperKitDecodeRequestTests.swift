@@ -22,8 +22,7 @@ struct WhisperKitDecodeRequestTests {
             whisperKitPromptPrefill: false,
             whisperKitEnableTimestamps: false,
             whisperKitUseVAD: true,
-            whisperKitLanguages: [.english],
-            cohereLanguage: .english
+            whisperKitLanguages: [.english]
         )
 
         let prepared = WhisperKitService.prepareDecoding(settings: settings)
@@ -52,8 +51,7 @@ struct WhisperKitDecodeRequestTests {
             whisperKitPromptPrefill: false,
             whisperKitEnableTimestamps: false,
             whisperKitUseVAD: true,
-            whisperKitLanguages: [.english],
-            cohereLanguage: .english
+            whisperKitLanguages: [.english]
         )
 
         let prepared = WhisperKitService.prepareDecoding(settings: settings)
@@ -65,5 +63,37 @@ struct WhisperKitDecodeRequestTests {
         #expect(prepared.requestShape.usePrefillCache == true)
         #expect(prepared.requestShape.withoutTimestamps == false)
         #expect(prepared.requestShape.chunkingStrategy == "none")
+    }
+
+    @MainActor
+    @Test("Non-English catalog language hint overrides legacy Whisper auto-detect settings")
+    func catalogLanguageHintOverridesLegacyAutoDetect() {
+        let settings = PipelineSettingsSnapshot(
+            transcriptionProvider: .whisperKit,
+            transcriptionAPIKey: "",
+            transcriptionBaseURL: "",
+            transcriptionModel: "openai_whisper-small",
+            refinementProvider: .openAI,
+            refinementAPIKey: "",
+            refinementBaseURL: "",
+            refinementModel: "gpt-4o-mini",
+            skipRefinement: true,
+            parallelRefinementEnabled: false,
+            whisperKitProfile: .fast,
+            whisperKitTemperature: 0.0,
+            whisperKitPromptPrefill: true,
+            whisperKitEnableTimestamps: false,
+            whisperKitUseVAD: false,
+            whisperKitLanguages: [.german, .english]
+        )
+
+        let prepared = WhisperKitService.prepareDecoding(
+            settings: settings,
+            languageCode: "de"
+        )
+
+        #expect(prepared.requestShape.languageMode == .explicit)
+        #expect(prepared.requestShape.languageCode == "de")
+        #expect(prepared.requestShape.detectLanguage == false)
     }
 }

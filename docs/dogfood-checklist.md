@@ -28,6 +28,11 @@ Record results in the active phase plan (Validation or Progress section).
 | T2-4 | Paste into an Electron app (e.g. VS Code, Slack) | Text lands in the Electron app; clipboard behavior matches T2-1 |
 | T2-5 | Refinement provider down (point refinement at an unreachable provider, then dictate) | Raw transcript still pastes and appears in history with the refinement-failed marker; transcript is NOT lost (B2 behavior) |
 | T2-6 | Paste failure surface (revoke Accessibility, dictate) | App reports paste failure, transcript remains on the clipboard for manual paste (B1 behavior); diagnostics show a failure outcome, not a fabricated success |
+| T2-7 | Phase 8 fresh install: wipe Dev defaults (`defaults delete com.mrml.app.dev` or the Dev bundle id), launch Murmeln Dev | Settings show Parakeet v3 selected with a "Download Model" button — no error state, no Python mention, no terminal needed |
+| T2-8 | Phase 8 model lifecycle: start two not-installed model downloads, switch between them, cancel one and retry it; let one finish, then delete it from Settings | Each row keeps only its own live progress and distinct downloads advance independently (or visibly queue). Cancel returns that model to Download Model without affecting the other transfer; retry completes to Ready with no late cancellation error. Delete Model asks for confirmation, removes the cache, and returns the row to Download Model; a dictation with the remaining installed model pastes correctly |
+| T2-9 | Phase 8 model switch: switch Parakeet v3 → WhisperKit → back via the unified picker | Each switch shows only that model's download/load state, warms the selected installed model, and supports dictation after each switch; exactly one selection persists |
+| T2-10 | Phase 8 long dictation (only if Cohere INT8 selected): lock mode, dictate >35 s continuously | One coherent paste (long-form chunk path); no truncation at the 35 s boundary |
+| T2-11 | Phase 8 migration: on a profile that previously used WhisperKit or the Cohere bridge, launch the new build | The equivalent catalog model is selected; language preference carried over; no re-setup required |
 
 ## Evidence template
 

@@ -172,7 +172,6 @@ struct SettingsView: View {
     @ObservedObject private var settings = AppSettings.shared
     @ObservedObject private var ollamaService = OllamaService.shared
     @ObservedObject private var whisperKitService = WhisperKitService.shared
-    @ObservedObject private var cohereMLXService = CohereMLXService.shared
     @State private var selectedTab: SettingsTab = .transcription
     @State private var showingWhisperKitSetup = false
     
@@ -330,7 +329,6 @@ struct SettingsView: View {
         TranscriptionSettingsSection(
             settings: settings,
             whisperKitService: whisperKitService,
-            cohereMLXService: cohereMLXService,
             showingWhisperKitSetup: $showingWhisperKitSetup,
             transcriptionModels: $transcriptionModels,
             isLoadingTranscriptionModels: $isLoadingTranscriptionModels,

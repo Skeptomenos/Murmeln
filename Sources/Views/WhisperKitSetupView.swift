@@ -215,16 +215,47 @@ struct WhisperKitSetupView: View {
     }
     
     private func selectAndDismiss() {
-        AppSettings.shared.whisperKitModel = selectedVariant
-        if AppSettings.shared.transcriptionProvider == .whisperKit {
-            AppSettings.shared.transcriptionModel = selectedVariant
+        let selection = AppSettings.shared.transcriptionSelection
+        let variant = selectedVariant
+
+        Task { @MainActor in
+            try? await Self.applySelection(
+                variant,
+                for: selection,
+                storeVariant: { selected in
+                    AppSettings.shared.whisperKitModel = selected
+                    if case .legacy(.whisperKit) = selection {
+                        AppSettings.shared.transcriptionModel = selected
+                    }
+                },
+                loadCatalogModel: { modelID in
+                    try await WhisperKitRuntime.shared.load(modelID)
+                },
+                loadLegacyVariant: { selected in
+                    try await service.loadModel(selected)
+                }
+            )
         }
-        
-        // Trigger load
-        Task {
-            try? await service.loadModel(selectedVariant)
-        }
-        
+
         dismiss()
+    }
+
+    @MainActor
+    static func applySelection(
+        _ variant: String,
+        for selection: AppSettings.TranscriptionSelection,
+        storeVariant: (String) -> Void,
+        loadCatalogModel: (TranscriptionModelID) async throws -> Void,
+        loadLegacyVariant: (String) async throws -> Void
+    ) async throws {
+        storeVariant(variant)
+        switch selection {
+        case .catalog(let modelID) where modelID == .whisperKit:
+            try await loadCatalogModel(modelID)
+        case .legacy(.whisperKit):
+            try await loadLegacyVariant(variant)
+        case .catalog, .legacy:
+            break
+        }
     }
 }

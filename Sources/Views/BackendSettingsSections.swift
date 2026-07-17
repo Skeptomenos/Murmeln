@@ -21,23 +21,107 @@ struct KeychainSecurityNoticeBanner: View {
     }
 }
 
-struct CohereMLXSettingsSection: View {
+/// Phase 8: catalog-driven model section — status, download-with-progress,
+/// unified language control (annotated per languageMode), usage notes.
+/// One view serves every catalog entry (the WhisperKit setup sheet remains
+/// for Whisper variant management).
+struct CatalogModelSection: View {
     @ObservedObject var settings: AppSettings
-    @ObservedObject var cohereService: CohereMLXService
+    @ObservedObject private var downloads: CatalogDownloadManager
+    let entry: CatalogEntry
+
+    /// Slice 5c/F1: observe the runtime's published state so `.loading→.ready`
+    /// repaints the status label instead of leaving a stale "Loading…".
+    @StateObject private var status: RuntimeStatusModel
+    @State private var showingDeleteConfirmation = false
+
+    init(
+        settings: AppSettings,
+        entry: CatalogEntry,
+        downloads: CatalogDownloadManager = .shared
+    ) {
+        self.settings = settings
+        self.entry = entry
+        _downloads = ObservedObject(wrappedValue: downloads)
+        let runtime: any TranscriptionRuntime = switch entry.runtime {
+        case .fluidAudio: FluidAudioRuntime.shared
+        case .whisperKit: WhisperKitRuntime.shared
+        }
+        _status = StateObject(wrappedValue: RuntimeStatusModel(runtime: runtime))
+    }
+
+    private var runtime: any TranscriptionRuntime {
+        switch entry.runtime {
+        case .fluidAudio: return FluidAudioRuntime.shared
+        case .whisperKit: return WhisperKitRuntime.shared
+        }
+    }
+
+    private var downloadActivity: CatalogDownloadActivity {
+        downloads.activity(for: entry.id)
+    }
+
+    private var isInstalled: Bool {
+        runtime.isInstalled(entry.id)
+    }
+
+    private var isDownloading: Bool {
+        if case .downloading = downloadActivity { return true }
+        return false
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Model")
+                    Text(entry.displayName)
                         .font(.caption.weight(.medium))
-                    Text(CohereMLXService.modelID)
-                        .font(.system(.body, design: .monospaced))
+                    Text("\(entry.approxDownloadMB >= 1000 ? String(format: "%.1f GB", Double(entry.approxDownloadMB) / 1000) : "\(entry.approxDownloadMB) MB") · \(entry.languages.count) language\(entry.languages.count == 1 ? "" : "s")")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                Spacer()
+                statusLabel
+            }
+
+            if !isInstalled && !isDownloading {
+                Button {
+                    startDownload()
+                } label: {
+                    Label("Download Model", systemImage: "arrow.down.circle")
+                }
+            }
+
+            if case .downloading(let progress) = downloadActivity {
+                ProgressView(value: progress) {
+                    Text("Downloading… \(Int(progress * 100))%")
+                        .font(.caption)
                 }
 
-                Spacer()
+                Button(role: .cancel) {
+                    downloads.cancel(entry.id)
+                } label: {
+                    Label("Cancel Download", systemImage: "xmark.circle")
+                }
+            }
 
-                statusLabel
+            if isInstalled && !isDownloading && downloadActivity != .deleting {
+                Button(role: .destructive) {
+                    showingDeleteConfirmation = true
+                } label: {
+                    Label("Delete Model", systemImage: "trash")
+                }
+            }
+
+            if downloadActivity == .deleting {
+                ProgressView("Deleting model…")
+                    .font(.caption)
+            }
+
+            if case .failed(let errorMessage) = downloadActivity {
+                Label(errorMessage, systemImage: "xmark.circle.fill")
+                    .font(.caption)
+                    .foregroundColor(.red)
             }
 
             HStack {
@@ -45,63 +129,124 @@ struct CohereMLXSettingsSection: View {
                     .font(.caption.weight(.medium))
                 Spacer()
                 Picker("Language", selection: Binding(
-                    get: { settings.cohereLanguage },
-                    set: { settings.cohereLanguage = $0 }
+                    get: {
+                        entry.languages.contains(settings.preferredLanguage)
+                            ? settings.preferredLanguage
+                            : "auto"
+                    },
+                    set: { settings.preferredLanguage = $0 }
                 )) {
-                    ForEach(CohereLanguage.allCases, id: \.self) { language in
-                        Text(language.rawValue).tag(language)
+                    Text(entry.languageMode == .hintRequired ? "Default (English)" : "Auto-detect").tag("auto")
+                    ForEach(entry.languages, id: \.self) { code in
+                        Text(Locale.current.localizedString(forLanguageCode: code) ?? code).tag(code)
                     }
                 }
                 .pickerStyle(.menu)
                 .labelsHidden()
             }
+            if entry.languageMode == .hintRequired {
+                Text("This model needs the language up front — pick the language you dictate in.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
 
-            Text("First-class local-native transcription runs fully on-device via Python/MLX.")
-                .font(.caption)
-                .foregroundColor(.green)
-                .padding(10)
-                .background(Color.green.opacity(0.1))
-                .cornerRadius(8)
-
-            Text("Requires HuggingFace login and model acceptance. Run `hf auth login` once if not already configured.")
-                .font(.caption)
-                .foregroundColor(.secondary)
+            if let note = entry.usageNote {
+                Text(note)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding(10)
+                    .background(Color.orange.opacity(0.08))
+                    .cornerRadius(8)
+            }
         }
         .padding(12)
         .background(Color(nsColor: .controlBackgroundColor))
         .cornerRadius(8)
+        .confirmationDialog(
+            "Delete \(entry.displayName)?",
+            isPresented: $showingDeleteConfirmation
+        ) {
+            Button("Delete Model", role: .destructive) {
+                Task {
+                    await downloads.delete(entry.id, runtime: runtime)
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The model will be removed from this Mac. You can download it again later.")
+        }
     }
 
     @ViewBuilder
     private var statusLabel: some View {
-        switch cohereService.modelState {
-        case .notLoaded:
-            Label("Not Loaded", systemImage: "circle")
-                .font(.caption)
-                .foregroundColor(.secondary)
-        case .loading:
+        switch downloadActivity {
+        case .downloading(let progress):
             HStack(spacing: 4) {
                 ProgressView().scaleEffect(0.6)
-                Text("Loading...")
-                    .font(.caption)
-                    .foregroundColor(.orange)
+                Text("Downloading… \(Int(progress * 100))%")
+                    .font(.caption).foregroundColor(.orange)
             }
-        case .ready:
-            Label("Ready", systemImage: "circle.fill")
-                .font(.caption)
-                .foregroundColor(.green)
         case .failed(let reason):
             Label("Failed: \(reason)", systemImage: "xmark.circle.fill")
                 .font(.caption)
                 .foregroundColor(.red)
+        case .deleting:
+            HStack(spacing: 4) {
+                ProgressView().scaleEffect(0.6)
+                Text("Deleting…")
+                    .font(.caption).foregroundColor(.orange)
+            }
+        case .idle, .downloaded:
+            runtimeStatusLabel
         }
+    }
+
+    @ViewBuilder
+    private var runtimeStatusLabel: some View {
+        switch status.state {
+        case .ready(let readyID) where readyID == entry.id:
+            Label("Ready", systemImage: "circle.fill")
+                .font(.caption)
+                .foregroundColor(.green)
+        case .loading:
+            HStack(spacing: 4) {
+                ProgressView().scaleEffect(0.6)
+                // Cohere's ~4-min first-launch CoreML specialization (Discovery
+                // G) is expected, not a hang — say so instead of a bare spinner.
+                Text(entry.usageNote != nil ? "Preparing model…" : "Loading…")
+                    .font(.caption).foregroundColor(.orange)
+            }
+        case .downloading(let progress):
+            HStack(spacing: 4) {
+                ProgressView().scaleEffect(0.6)
+                Text(progress >= 0 ? "Downloading… \(Int(progress * 100))%" : "Downloading…")
+                    .font(.caption).foregroundColor(.orange)
+            }
+        case .failed(let reason):
+            Label(reason, systemImage: "xmark.circle.fill")
+                .font(.caption)
+                .foregroundColor(.red)
+        default:
+            if isInstalled {
+                Label("Downloaded", systemImage: "checkmark.circle")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            } else {
+                Label("Not Downloaded", systemImage: "circle")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+    }
+
+    private func startDownload() {
+        downloads.start(entry.id, runtime: runtime)
     }
 }
 
 struct TranscriptionSettingsSection: View {
     @ObservedObject var settings: AppSettings
     @ObservedObject var whisperKitService: WhisperKitService
-    @ObservedObject var cohereMLXService: CohereMLXService
 
     @Binding var showingWhisperKitSetup: Bool
     @Binding var transcriptionModels: [ModelInfo]
@@ -111,6 +256,17 @@ struct TranscriptionSettingsSection: View {
 
     @State private var apiKeyDraft = ""
     @FocusState private var apiKeyFocused: Bool
+
+    static func showsWhisperKitVariantManagement(
+        for selection: AppSettings.TranscriptionSelection
+    ) -> Bool {
+        switch selection {
+        case .catalog(let modelID):
+            return modelID == .whisperKit
+        case .legacy(let provider):
+            return provider == .whisperKit
+        }
+    }
 
     private func commitAPIKey() {
         let previous = settings.transcriptionAPIKey
@@ -134,22 +290,32 @@ struct TranscriptionSettingsSection: View {
             .accessibilityElement(children: .combine)
 
             VStack(alignment: .leading, spacing: 12) {
-                // M6: bind through the transcriptionProvider setter — the single
-                // place that updates raw value, defaults, and the change signal.
-                Picker("Provider", selection: Binding(
-                    get: { settings.transcriptionProvider },
-                    set: { settings.transcriptionProvider = $0 }
+                // Phase 8 / M6: one picker over catalog models + legacy
+                // providers, bound through the transcriptionSelection setter —
+                // the single path that updates raw values and change signals.
+                Picker("Model", selection: Binding(
+                    get: { settings.transcriptionSelection },
+                    set: { settings.transcriptionSelection = $0 }
                 )) {
-                    ForEach(TranscriptionProvider.allCases, id: \.rawValue) { provider in
-                        HStack {
-                            Text(provider.displayName)
-                            if provider.supportsRefinementInOneCall {
-                                Text("+ Refinement")
-                                    .font(.caption)
-                                    .foregroundColor(.green)
-                            }
+                    Section("On-Device") {
+                        ForEach(ModelCatalog.entries, id: \.id) { entry in
+                            Text(entry.displayName)
+                                .tag(AppSettings.TranscriptionSelection.catalog(entry.id))
                         }
-                        .tag(provider)
+                    }
+                    Section("Cloud & Server (legacy)") {
+                        ForEach(TranscriptionProvider.allCases.filter { !$0.isLocalNativeProvider },
+                                id: \.rawValue) { provider in
+                            HStack {
+                                Text(provider.displayName)
+                                if provider.supportsRefinementInOneCall {
+                                    Text("+ Refinement")
+                                        .font(.caption)
+                                        .foregroundColor(.green)
+                                }
+                            }
+                            .tag(AppSettings.TranscriptionSelection.legacy(provider))
+                        }
                     }
                 }
                 .pickerStyle(.menu)
@@ -157,7 +323,13 @@ struct TranscriptionSettingsSection: View {
                     loadTranscriptionModels()
                 }
 
-                if settings.transcriptionProvider.supportsRefinementInOneCall {
+                if case .catalog(let modelID) = settings.transcriptionSelection,
+                   let entry = ModelCatalog.entry(for: modelID) {
+                    CatalogModelSection(settings: settings, entry: entry)
+                        .id(modelID)
+                }
+
+                if settings.selectedModelID == nil, settings.transcriptionProvider.supportsRefinementInOneCall {
                     HStack(spacing: 6) {
                         Image(systemName: "bolt.fill")
                             .foregroundColor(.green)
@@ -170,19 +342,16 @@ struct TranscriptionSettingsSection: View {
                     .cornerRadius(8)
                 }
 
-                if settings.transcriptionProvider == .whisperKit {
+                if Self.showsWhisperKitVariantManagement(for: settings.transcriptionSelection) {
                     WhisperKitSettingsSection(
                         settings: settings,
                         whisperKitService: whisperKitService,
-                        showingWhisperKitSetup: $showingWhisperKitSetup
+                        showingWhisperKitSetup: $showingWhisperKitSetup,
+                        showsLegacyDecodingSettings: settings.selectedModelID == nil
                     )
                 }
 
-                if settings.transcriptionProvider == .cohereMLX {
-                    CohereMLXSettingsSection(settings: settings, cohereService: cohereMLXService)
-                }
-
-                if settings.transcriptionProvider.requiresAPIKey {
+                if settings.selectedModelID == nil, settings.transcriptionProvider.requiresAPIKey {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("API Key")
                             .font(.caption.weight(.medium))
@@ -203,11 +372,11 @@ struct TranscriptionSettingsSection: View {
                     }
                 }
 
-                if !settings.transcriptionProvider.isLocalNativeProvider {
+                if settings.selectedModelID == nil, !settings.transcriptionProvider.isLocalNativeProvider {
                     ValidatedURLField(title: "Base URL", url: $settings.transcriptionBaseURL)
                 }
 
-                if !settings.transcriptionProvider.isLocalNativeProvider {
+                if settings.selectedModelID == nil, !settings.transcriptionProvider.isLocalNativeProvider {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Model")
                             .font(.caption.weight(.medium))
@@ -249,6 +418,7 @@ struct WhisperKitSettingsSection: View {
     @ObservedObject var settings: AppSettings
     @ObservedObject var whisperKitService: WhisperKitService
     @Binding var showingWhisperKitSetup: Bool
+    let showsLegacyDecodingSettings: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -262,7 +432,7 @@ struct WhisperKitSettingsSection: View {
 
                 Spacer()
 
-                if whisperKitService.modelState == .ready {
+                if showsLegacyDecodingSettings, whisperKitService.modelState == .ready {
                     Label("Ready", systemImage: "circle.fill")
                         .font(.caption)
                         .foregroundColor(.green)
@@ -280,40 +450,42 @@ struct WhisperKitSettingsSection: View {
                 .background(Color.green.opacity(0.1))
                 .cornerRadius(8)
 
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Decoding Strategy")
-                    .font(.caption.weight(.medium))
+            if showsLegacyDecodingSettings {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Decoding Strategy")
+                        .font(.caption.weight(.medium))
 
-                HStack {
-                    Text("Language")
-                    Spacer()
-                    Picker("Language", selection: Binding(
-                        get: { settings.whisperKitLanguageSelectionRaw },
-                        set: { settings.whisperKitLanguageSelectionRaw = $0 }
-                    )) {
-                        Text(AppSettings.whisperKitAutoDetectLanguageSelection)
-                            .tag(AppSettings.whisperKitAutoDetectLanguageSelection)
-                        ForEach(WhisperKitLanguage.allCases, id: \.self) { language in
-                            Text(language.rawValue).tag(language.rawValue)
+                    HStack {
+                        Text("Language")
+                        Spacer()
+                        Picker("Language", selection: Binding(
+                            get: { settings.whisperKitLanguageSelectionRaw },
+                            set: { settings.whisperKitLanguageSelectionRaw = $0 }
+                        )) {
+                            Text(AppSettings.whisperKitAutoDetectLanguageSelection)
+                                .tag(AppSettings.whisperKitAutoDetectLanguageSelection)
+                            ForEach(WhisperKitLanguage.allCases, id: \.self) { language in
+                                Text(language.rawValue).tag(language.rawValue)
+                            }
                         }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
                     }
-                    .pickerStyle(.menu)
-                    .labelsHidden()
-                }
 
-                HStack {
-                    Text("Profile")
-                    Spacer()
-                    Picker("Profile", selection: Binding(
-                        get: { settings.whisperKitProfile },
-                        set: { settings.whisperKitProfile = $0 }
-                    )) {
-                        ForEach(WhisperKitProfile.allCases, id: \.self) { profile in
-                            Text(profile.rawValue).tag(profile)
+                    HStack {
+                        Text("Profile")
+                        Spacer()
+                        Picker("Profile", selection: Binding(
+                            get: { settings.whisperKitProfile },
+                            set: { settings.whisperKitProfile = $0 }
+                        )) {
+                            ForEach(WhisperKitProfile.allCases, id: \.self) { profile in
+                                Text(profile.rawValue).tag(profile)
+                            }
                         }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
                     }
-                    .pickerStyle(.menu)
-                    .labelsHidden()
                 }
             }
         }

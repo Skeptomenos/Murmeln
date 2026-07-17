@@ -8,8 +8,7 @@ struct TranscriptionPipelineConcurrencyTests {
     func legacyMultipartPathDoesNotForceMainThreadExecution() async throws {
         let network = ThreadCapturingLegacyTranscriptionNetworking()
         let whisper = await MainActor.run { ConcurrencyTestWhisperKitService() }
-        let cohereMLX = await MainActor.run { CohereMLXService() }
-        let service = TranscriptionPipelineService(network: network, whisperKitService: whisper, cohereMLXService: cohereMLX)
+        let service = TranscriptionPipelineService(network: network, whisperKitService: whisper)
 
         let settings = PipelineSettingsSnapshot(
             transcriptionProvider: .openAIWhisper,
@@ -27,8 +26,7 @@ struct TranscriptionPipelineConcurrencyTests {
             whisperKitPromptPrefill: false,
             whisperKitEnableTimestamps: false,
             whisperKitUseVAD: true,
-            whisperKitLanguages: [.english],
-            cohereLanguage: .english
+            whisperKitLanguages: [.english]
         )
 
         _ = try await Task.detached(priority: .userInitiated) {
@@ -81,4 +79,5 @@ private final class ConcurrencyTestWhisperKitService: WhisperKitTranscribing {
 
     func loadModel(_ variant: String) async throws {}
     func transcribe(audioURL: URL) async throws -> String { "whisper" }
+    func transcribe(audioURL: URL, languageCode: String?) async throws -> String { "whisper" }
 }

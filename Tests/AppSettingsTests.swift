@@ -410,16 +410,30 @@ struct AppSettingsTests {
         #expect(defaultValue == true)
     }
     
-    @Test("Skip refinement default is false")
-    func skipRefinementDefault() {
-        let defaultValue = false
-        #expect(defaultValue == false)
-    }
-    
     @Test("Personal dictionary enabled default is true")
     func personalDictionaryEnabledDefault() {
         let defaultValue = true
         #expect(defaultValue == true)
+    }
+}
+
+@MainActor
+@Suite("Refinement Default Storage Tests")
+struct RefinementDefaultResolutionTests {
+    @Test("Refinement starts disabled when unset and preserves an explicit enabled choice")
+    func skipRefinementStorageBehavior() throws {
+        let suiteName = "RefinementDefaultStorageTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let unsetSettings = AppSettings(defaults: defaults)
+        #expect(unsetSettings.skipRefinement == true)
+
+        unsetSettings.skipRefinement = false
+        #expect(defaults.object(forKey: "skipRefinement") as? Bool == false)
+
+        let persistedSettings = AppSettings(defaults: defaults)
+        #expect(persistedSettings.skipRefinement == false)
     }
 }
 

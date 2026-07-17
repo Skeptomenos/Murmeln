@@ -69,6 +69,78 @@ else
   done <<< "$stage_cmds"
 fi
 
+# 5. Phase 8 retired the user-managed Python/Cohere bridge. Current docs must
+#    describe the in-process catalog runtimes instead of resurrecting setup
+#    instructions or deleted artifact names. Planning archives remain exempt.
+for retired in 'mlx-audio' 'pip install' 'cohere_bridge.py'; do
+  hits=$(grep -rni --include='*.md' -- "$retired" README.md AGENTS.md index.md docs 2>/dev/null || true)
+  if [[ -n "$hits" ]]; then
+    err "current docs reference retired bridge term '$retired':"$'\n'"$hits"
+  fi
+done
+
+# 6. The shipped source/test graphs must not regain the deleted bridge stack.
+#    Legacy migration values are plain strings and intentionally do not use
+#    these implementation identifiers.
+bridge_hits=$(grep -rnE 'CohereMLXService|cohere_bridge\.py|mlx_audio' Sources Tests Package.swift Murmeln.xcodeproj 2>/dev/null || true)
+if [[ -n "$bridge_hits" ]]; then
+  err "retired Python bridge remains in the shipped graph:"$'\n'"$bridge_hits"
+fi
+
+# 7. The public split publishes everything except private planning content.
+#    Real-user voice is biometric/personal data and must remain below
+#    _planning/ (or be supplied externally at E2E runtime), never in the
+#    publishable source/test tree.
+publishable_audio=$(find . \
+  -path './_planning' -prune -o \
+  -path './.build' -prune -o \
+  -path './build' -prune -o \
+  -path './DerivedData' -prune -o \
+  -type f \( \
+    -iname '*.wav' -o -iname '*.m4a' -o -iname '*.mp3' -o \
+    -iname '*.aac' -o -iname '*.caf' -o -iname '*.flac' -o \
+    -iname '*.aiff' -o -iname '*.aif' \
+  \) -print | sort)
+if [[ -n "$publishable_audio" ]]; then
+  err "recorded audio exists in the publishable tree; move it under _planning/ or supply MURMELN_E2E_FIXTURES_DIR:"$'\n'"$publishable_audio"
+fi
+
+# 8. Reproduce the split workflow's sanitized package copy and inspect the
+#    generated export itself. This catches privacy regressions that a source
+#    path convention cannot prove, including leaked transcripts/diagnostics and
+#    text-only probe artifacts. The synthetic regression also proves the guard
+#    rejects leaks while allowing private files removed with _planning/.
+if ! bash Tests/PublicSplitPrivacyTests.sh; then
+  err "public-split privacy regression suite failed"
+fi
+if ! bash check-public-split.sh; then
+  err "generated Murmeln public split contains private artifacts"
+fi
+
+# 9. The active Phase 8 headline and follow-up must agree with the shipped
+#    four-entry catalog. Qwen3-ASR was disproven at the pinned FluidAudio tag;
+#    it is follow-on work, not a Phase 8 acceptance claim.
+PHASE_8_PLAN="_planning/plans/2026-07-08-murmeln-phase-8-local-runtime-catalog.md"
+phase_8_goal=$(grep -m1 '^\*\*Goal:\*\*' "$PHASE_8_PLAN" || true)
+if grep -qi 'Qwen3-ASR' <<< "$phase_8_goal"; then
+  err "Phase 8 goal still promises Qwen3-ASR although the shipped catalog defers it"
+fi
+if ! grep -qE '^-[[:space:]]+\[ \].*MLXAudioRuntime.*Qwen3-ASR 0\.6B/1\.7B' "$PHASE_8_PLAN"; then
+  err "Phase 8 follow-ups do not explicitly defer both Qwen3-ASR 0.6B and 1.7B"
+fi
+
+# 10. A green Tier 1.5 gate must exercise WhisperKit + FluidAudio coexistence.
+#     An optional/acknowledged return makes the advertised six-test gate pass
+#     without running the cross-runtime boundary Alfred asked it to prove.
+whisper_optional_hits=$(grep -n 'MURMELN_E2E_WHISPERKIT_OPTIONAL' \
+  validate-e2e.sh Tests/RuntimeE2E/FluidAudioRuntimeE2ETests.swift 2>/dev/null || true)
+if [[ -n "$whisper_optional_hits" ]]; then
+  err "Tier 1.5 still permits an optional WhisperKit coexistence pass:"$'\n'"$whisper_optional_hits"
+fi
+if ! grep -qF 'try #require(whisper.isModelDownloaded(variant)' Tests/RuntimeE2E/FluidAudioRuntimeE2ETests.swift; then
+  err "WhisperKit coexistence test does not require the selected variant to be installed"
+fi
+
 if [[ "$fail" -ne 0 ]]; then
   echo "check-docs.sh: FAILED"
   exit 1

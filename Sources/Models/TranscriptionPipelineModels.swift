@@ -13,7 +13,6 @@ enum TranscriptionSupportTier: String, Codable, CaseIterable, Sendable {
 
 enum TranscriptionBackendFamily: String, Codable, CaseIterable, Sendable {
     case firstClassLocalNativeWhisperKit = "first_class_local_native_whisperkit"
-    case firstClassLocalNativeCohereMLX = "first_class_local_native_cohere_mlx"
     case legacyCloudMultipart = "legacy_cloud_multipart"
     case legacyLocalServer = "legacy_local_server"
     case legacyCloudAudioInput = "legacy_cloud_audio_input"
@@ -73,21 +72,6 @@ extension TranscriptionProvider {
                     requiresInstallOrDownload: true
                 )
             )
-        case .cohereMLX:
-            return TranscriptionBackendDescriptor(
-                provider: self,
-                kind: .localNative,
-                supportTier: .firstClass,
-                family: .firstClassLocalNativeCohereMLX,
-                capabilities: TranscriptionBackendCapabilities(
-                    requiresAPIKey: false,
-                    supportsOneCallRefinement: false,
-                    supportsLanguageOverride: true,   // explicit language, English-only
-                    supportsLocalModelLifecycle: false, // no in-app model switching
-                    isNetworked: false,
-                    requiresInstallOrDownload: true    // model must be pre-downloaded
-                )
-            )
         case .openAIWhisper, .groqWhisper:
             return TranscriptionBackendDescriptor(
                 provider: self,
@@ -142,6 +126,10 @@ struct PipelineSettingsSnapshot {
     let transcriptionAPIKey: String
     let transcriptionBaseURL: String
     let transcriptionModel: String
+    /// Phase 8: catalog model ID when a catalog model is selected (empty for
+    /// legacy providers) + the user's language preference ("auto" or a code).
+    var selectedCatalogModelID: String = ""
+    var preferredLanguage: String = "auto"
     let refinementProvider: Provider
     let refinementAPIKey: String
     let refinementBaseURL: String
@@ -154,7 +142,6 @@ struct PipelineSettingsSnapshot {
     let whisperKitEnableTimestamps: Bool
     let whisperKitUseVAD: Bool
     let whisperKitLanguages: [WhisperKitLanguage]
-    let cohereLanguage: CohereLanguage
 
     var usesWhisperKit: Bool {
         transcriptionProvider == .whisperKit
@@ -169,6 +156,8 @@ extension AppSettings {
             transcriptionAPIKey: transcriptionAPIKey,
             transcriptionBaseURL: transcriptionBaseURL,
             transcriptionModel: transcriptionProvider == .whisperKit ? whisperKitModel : transcriptionModel,
+            selectedCatalogModelID: selectedModelIDRaw,
+            preferredLanguage: preferredLanguage,
             refinementProvider: refinementProvider,
             refinementAPIKey: refinementAPIKey,
             refinementBaseURL: refinementBaseURL,
@@ -180,8 +169,7 @@ extension AppSettings {
             whisperKitPromptPrefill: whisperKitPromptPrefill,
             whisperKitEnableTimestamps: whisperKitEnableTimestamps,
             whisperKitUseVAD: whisperKitUseVAD,
-            whisperKitLanguages: whisperKitLanguages,
-            cohereLanguage: cohereLanguage
+            whisperKitLanguages: whisperKitLanguages
         )
     }
 }
@@ -211,6 +199,47 @@ struct TranscriptionRunContext {
     let audioDurationMs: UInt64
     let warmState: TranscriptionWarmState
     let refinementEnabled: Bool
+    /// Phase 8: which TranscriptionRuntime served this capture (nil for
+    /// legacy cloud/server paths). Additive telemetry field.
+    let runtimeID: String?
+    /// Phase 8: model quantization when known (e.g. "int8"). Additive.
+    let quantization: String?
+
+    init(
+        provider: String,
+        backendKind: TranscriptionBackendKind,
+        supportTier: TranscriptionSupportTier,
+        pipelineMode: TranscriptionPipelineMode,
+        model: String,
+        backendConfigFingerprint: String,
+        refinementProvider: String?,
+        refinementModel: String?,
+        refinementConfigFingerprint: String?,
+        languageMode: TranscriptionLanguageMode,
+        languageCode: String?,
+        audioDurationMs: UInt64,
+        warmState: TranscriptionWarmState,
+        refinementEnabled: Bool,
+        runtimeID: String? = nil,
+        quantization: String? = nil
+    ) {
+        self.provider = provider
+        self.backendKind = backendKind
+        self.supportTier = supportTier
+        self.pipelineMode = pipelineMode
+        self.model = model
+        self.backendConfigFingerprint = backendConfigFingerprint
+        self.refinementProvider = refinementProvider
+        self.refinementModel = refinementModel
+        self.refinementConfigFingerprint = refinementConfigFingerprint
+        self.languageMode = languageMode
+        self.languageCode = languageCode
+        self.audioDurationMs = audioDurationMs
+        self.warmState = warmState
+        self.refinementEnabled = refinementEnabled
+        self.runtimeID = runtimeID
+        self.quantization = quantization
+    }
 }
 
 struct TranscriptionRequest {
@@ -528,6 +557,14 @@ struct CaptureTelemetrySummary {
 
         if let languageCode = context.languageCode {
             fields["language_code"] = languageCode
+        }
+
+        if let runtimeID = context.runtimeID {
+            fields["runtime"] = runtimeID
+        }
+
+        if let quantization = context.quantization {
+            fields["quantization"] = quantization
         }
 
         return fields

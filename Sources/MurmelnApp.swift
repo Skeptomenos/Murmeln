@@ -58,22 +58,6 @@ struct MenuContent: View {
         
         Divider()
         
-        if settings.transcriptionProvider == .cohereMLX {
-            Menu("Language: \(settings.cohereLanguage.rawValue)") {
-                ForEach(CohereLanguage.allCases, id: \.self) { language in
-                    Button {
-                        settings.cohereLanguage = language
-                    } label: {
-                        if language == settings.cohereLanguage {
-                            Text("✓ \(language.rawValue)")
-                        } else {
-                            Text("   \(language.rawValue)")
-                        }
-                    }
-                }
-            }
-        }
-        
         Button("Show History (\(historyStore.entries.count))") {
             HistoryWindowController.shared.show()
         }
@@ -132,9 +116,13 @@ struct MenuContent: View {
     }
 }
 
+@MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
     private var terminationInFlight = false
     private var cancellables = Set<AnyCancellable>()
+    private lazy var selectionLifecycle = TranscriptionSelectionLifecycle(
+        runtimeForModel: Self.runtime(for:)
+    )
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -191,39 +179,58 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         hotkey.start()
 
-        // P1-7: Start Cohere bridge eagerly if it's the persisted provider — log errors
+        // Phase 8: eager warm-up of the selected catalog runtime; recording
+        // state machine remains untouched.
         Task { @MainActor in
-            if AppSettings.shared.transcriptionProvider == .cohereMLX {
-                do {
-                    try await CohereMLXService.shared.startBridge()
-                } catch {
-                    appDelegateLogger.error("Cohere bridge start failed: \(error.localizedDescription, privacy: .public)")
-                }
-            }
+            await Self.warmSelectedBackend()
         }
 
-        // P1-6 / M6: react to explicit provider changes from the single setter
-        // path — no objectWillChange sniffing, no raw-value bookkeeping.
-        AppSettings.shared.transcriptionProviderChanged
-            .sink { provider in
+        // Phase 8 / M6: one complete transition owns unload + warm-up for
+        // catalog↔catalog and catalog↔legacy changes.
+        AppSettings.shared.transcriptionSelectionChanged
+            .sink { [weak self] transition in
                 Task { @MainActor in
-                    if provider == .cohereMLX {
-                        // P1-7: Log bridge start errors
-                        do {
-                            try await CohereMLXService.shared.startBridge()
-                        } catch {
-                            appDelegateLogger.error("Cohere bridge start failed: \(error.localizedDescription, privacy: .public)")
-                        }
-                    } else {
-                        // Stop the bridge if switching away from Cohere and it is active
-                        let bridgeState = CohereMLXService.shared.modelState
-                        if bridgeState == .ready || bridgeState == .loading {
-                            CohereMLXService.shared.stopBridge()
-                        }
-                    }
+                    await self?.selectionLifecycle.apply(transition)
                 }
             }
             .store(in: &cancellables)
+    }
+
+    /// Warm whatever backend the persisted selection points at (app launch).
+    @MainActor
+    private static func warmSelectedBackend() async {
+        switch AppSettings.shared.transcriptionSelection {
+        case .catalog(let modelID):
+            await warmCatalogModel(modelID)
+        case .legacy:
+            break  // cloud/server: nothing to warm
+        }
+    }
+
+    /// Load an installed catalog model into its runtime; not-installed models
+    /// are left for the settings pane's download flow (no silent downloads
+    /// of multi-GB weights at launch).
+    @MainActor
+    private static func warmCatalogModel(_ modelID: TranscriptionModelID) async {
+        guard let runtime = runtime(for: modelID) else { return }
+        guard runtime.isInstalled(modelID) else {
+            appDelegateLogger.info("Catalog model \(modelID.rawValue, privacy: .public) not installed; skipping warm-up (settings pane offers the download)")
+            return
+        }
+        do {
+            try await runtime.load(modelID)
+        } catch {
+            appDelegateLogger.error("Warm-up failed for \(modelID.rawValue, privacy: .public): \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    @MainActor
+    private static func runtime(for modelID: TranscriptionModelID) -> (any TranscriptionRuntime)? {
+        guard let entry = ModelCatalog.entry(for: modelID) else { return nil }
+        switch entry.runtime {
+        case .fluidAudio: return FluidAudioRuntime.shared
+        case .whisperKit: return WhisperKitRuntime.shared
+        }
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
@@ -233,8 +240,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         terminationInFlight = true
         HotkeyService.shared.stop(reason: .applicationTerminating)
-        // P1-11: Stop Cohere bridge on app quit to avoid orphaned Python process
-        CohereMLXService.shared.stopBridge()
 
         let activeCaptureID = AppState.shared.diagnosticsActiveCaptureID
         let recordingPhase = AppState.shared.diagnosticsRecordingPhaseName

@@ -20,6 +20,10 @@ Read `index.md` first for project map, commands, key docs, and active planning f
 - `git diff --check`
 <!-- gate-stages-end -->
 
+## Runtime Validation (Tier 1.5)
+
+`bash validate-e2e.sh` exercises the real downloaded on-device models and their app-level pipeline path. Run it after runtime/model changes and before phase or release closeout. It is intentionally separate from the deterministic Tier 1 gate because it depends on multi-gigabyte local model assets.
+
 Tier 2 is the human dogfood checklist in `docs/dogfood-checklist.md` — mandatory before release/phase closeout, evidenced by `capture-diagnostics.jsonl` capture IDs.
 
 ## Implementation Loop
