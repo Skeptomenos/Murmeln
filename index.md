@@ -1,6 +1,6 @@
 # Murmeln Index
 
-> Last updated: 2026-07-13
+> Last updated: 2026-07-17
 
 ## Project
 
@@ -8,13 +8,14 @@
 - **Tech:** Swift 6, SwiftUI, macOS 26+, Apple Silicon
 - **README:** `README.md`
 - **Active roadmap Linear:** `DEV-33` — Murmeln truth pass and improvement roadmap
-- **Active phase Linear:** TBD — Phase 8: local runtime + model catalog (create under DEV-33; supersedes paused DEV-48)
+- **Active phase Linear:** TBD — post-Phase 8 publishing verification and runtime evaluation under DEV-33
 - **Superseded phase Linear:** `DEV-48` — Phase 7B: Cohere/MLX first-class integration (paused 2026-06-10, superseded by Phase 8)
-- **Last completed phase Linear:** `DEV-53` — Murmeln: hardening and self-correction-loop adoption (merged in PR #86)
-- **Active phase plan:** `_planning/plans/2026-07-08-murmeln-phase-8-local-runtime-catalog.md`
-- **Last completed phase plan:** `_planning/plans/2026-06-10-murmeln-hardening-and-loop-adoption.md`
-- **Recommended execution branch:** `apps/murmeln/phase-8-runtime-catalog`
-- **Phase 8 status (2026-07-13):** Slices 0–6, all Tier 2 checks, and FINAL independent verification are complete. PR #217 is ready for Alfred review.
+- **Last completed phase Linear:** TBD — Phase 8 completed without a dedicated issue; delivery is recorded in PR #217
+- **Active phase plan:** `_planning/plans/2026-07-17-murmeln-post-phase-8-verification-runtime-evaluation.md`
+- **Last completed phase plan:** `_planning/plans/2026-07-08-murmeln-phase-8-local-runtime-catalog.md`
+- **Recommended execution branch:** use the scoped branch named by the open slice (`apps/murmeln/phase-8-docs-closeout` now)
+- **Phase 8 status (2026-07-17):** Complete. PR #217 merged as `7592218`; the in-process catalog and Python-bridge retirement are on `main`.
+- **Current order:** docs closeout PR → real public-split verification → FluidAudio/WhisperKit/Cohere investigation → evidence-led fixes → PR #220 reconciliation.
 
 ## Commands
 
@@ -79,11 +80,12 @@ Use a lightweight router-plus-layers model.
 | Router | `index.md` | Points to the currently active planning files | Active file changes |
 | Roadmap | `_planning/plans/2026-03-28-murmeln-plan.md` | Strategy, phases, priorities, directives | Scope or priority changes |
 | Findings | `_planning/plans/2026-03-28-murmeln-findings.md` | Durable discoveries, evidence, and investigation notes | After investigation work |
-| Phase Plan | `_planning/plans/2026-07-08-murmeln-phase-8-local-runtime-catalog.md` | Execution-ready plan for the current phase | When the active phase changes |
+| Phase Plan | `_planning/plans/2026-07-17-murmeln-post-phase-8-verification-runtime-evaluation.md` | Execution-ready plan for the current phase | When the active phase changes |
 
 External tracker:
 
 - `DEV-33` — umbrella roadmap tracking in Linear
+- Phase 8 — completed in PR #217 (no dedicated Linear issue was created)
 - `DEV-53` — completed: hardening and self-correction-loop adoption
 - `DEV-48` — superseded Phase 7B: Cohere/MLX first-class integration
 - `DEV-47` — completed Phase 7A: Cohere/MLX feasibility (POC passed, benchmark bypassed)

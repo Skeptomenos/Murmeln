@@ -141,6 +141,46 @@ if ! grep -qF 'try #require(whisper.isModelDownloaded(variant)' Tests/RuntimeE2E
   err "WhisperKit coexistence test does not require the selected variant to be installed"
 fi
 
+# 11. The two planning routers must identify the same active and most-recently
+#     completed plans. A merged phase must not remain active or advertise an
+#     obsolete review state.
+project_active_plan=$(sed -nE 's/^- \*\*Active phase plan:\*\* `([^`]+)`.*/\1/p' index.md | head -1)
+planning_active_plan=$(sed -nE 's/^- Phase Plan: `([^`]+)`.*/\1/p' _planning/index.md | head -1)
+project_completed_plan=$(sed -nE 's/^- \*\*Last completed phase plan:\*\* `([^`]+)`.*/\1/p' index.md | head -1)
+planning_completed_plan=$(sed -nE 's/^- Last completed phase plan: `([^`]+)`.*/\1/p' _planning/index.md | head -1)
+
+if [[ -z "$project_active_plan" || -z "$planning_active_plan" ]]; then
+  err "planning routers must both name an active phase plan"
+elif [[ "$project_active_plan" != "$planning_active_plan" ]]; then
+  err "planning routers disagree on the active phase plan: index.md='$project_active_plan', _planning/index.md='$planning_active_plan'"
+elif [[ ! -f "$project_active_plan" ]]; then
+  err "active phase plan does not exist: $project_active_plan"
+elif ! grep -qE '^\*\*Status:\*\* Active' "$project_active_plan"; then
+  err "active phase plan does not declare an Active status: $project_active_plan"
+fi
+
+if [[ -z "$project_completed_plan" || -z "$planning_completed_plan" ]]; then
+  err "planning routers must both name the last completed phase plan"
+elif [[ "$project_completed_plan" != "$planning_completed_plan" ]]; then
+  err "planning routers disagree on the last completed phase plan: index.md='$project_completed_plan', _planning/index.md='$planning_completed_plan'"
+elif [[ ! -f "$project_completed_plan" ]]; then
+  err "last completed phase plan does not exist: $project_completed_plan"
+elif ! grep -qE '^\*\*Status:\*\* Completed' "$project_completed_plan"; then
+  err "last completed phase plan does not declare a Completed status: $project_completed_plan"
+fi
+
+if [[ "$project_active_plan" == "$PHASE_8_PLAN" || "$planning_active_plan" == "$PHASE_8_PLAN" ]]; then
+  err "merged Phase 8 plan is still routed as active"
+fi
+if ! grep -qE '^\*\*Status:\*\* Completed .*PR #217.*7592218' "$PHASE_8_PLAN"; then
+  err "Phase 8 plan does not record PR #217 and merge commit 7592218 as completed"
+fi
+phase_8_stale_review=$(grep -niE 'ready for Alfred review|re-review pending' \
+  index.md _planning/index.md "$PHASE_8_PLAN" 2>/dev/null || true)
+if [[ -n "$phase_8_stale_review" ]]; then
+  err "current planning docs retain a stale Phase 8 review state:"$'\n'"$phase_8_stale_review"
+fi
+
 if [[ "$fail" -ne 0 ]]; then
   echo "check-docs.sh: FAILED"
   exit 1
