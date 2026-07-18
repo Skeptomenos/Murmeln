@@ -32,6 +32,7 @@ Multi-step work follows the `self-correction-loop` skill (`ai-dev/_infra/skills/
 
 - **Evidence rule:** a checked checkbox / "done" / "tests pass" may only be claimed together with re-derivable evidence — the command run and the observed result (see the skill for the authoritative wording). Flip plan checkboxes only with an evidence line.
 - **Probe first:** for behavior claims, write the failing test before the fix and watch it fail; if it fails differently than expected, record a Discovery in the active plan before fixing.
+- **Regression lock:** every reproducible bug or wiring fix must add a minimal permanent test at the broken boundary, observed red before the fix and green after — this prevents recurrence; record non-automatable UI/OS cases as Tier 2 dogfood checks with diagnostics.
 - **Full gate before every checkbox:** `bash validate.sh`, never a subset.
 - **Same failure twice in a row → stop and re-plan**, do not iterate blindly.
 - **Falsifiability:** never trust a new gate or check until you have watched it fail once (break, observe red, restore).
