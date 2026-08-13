@@ -3,6 +3,7 @@ set -euo pipefail
 
 APP_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CHECKER="$APP_ROOT/check-public-split.sh"
+LIST_PUBLISHABLE_AUDIO="$APP_ROOT/scripts/list-publishable-audio.sh"
 FIXTURE_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/murmeln-public-split-test.XXXXXX")"
 trap 'rm -rf "$FIXTURE_ROOT"' EXIT
 
@@ -34,5 +35,41 @@ assert_public_leak_rejected "Tests/Fixtures/capture-diagnostics.jsonl" "diagnost
 assert_public_leak_rejected "Tests/Fixtures/history.json" "history leak"
 assert_public_leak_rejected "Tests/Fixtures/runtime-probe-results.md" "probe artifact"
 assert_public_leak_rejected "Tests/Fixtures/runtime-probe/results.txt" "probe path"
+
+# A local ignored worktree is not part of a Git checkout or public split. The
+# source-level audio guard must still reject a real publishable working-tree
+# file while ignoring local caches and private _planning fixtures.
+AUDIO_CANDIDATE_ROOT="$FIXTURE_ROOT/audio-candidates"
+mkdir -p \
+    "$AUDIO_CANDIDATE_ROOT/.claude/worktrees/stale" \
+    "$AUDIO_CANDIDATE_ROOT/_planning/audio-fixtures" \
+    "$AUDIO_CANDIDATE_ROOT/Tests/Fixtures"
+git init -q "$AUDIO_CANDIDATE_ROOT"
+printf '.claude/worktrees/\n' > "$AUDIO_CANDIDATE_ROOT/.gitignore"
+printf 'tracked source\n' > "$AUDIO_CANDIDATE_ROOT/README.md"
+printf 'ignored dependency audio' > "$AUDIO_CANDIDATE_ROOT/.claude/worktrees/stale/dependency.wav"
+printf 'private voice' > "$AUDIO_CANDIDATE_ROOT/_planning/audio-fixtures/private.wav"
+git -C "$AUDIO_CANDIDATE_ROOT" add .gitignore README.md _planning/audio-fixtures/private.wav
+
+audio_candidates=$(bash "$LIST_PUBLISHABLE_AUDIO" "$AUDIO_CANDIDATE_ROOT")
+if [[ -n "$audio_candidates" ]]; then
+    echo "❌ public-split test: ignored or private audio was classified as publishable:"
+    echo "$audio_candidates"
+    exit 1
+fi
+
+printf 'publishable voice' > "$AUDIO_CANDIDATE_ROOT/Tests/Fixtures/leaked.wav"
+audio_candidates=$(bash "$LIST_PUBLISHABLE_AUDIO" "$AUDIO_CANDIDATE_ROOT")
+if [[ "$audio_candidates" != *"Tests/Fixtures/leaked.wav"* ]]; then
+    echo "❌ public-split test: publishable working-tree audio was not detected"
+    exit 1
+fi
+
+printf 'publishable uppercase voice' > "$AUDIO_CANDIDATE_ROOT/Tests/Fixtures/UPPER.WAV"
+audio_candidates=$(bash "$LIST_PUBLISHABLE_AUDIO" "$AUDIO_CANDIDATE_ROOT")
+if [[ "$audio_candidates" != *"Tests/Fixtures/UPPER.WAV"* ]]; then
+    echo "❌ public-split test: uppercase publishable audio was not detected"
+    exit 1
+fi
 
 echo "✅ PublicSplitPrivacyTests: private content stripped; public leaks rejected"

@@ -62,6 +62,35 @@ struct FluidAudioRuntimeE2ETests {
         )
     }
 
+    /// Whole-file coverage can pass while the last phrase is absent. Keep a
+    /// separate end-of-utterance assertion for the reported release-boundary
+    /// regression without exposing private fixture text in failure output.
+    private func assertFinalReferenceWordsPreserved(
+        _ transcript: String,
+        reference: String,
+        label: String
+    ) {
+        let significant = reference.lowercased()
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { $0.count >= 4 }
+        let expectedTail = Array(significant.suffix(2))
+        let transcriptWords = transcript.lowercased()
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { $0.count >= 4 }
+        let searchStart = max(0, transcriptWords.count - 4)
+        let candidateStarts: ClosedRange<Int>? = transcriptWords.count >= expectedTail.count
+            ? searchStart...(transcriptWords.count - expectedTail.count)
+            : nil
+        let tailIsPresent = candidateStarts?.contains { start in
+            Array(transcriptWords[start..<(start + expectedTail.count)]) == expectedTail
+        } ?? false
+
+        #expect(
+            !expectedTail.isEmpty && tailIsPresent,
+            "\(label): final reference phrase is absent from the transcript tail"
+        )
+    }
+
     /// The whole-file coverage check is intentionally loose, but it must not
     /// allow an entire chunk-boundary span to disappear. These distinctive
     /// words surround the seam that was truncated during Tier 2 dogfood.
@@ -83,6 +112,7 @@ struct FluidAudioRuntimeE2ETests {
         let text = try await runtime.transcribe(audioURL: clip.audio, options: TranscriptionOptions())
         #expect(!text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         assertKeywordCoverage(text, reference: clip.reference, label: "parakeet-v3/short_en")
+        assertFinalReferenceWordsPreserved(text, reference: clip.reference, label: "parakeet-v3/short_en")
     }
 
     @Test("Parakeet v3 transcribes the German fixture")
@@ -92,6 +122,7 @@ struct FluidAudioRuntimeE2ETests {
         try await runtime.load(TranscriptionModelID(rawValue: "parakeet-tdt-0.6b-v3"))
         let text = try await runtime.transcribe(audioURL: clip.audio, options: TranscriptionOptions())
         assertKeywordCoverage(text, reference: clip.reference, label: "parakeet-v3/short_de")
+        assertFinalReferenceWordsPreserved(text, reference: clip.reference, label: "parakeet-v3/short_de")
     }
 
     @Test("Parakeet v2 transcribes the English fixture")

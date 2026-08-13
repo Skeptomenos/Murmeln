@@ -91,16 +91,7 @@ fi
 #    Real-user voice is biometric/personal data and must remain below
 #    _planning/ (or be supplied externally at E2E runtime), never in the
 #    publishable source/test tree.
-publishable_audio=$(find . \
-  -path './_planning' -prune -o \
-  -path './.build' -prune -o \
-  -path './build' -prune -o \
-  -path './DerivedData' -prune -o \
-  -type f \( \
-    -iname '*.wav' -o -iname '*.m4a' -o -iname '*.mp3' -o \
-    -iname '*.aac' -o -iname '*.caf' -o -iname '*.flac' -o \
-    -iname '*.aiff' -o -iname '*.aif' \
-  \) -print | sort)
+publishable_audio=$(bash scripts/list-publishable-audio.sh .)
 if [[ -n "$publishable_audio" ]]; then
   err "recorded audio exists in the publishable tree; move it under _planning/ or supply MURMELN_E2E_FIXTURES_DIR:"$'\n'"$publishable_audio"
 fi
