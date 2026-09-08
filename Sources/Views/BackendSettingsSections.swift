@@ -14,9 +14,6 @@ struct KeychainSecurityNoticeBanner: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
-            .padding(10)
-            .background(Color.orange.opacity(0.1))
-            .cornerRadius(8)
         }
     }
 }
@@ -71,11 +68,11 @@ struct CatalogModelSection: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        SettingsGroup(title: "On-device model") {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(entry.displayName)
-                        .font(.caption.weight(.medium))
+                        .font(.body.weight(.medium))
                     Text("\(entry.approxDownloadMB >= 1000 ? String(format: "%.1f GB", Double(entry.approxDownloadMB) / 1000) : "\(entry.approxDownloadMB) MB") · \(entry.languages.count) language\(entry.languages.count == 1 ? "" : "s")")
                         .font(.caption)
                         .foregroundColor(.secondary)
@@ -151,17 +148,9 @@ struct CatalogModelSection: View {
             }
 
             if let note = entry.usageNote {
-                Text(note)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .padding(10)
-                    .background(Color.orange.opacity(0.08))
-                    .cornerRadius(8)
+                SettingsNote(text: note, icon: "info.circle")
             }
         }
-        .padding(12)
-        .background(Color(nsColor: .controlBackgroundColor))
-        .cornerRadius(8)
         .confirmationDialog(
             "Delete \(entry.displayName)?",
             isPresented: $showingDeleteConfirmation
@@ -278,21 +267,10 @@ struct TranscriptionSettingsSection: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Transcription")
-                    .font(.title2.weight(.semibold))
-                    .accessibilityAddTraits(.isHeader)
-                Text("Speech-to-text provider for converting audio to text")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-            .accessibilityElement(children: .combine)
-
-            VStack(alignment: .leading, spacing: 12) {
-                // Phase 8 / M6: one picker over catalog models + legacy
-                // providers, bound through the transcriptionSelection setter —
-                // the single path that updates raw values and change signals.
+        VStack(alignment: .leading, spacing: 16) {
+            SettingsGroup(title: "Speech recognition", subtitle: "Run transcription on this Mac, or connect a cloud service.") {
+                // Keep the existing selection setter as the only path that
+                // updates provider values and model change signals.
                 Picker("Model", selection: Binding(
                     get: { settings.transcriptionSelection },
                     set: { settings.transcriptionSelection = $0 }
@@ -303,18 +281,11 @@ struct TranscriptionSettingsSection: View {
                                 .tag(AppSettings.TranscriptionSelection.catalog(entry.id))
                         }
                     }
-                    Section("Cloud & Server (legacy)") {
+                    Section("Cloud & Server") {
                         ForEach(TranscriptionProvider.allCases.filter { !$0.isLocalNativeProvider },
                                 id: \.rawValue) { provider in
-                            HStack {
-                                Text(provider.displayName)
-                                if provider.supportsRefinementInOneCall {
-                                    Text("+ Refinement")
-                                        .font(.caption)
-                                        .foregroundColor(.green)
-                                }
-                            }
-                            .tag(AppSettings.TranscriptionSelection.legacy(provider))
+                            Text(provider.supportsRefinementInOneCall ? "\(provider.displayName) + Refinement" : provider.displayName)
+                                .tag(AppSettings.TranscriptionSelection.legacy(provider))
                         }
                     }
                 }
@@ -323,74 +294,70 @@ struct TranscriptionSettingsSection: View {
                     loadTranscriptionModels()
                 }
 
-                if case .catalog(let modelID) = settings.transcriptionSelection,
-                   let entry = ModelCatalog.entry(for: modelID) {
-                    CatalogModelSection(settings: settings, entry: entry)
-                        .id(modelID)
+                if case .catalog = settings.transcriptionSelection {
+                    SettingsNote(text: "Speech recognition runs on this Mac.", icon: "laptopcomputer")
                 }
 
                 if settings.selectedModelID == nil, settings.transcriptionProvider.supportsRefinementInOneCall {
-                    HStack(spacing: 6) {
-                        Image(systemName: "bolt.fill")
-                            .foregroundColor(.green)
-                        Text("This provider handles final text in one call. Separate refinement settings are ignored.")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                    SettingsNote(text: "This provider handles final text in one call. Separate refinement settings are ignored.", icon: "sparkles")
+                }
+            }
+
+            if case .catalog(let modelID) = settings.transcriptionSelection,
+               let entry = ModelCatalog.entry(for: modelID) {
+                CatalogModelSection(settings: settings, entry: entry)
+                    .id(modelID)
+            }
+
+            if Self.showsWhisperKitVariantManagement(for: settings.transcriptionSelection) {
+                WhisperKitSettingsSection(
+                    settings: settings,
+                    whisperKitService: whisperKitService,
+                    showingWhisperKitSetup: $showingWhisperKitSetup,
+                    showsLegacyDecodingSettings: settings.selectedModelID == nil
+                )
+            }
+
+            if settings.selectedModelID == nil, !settings.transcriptionProvider.isLocalNativeProvider {
+                SettingsGroup(title: "Cloud & server") {
+                    if settings.transcriptionProvider.requiresAPIKey {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("API key")
+                                .font(.caption.weight(.medium))
+                            // M5: persist and discover models only on Enter or
+                            // focus loss, never for each keystroke.
+                            SecureField("Enter API key", text: $apiKeyDraft)
+                                .textFieldStyle(.roundedBorder)
+                                .focused($apiKeyFocused)
+                                .onSubmit { commitAPIKey() }
+                                .onChange(of: apiKeyFocused) { _, focused in
+                                    if !focused { commitAPIKey() }
+                                }
+                                .onAppear { apiKeyDraft = settings.transcriptionAPIKey }
+                                .onChange(of: settings.transcriptionProviderRaw) { _, _ in
+                                    apiKeyDraft = settings.transcriptionAPIKey
+                                }
+                                .accessibilityLabel("Transcription API key")
+                            KeychainSecurityNoticeBanner(settings: settings)
+                        }
                     }
-                    .padding(10)
-                    .background(Color.green.opacity(0.1))
-                    .cornerRadius(8)
-                }
 
-                if Self.showsWhisperKitVariantManagement(for: settings.transcriptionSelection) {
-                    WhisperKitSettingsSection(
-                        settings: settings,
-                        whisperKitService: whisperKitService,
-                        showingWhisperKitSetup: $showingWhisperKitSetup,
-                        showsLegacyDecodingSettings: settings.selectedModelID == nil
-                    )
-                }
-
-                if settings.selectedModelID == nil, settings.transcriptionProvider.requiresAPIKey {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("API Key")
-                            .font(.caption.weight(.medium))
-                        // M5: edit a local draft; persist + discover models only
-                        // on commit (Enter / focus loss), never per keystroke.
-                        SecureField("Enter API key", text: $apiKeyDraft)
-                            .textFieldStyle(.roundedBorder)
-                            .focused($apiKeyFocused)
-                            .onSubmit { commitAPIKey() }
-                            .onChange(of: apiKeyFocused) { _, focused in
-                                if !focused { commitAPIKey() }
-                            }
-                            .onAppear { apiKeyDraft = settings.transcriptionAPIKey }
-                            .onChange(of: settings.transcriptionProviderRaw) { _, _ in
-                                apiKeyDraft = settings.transcriptionAPIKey
-                            }
-                        KeychainSecurityNoticeBanner(settings: settings)
-                    }
-                }
-
-                if settings.selectedModelID == nil, !settings.transcriptionProvider.isLocalNativeProvider {
-                    ValidatedURLField(title: "Base URL", url: $settings.transcriptionBaseURL)
-                }
-
-                if settings.selectedModelID == nil, !settings.transcriptionProvider.isLocalNativeProvider {
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: 6) {
                         Text("Model")
                             .font(.caption.weight(.medium))
-                        HStack {
+                        HStack(spacing: 10) {
                             if isLoadingTranscriptionModels {
                                 ProgressView()
-                                    .scaleEffect(0.7)
+                                    .controlSize(.small)
+                                    .accessibilityLabel("Loading transcription models")
                             }
 
                             if transcriptionModels.isEmpty {
                                 TextField("Model name", text: $settings.transcriptionModel)
                                     .textFieldStyle(.roundedBorder)
+                                    .accessibilityLabel("Transcription model name")
                             } else {
-                                Picker("", selection: $settings.transcriptionModel) {
+                                Picker("Transcription model", selection: $settings.transcriptionModel) {
                                     ForEach(transcriptionModels) { model in
                                         Text(model.name).tag(model.id)
                                     }
@@ -401,8 +368,23 @@ struct TranscriptionSettingsSection: View {
                             Button(action: loadTranscriptionModels) {
                                 Image(systemName: "arrow.clockwise")
                             }
-                            .buttonStyle(.borderless)
+                            .help("Refresh transcription models")
+                            .accessibilityLabel("Refresh transcription models")
                         }
+                        if transcriptionModels.isEmpty && !isLoadingTranscriptionModels {
+                            Text("Enter a model name, or refresh to load available models.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    Divider()
+                    DisclosureGroup("Server connection") {
+                        ValidatedURLField(title: "Base URL", url: $settings.transcriptionBaseURL)
+                            .padding(.top, 12)
+                    }
+                    if !URLValidation.isValid(settings.transcriptionBaseURL) {
+                        SettingsNote(text: "The server URL is invalid. Open Server connection to correct it.", icon: "exclamationmark.circle", color: .red)
                     }
                 }
             }
@@ -421,57 +403,49 @@ struct WhisperKitSettingsSection: View {
     let showsLegacyDecodingSettings: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        SettingsGroup(title: "Whisper models") {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Current Model")
-                        .font(.caption.weight(.medium))
+                    Text("Current variant")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                     Text(settings.whisperKitModel)
                         .font(.system(.body, design: .monospaced))
+                        .textSelection(.enabled)
                 }
-
                 Spacer()
-
                 if showsLegacyDecodingSettings, whisperKitService.modelState == .ready {
-                    Label("Ready", systemImage: "circle.fill")
+                    Label("Ready", systemImage: "checkmark.circle.fill")
                         .font(.caption)
-                        .foregroundColor(.green)
+                        .foregroundStyle(.green)
                 }
             }
 
-            Button("Download & Manage Models...") {
+            Button("Download & Manage Models…") {
                 showingWhisperKitSetup = true
             }
 
-            Text("First-class local-native transcription runs fully on-device.")
-                .font(.caption)
-                .foregroundColor(.green)
-                .padding(10)
-                .background(Color.green.opacity(0.1))
-                .cornerRadius(8)
+            SettingsNote(text: "Whisper speech recognition runs entirely on this Mac.", icon: "laptopcomputer")
 
             if showsLegacyDecodingSettings {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Decoding Strategy")
-                        .font(.caption.weight(.medium))
-
-                    HStack {
-                        Text("Language")
-                        Spacer()
-                        Picker("Language", selection: Binding(
-                            get: { settings.whisperKitLanguageSelectionRaw },
-                            set: { settings.whisperKitLanguageSelectionRaw = $0 }
-                        )) {
-                            Text(AppSettings.whisperKitAutoDetectLanguageSelection)
-                                .tag(AppSettings.whisperKitAutoDetectLanguageSelection)
-                            ForEach(WhisperKitLanguage.allCases, id: \.self) { language in
-                                Text(language.rawValue).tag(language.rawValue)
-                            }
+                Divider()
+                HStack {
+                    Text("Language")
+                    Spacer()
+                    Picker("Language", selection: Binding(
+                        get: { settings.whisperKitLanguageSelectionRaw },
+                        set: { settings.whisperKitLanguageSelectionRaw = $0 }
+                    )) {
+                        Text(AppSettings.whisperKitAutoDetectLanguageSelection)
+                            .tag(AppSettings.whisperKitAutoDetectLanguageSelection)
+                        ForEach(WhisperKitLanguage.allCases, id: \.self) { language in
+                            Text(language.rawValue).tag(language.rawValue)
                         }
-                        .pickerStyle(.menu)
-                        .labelsHidden()
                     }
-
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                }
+                DisclosureGroup("Decoding options") {
                     HStack {
                         Text("Profile")
                         Spacer()
@@ -486,12 +460,10 @@ struct WhisperKitSettingsSection: View {
                         .pickerStyle(.menu)
                         .labelsHidden()
                     }
+                    .padding(.top, 12)
                 }
             }
         }
-        .padding(12)
-        .background(Color(nsColor: .controlBackgroundColor))
-        .cornerRadius(8)
     }
 }
 
@@ -516,73 +488,32 @@ struct RefinementSettingsSection: View {
         }
     }
 
+    private var refinementControlsDisabled: Bool {
+        settings.skipRefinement || settings.transcriptionProvider.supportsRefinementInOneCall
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Refinement")
-                    .font(.title2.weight(.semibold))
-                    .accessibilityAddTraits(.isHeader)
-                Text("Optional text cleanup and formatting layer")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-            .accessibilityElement(children: .combine)
-
-            Toggle(isOn: $settings.skipRefinement) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Skip Refinement (Raw Mode)")
-                        .font(.body.weight(.medium))
-                    Text("Use original transcript without LLM processing")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            }
-            .toggleStyle(.switch)
-            .padding(12)
-            .background(settings.skipRefinement ? Color.orange.opacity(0.15) : Color.clear)
-            .cornerRadius(8)
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(settings.skipRefinement ? Color.orange.opacity(0.5) : Color.clear, lineWidth: 1)
-            )
-
-            Toggle(isOn: $settings.disableSilenceTrimming) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Disable Silence Trimming")
-                        .font(.body.weight(.medium))
-                    Text("Send full audio without trimming silence from start/end")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            }
-            .toggleStyle(.switch)
-            .padding(12)
-            .background(settings.disableSilenceTrimming ? Color.orange.opacity(0.15) : Color.clear)
-            .cornerRadius(8)
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(settings.disableSilenceTrimming ? Color.orange.opacity(0.5) : Color.clear, lineWidth: 1)
-            )
-
-            if settings.transcriptionProvider.supportsRefinementInOneCall && !settings.skipRefinement {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "info.circle.fill")
-                            .foregroundColor(.blue)
-                        Text("Refinement is handled by your transcription provider")
-                            .font(.callout.weight(.medium))
+        VStack(alignment: .leading, spacing: 16) {
+            SettingsGroup(title: "Text cleanup") {
+                Toggle(isOn: $settings.skipRefinement) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Use the original transcript")
+                            .font(.body.weight(.medium))
+                        Text("Skip refinement and keep the words as transcribed.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
-
-                    Text("Since you're using \(settings.transcriptionProvider.rawValue), this section is only used if you switch to a transcription-only provider.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
                 }
-                .padding(12)
-                .background(Color.blue.opacity(0.1))
-                .cornerRadius(8)
+                .toggleStyle(.switch)
+                .accessibilityLabel("Skip Refinement, Raw Mode")
+
+                if settings.transcriptionProvider.supportsRefinementInOneCall && !settings.skipRefinement {
+                    Divider()
+                    SettingsNote(text: "\(settings.transcriptionProvider.rawValue) handles transcription and refinement together. The separate provider below is used only with transcription-only models.", icon: "sparkles")
+                }
             }
 
-            VStack(alignment: .leading, spacing: 12) {
+            SettingsGroup(title: "Refinement provider", subtitle: "Clean up grammar and formatting with your selected writing style.") {
                 Picker("Provider", selection: $settings.refinementProviderRaw) {
                     ForEach(Provider.allCases, id: \.rawValue) { provider in
                         Text(provider.rawValue).tag(provider.rawValue)
@@ -595,15 +526,14 @@ struct RefinementSettingsSection: View {
                     }
                     loadRefinementModels()
                 }
-                .disabled(settings.skipRefinement || settings.transcriptionProvider.supportsRefinementInOneCall)
-                .opacity(settings.skipRefinement || settings.transcriptionProvider.supportsRefinementInOneCall ? 0.5 : 1)
+                .disabled(refinementControlsDisabled)
 
                 if settings.refinementProvider.requiresAPIKey {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("API Key")
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("API key")
                             .font(.caption.weight(.medium))
-                        // M5: edit a local draft; persist + discover models only
-                        // on commit (Enter / focus loss), never per keystroke.
+                        // M5: persist and discover models only on Enter or
+                        // focus loss, never for each keystroke.
                         SecureField("Enter API key", text: $apiKeyDraft)
                             .textFieldStyle(.roundedBorder)
                             .focused($apiKeyFocused)
@@ -615,30 +545,28 @@ struct RefinementSettingsSection: View {
                             .onChange(of: settings.refinementProviderRaw) { _, _ in
                                 apiKeyDraft = settings.refinementAPIKey
                             }
+                            .accessibilityLabel("Refinement API key")
+                            .disabled(refinementControlsDisabled)
                         KeychainSecurityNoticeBanner(settings: settings)
                     }
-                    .disabled(settings.skipRefinement || settings.transcriptionProvider.supportsRefinementInOneCall)
-                    .opacity(settings.skipRefinement || settings.transcriptionProvider.supportsRefinementInOneCall ? 0.5 : 1)
                 }
 
-                ValidatedURLField(title: "Base URL", url: $settings.refinementBaseURL)
-                    .disabled(settings.skipRefinement || settings.transcriptionProvider.supportsRefinementInOneCall)
-                    .opacity(settings.skipRefinement || settings.transcriptionProvider.supportsRefinementInOneCall ? 0.5 : 1)
-
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 6) {
                     Text("Model")
                         .font(.caption.weight(.medium))
-                    HStack {
+                    HStack(spacing: 10) {
                         if isLoadingRefinementModels {
                             ProgressView()
-                                .scaleEffect(0.7)
+                                .controlSize(.small)
+                                .accessibilityLabel("Loading refinement models")
                         }
 
                         if refinementModels.isEmpty {
                             TextField("Model name", text: $settings.refinementModel)
                                 .textFieldStyle(.roundedBorder)
+                                .accessibilityLabel("Refinement model name")
                         } else {
-                            Picker("", selection: $settings.refinementModel) {
+                            Picker("Refinement model", selection: $settings.refinementModel) {
                                 ForEach(refinementModels) { model in
                                     Text(model.name).tag(model.id)
                                 }
@@ -649,19 +577,34 @@ struct RefinementSettingsSection: View {
                         Button(action: loadRefinementModels) {
                             Image(systemName: "arrow.clockwise")
                         }
-                        .buttonStyle(.borderless)
+                        .help("Refresh refinement models")
+                        .accessibilityLabel("Refresh refinement models")
+                    }
+                    if refinementModels.isEmpty && !isLoadingRefinementModels {
+                        Text("Enter a model name, or refresh to load available models.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
                 }
-                .disabled(settings.skipRefinement || settings.transcriptionProvider.supportsRefinementInOneCall)
-                .opacity(settings.skipRefinement || settings.transcriptionProvider.supportsRefinementInOneCall ? 0.5 : 1)
+                .disabled(refinementControlsDisabled)
 
-                if settings.refinementProvider == .ollama {
-                    OllamaManagementSection(
-                        settings: settings,
-                        ollamaService: ollamaService,
-                        loadRefinementModels: loadRefinementModels
-                    )
+                Divider()
+                DisclosureGroup("Server connection") {
+                    ValidatedURLField(title: "Base URL", url: $settings.refinementBaseURL)
+                        .disabled(refinementControlsDisabled)
+                        .padding(.top, 12)
                 }
+                if !URLValidation.isValid(settings.refinementBaseURL) {
+                    SettingsNote(text: "The server URL is invalid. Open Server connection to correct it.", icon: "exclamationmark.circle", color: .red)
+                }
+            }
+
+            if settings.refinementProvider == .ollama {
+                OllamaManagementSection(
+                    settings: settings,
+                    ollamaService: ollamaService,
+                    loadRefinementModels: loadRefinementModels
+                )
             }
         }
         .onAppear {
@@ -680,14 +623,7 @@ struct OllamaManagementSection: View {
     let loadRefinementModels: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Divider()
-
-            ValidatedURLField(title: "Ollama URL", url: $settings.ollamaBaseURL)
-                .onChange(of: settings.ollamaBaseURL) { _, _ in
-                    Task { await ollamaService.checkOllamaStatus() }
-                }
-
+        SettingsGroup(title: "Ollama service") {
             HStack {
                 if ollamaService.isOllamaRunning {
                     Label("Ollama Running", systemImage: "checkmark.circle.fill")
@@ -706,7 +642,8 @@ struct OllamaManagementSection: View {
                 }) {
                     Image(systemName: "arrow.clockwise")
                 }
-                .buttonStyle(.borderless)
+                .help("Refresh Ollama status")
+                .accessibilityLabel("Refresh Ollama status")
             }
 
             if !ollamaService.isOllamaRunning {
@@ -716,8 +653,17 @@ struct OllamaManagementSection: View {
                     .textSelection(.enabled)
             }
 
+            DisclosureGroup("Ollama connection") {
+                ValidatedURLField(title: "Ollama URL", url: $settings.ollamaBaseURL)
+                    .padding(.top, 12)
+            }
+            if !URLValidation.isValid(settings.ollamaBaseURL) {
+                SettingsNote(text: "The Ollama URL is invalid. Open Ollama connection to correct it.", icon: "exclamationmark.circle", color: .red)
+            }
+
             if ollamaService.isOllamaRunning {
-                VStack(alignment: .leading, spacing: 8) {
+                Divider()
+                VStack(alignment: .leading, spacing: 12) {
                     Text("Recommended Models")
                         .font(.caption.weight(.medium))
 
@@ -779,12 +725,11 @@ struct OllamaManagementSection: View {
                     .buttonStyle(.borderless)
                     .padding(.top, 4)
                 }
-                .padding(10)
-                .background(Color.blue.opacity(0.1))
-                .cornerRadius(8)
             }
         }
         .disabled(settings.skipRefinement || settings.transcriptionProvider.supportsRefinementInOneCall)
-        .opacity(settings.skipRefinement || settings.transcriptionProvider.supportsRefinementInOneCall ? 0.5 : 1)
+        .onChange(of: settings.ollamaBaseURL) { _, _ in
+            Task { await ollamaService.checkOllamaStatus() }
+        }
     }
 }

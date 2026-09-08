@@ -31,7 +31,15 @@ The best Murmeln experience runs **on-device on Apple Silicon**: your audio is t
 
 A minimal line indicator under the notch shows recording / processing state, so you always know what Murmeln is doing without it getting in your way.
 
-If Murmeln can't deliver the paste because Accessibility isn't granted or you're in a password field, it tells you and leaves the transcript on your clipboard — so a manual <kbd>⌘</kbd><kbd>V</kbd> recovers your words instead of losing them.
+If automatic paste is blocked, a persistent notice offers **Copy transcript**, **Check again**, **Show result in History**, and **Dismiss**. The notice does not take keyboard focus or display the transcript. The same actions remain in the menu.
+
+Murmeln retains the exact final result in History before attempting paste. Denied paste permission leaves the clipboard unchanged. When Secure Input is active, automatic paste is limited to a verified ordinary TextEdit editor: the same editor and empty caret must remain selected from recording start through delivery. Other or unverifiable targets stay blocked. Murmeln does not read the editor's text to make this decision. Copy is an explicit action: click it, choose your text field, then press <kbd>⌘</kbd><kbd>V</kbd>. Check again only checks permission and Secure Input; clearing a blocker never causes a delayed paste. If another paste owns the clipboard, Copy reports busy and needs a fresh click.
+
+History shows whether each result was saved. A failed save keeps the text available in the current session and cancels normal Quit. Retry save, copy the result, or use the separately confirmed **Quit anyway** action. Copy is not proof of a disk save. Successful Copy and Dismiss hide the notice and clear its warning icon without deleting the result. A failed or busy Copy keeps the notice actionable. At the 50-entry limit, Murmeln pauses capture if it cannot safely make space; save or explicitly delete an entry in History to continue.
+
+If paste access is denied, **Open Accessibility Settings** opens the relevant System Settings page. Enable the exact Murmeln instance under **Privacy & Security → Accessibility**. Opening Settings does not grant access; Murmeln checks the permission again when you return. **Restart** waits for the replacement app to launch before exiting. A launch failure keeps the current app available and reports an error. If the new copy cannot be stopped after a failed restart, recording stays paused until that copy is quit.
+
+Clipboard preservation is best effort across processes. Murmeln checks every advertised representation and the clipboard generation, and skips automatic paste when preservation is incomplete. A posted paste command does not prove the target inserted the text. File promises, target-read timing, process termination and power loss remain separate limits.
 
 ---
 
@@ -50,6 +58,24 @@ cd Murmeln
 xcodebuild -scheme Murmeln -configuration Release -derivedDataPath build build
 cp -r build/Build/Products/Release/Murmeln.app /Applications/
 ```
+</details>
+
+<details>
+<summary>Develop locally with stable signing</summary>
+
+Use **Murmeln Dev** for local work. Create its dedicated signing identity once, then build:
+
+```bash
+bash scripts/setup-dev-signing.sh
+bash scripts/build-dev.sh
+```
+
+Setup stores a non-extractable private key in your user keychain and trusts the certificate for code signing only. It reuses an existing identity and refuses to replace a damaged or ambiguous one. Keep this identity across rebuilds: ad-hoc signatures change the app identity and can leave Accessibility permission tied to an older build.
+
+The build script requires that identity, verifies the signed app, and writes to `build-dev/`. It does not launch the app. Pass a different output directory if a build there is running. Switching from an older ad-hoc build may need a fresh Accessibility grant for the exact new Dev app, followed by a normal restart.
+
+This local certificate is free and needs no Apple Developer account. It is not Developer ID signing or notarization for distribution. Production signing is unchanged. Run `bash validate.sh` after setup for the full local gate; it includes a check that different binaries retain the same signing requirement.
+
 </details>
 
 ### 2. Set up on-device transcription (recommended)
@@ -96,13 +122,14 @@ Cloud and local-server backends remain available when you want them.
 ## Good to know
 
 - **Prompt presets** shape how dictation is refined — *Casual*, *Structured*, *Markdown*, *Verbatim*, or your own custom presets. Built-in presets treat dictated content as text, never as commands.
-- **Personal dictionary** — teach the refiner to spell names, acronyms, and technical terms correctly (Settings → Prompt).
-- **History** — review past dictations from the menu bar; with Parallel Audit enabled, compare what different presets produced from the same transcript.
+- **Settings** — compact, resizable windows with plain sections on one background under Transcription, Refinement, Writing, and Recording. Choose System, Light, or Dark appearance in the sidebar; Dark is the default for Settings and History. Advanced prompt and server options expand when needed.
+- **Personal dictionary** — teach the refiner to spell names, acronyms, and technical terms correctly (Settings → Writing).
+- **History** — select a past dictation, read its full text, and choose **Copy Text**. Final and original text share a plain reading surface. A distinct original opens below the result for comparison. Prompt details stay collapsed. With Parallel Audit enabled, compare preset results under **Variants & prompt details**.
 - **Update check** — Murmeln checks GitHub on launch and, when a newer version is out, opens the release page so you can download it.
 
 ### Limitation: password fields
 
-The <kbd>Fn</kbd> hotkey can't fire while a password field or other macOS "Secure Input" context is focused (Terminal under `sudo`/`ssh`, password managers, auth dialogs). Click outside the secure field first, or trigger recording from the menu bar.
+Secure Input can prevent global hotkey observation. If <kbd>Fn</kbd> is not detected, leave the password or secure-entry field first. Murmeln also monitors Fn while its own UI is active. Hotkey detection and automatic-paste permission are separate checks.
 
 ---
 

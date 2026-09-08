@@ -2,305 +2,6 @@ import Foundation
 import SwiftUI
 import AppKit
 import AVFoundation
-import os.log
-
-actor CaptureDiagnostics {
-    struct PersistedCaptureState: Codable, Equatable {
-        let schemaVersion: Int
-        let sessionID: String
-        let captureID: String
-        let lastKnownPhase: String
-        let lastEvent: String
-        let updatedAt: String
-        let metadata: [String: String]
-    }
-
-    static let shared = CaptureDiagnostics()
-
-    private let logger = Logger(subsystem: AppIdentity.loggerSubsystem, category: "CaptureDiagnostics")
-    private let formatter: ISO8601DateFormatter
-    private let fileURL: URL
-    private let persistedCaptureStateURL: URL
-    private let sessionID: String
-    private let isEnabled: Bool
-    private let maxLogSizeBytes: Int
-
-    init(
-        fileURL: URL = AppIdentity.appSupportDirectoryURL.appendingPathComponent("capture-diagnostics.jsonl"),
-        persistedCaptureStateURL: URL = AppIdentity.appSupportDirectoryURL.appendingPathComponent("unfinished-capture.json"),
-        sessionID: String = UUID().uuidString,
-        isEnabled: Bool = AppIdentity.isDevelopmentBuild || ProcessInfo.processInfo.environment["MURMELN_CAPTURE_DIAGNOSTICS"] == "1",
-        maxLogSizeBytes: Int = 10 * 1024 * 1024
-    ) {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        self.formatter = formatter
-        self.fileURL = fileURL
-        self.persistedCaptureStateURL = persistedCaptureStateURL
-        self.sessionID = sessionID
-        self.isEnabled = isEnabled
-        self.maxLogSizeBytes = maxLogSizeBytes
-    }
-
-    func startSession() {
-        guard isEnabled else { return }
-
-        let recoveredState = recoverPersistedCaptureStateIfPresent()
-        if let recoveredState {
-            record(
-                "app.session.recovered_previous_state",
-                captureID: recoveredState.captureID,
-                metadata: recoveryMetadata(from: recoveredState),
-                updatePersistedCaptureState: false
-            )
-        }
-
-        record(
-            "app.session.started",
-            metadata: [
-                "app_name": AppIdentity.displayName,
-                "bundle_identifier": AppIdentity.bundleIdentifier,
-                "development_build": String(AppIdentity.isDevelopmentBuild),
-                "recovered_previous_state": String(recoveredState != nil)
-            ],
-            updatePersistedCaptureState: false
-        )
-    }
-
-    func endSession(reason: String, recordingPhase: String, activeCaptureID: String?) {
-        guard isEnabled else { return }
-
-        var metadata: [String: String] = [
-            "reason": reason,
-            "recording_phase": recordingPhase,
-            "has_unfinished_capture_state": String(FileManager.default.fileExists(atPath: persistedCaptureStateURL.path))
-        ]
-
-        if let activeCaptureID {
-            metadata["active_capture_id"] = activeCaptureID
-        }
-
-        record(
-            "app.session.ending",
-            captureID: activeCaptureID,
-            metadata: metadata,
-            updatePersistedCaptureState: false
-        )
-    }
-
-    func mark(_ event: String, captureID: String? = nil, metadata: [String: String] = [:]) {
-        guard isEnabled else {
-            return
-        }
-
-        record(event, captureID: captureID, metadata: metadata)
-    }
-
-    private func record(
-        _ event: String,
-        captureID: String? = nil,
-        metadata: [String: String] = [:],
-        updatePersistedCaptureState: Bool = true
-    ) {
-        guard isEnabled else { return }
-
-        var payload: [String: Any] = [
-            "event": event,
-            "session_id": sessionID,
-            "timestamp": formatter.string(from: Date()),
-            "uptime_ns": DispatchTime.now().uptimeNanoseconds
-        ]
-
-        if let captureID {
-            payload["capture_id"] = captureID
-        }
-
-        for (key, value) in metadata {
-            payload[key] = value
-        }
-
-        guard let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]),
-              let line = String(data: data, encoding: .utf8) else {
-            logger.error("capture diagnostics serialization failed for event \(event, privacy: .public)")
-            return
-        }
-
-        logger.info("\(line, privacy: .public)")
-        appendLine(line)
-
-        if updatePersistedCaptureState {
-            updatePersistedCaptureStateIfNeeded(for: event, captureID: captureID, metadata: metadata)
-        }
-    }
-
-    private func appendLine(_ line: String) {
-        let content = line + "\n"
-        guard let data = content.data(using: .utf8) else { return }
-
-        rotateLogIfNeeded()
-
-        if !FileManager.default.fileExists(atPath: fileURL.path) {
-            FileManager.default.createFile(atPath: fileURL.path, contents: data)
-            return
-        }
-
-        do {
-            let handle = try FileHandle(forWritingTo: fileURL)
-            defer { try? handle.close() }
-            try handle.seekToEnd()
-            try handle.write(contentsOf: data)
-        } catch {
-            logger.error("capture diagnostics append failed: \(error.localizedDescription, privacy: .public)")
-        }
-    }
-
-    /// M9: rotate the diagnostics log at `maxLogSizeBytes` — one previous
-    /// generation is kept as `<name>.1`, so disk usage is bounded at ~2x max.
-    private func rotateLogIfNeeded() {
-        guard let size = (try? FileManager.default.attributesOfItem(atPath: fileURL.path)[.size]) as? Int,
-              size >= maxLogSizeBytes else {
-            return
-        }
-        let rotatedURL = fileURL.appendingPathExtension("1")
-        try? FileManager.default.removeItem(at: rotatedURL)
-        do {
-            try FileManager.default.moveItem(at: fileURL, to: rotatedURL)
-        } catch {
-            logger.error("capture diagnostics rotation failed: \(error.localizedDescription, privacy: .public)")
-        }
-    }
-
-    private func updatePersistedCaptureStateIfNeeded(
-        for event: String,
-        captureID: String?,
-        metadata: [String: String]
-    ) {
-        guard let captureID else { return }
-
-        if event == "app.capture.complete" {
-            clearPersistedCaptureState(for: captureID)
-            return
-        }
-
-        guard let phase = persistedCapturePhase(for: event) else {
-            return
-        }
-
-        let state = PersistedCaptureState(
-            schemaVersion: 1,
-            sessionID: sessionID,
-            captureID: captureID,
-            lastKnownPhase: phase,
-            lastEvent: event,
-            updatedAt: formatter.string(from: Date()),
-            metadata: metadata
-        )
-
-        writePersistedCaptureState(state)
-    }
-
-    private func persistedCapturePhase(for event: String) -> String? {
-        switch event {
-        case "app.processing.started":
-            return "processing_started"
-        case "app.backend_load.started":
-            return "backend_load_started"
-        case "app.backend_load.completed":
-            return "backend_load_completed"
-        case "app.backend_load.skipped":
-            return "backend_load_skipped"
-        case "app.backend_transcription.started":
-            return "backend_transcription_started"
-        case "app.backend_transcription.completed":
-            return "backend_transcription_completed"
-        case "app.backend_transcription.failed":
-            return "backend_transcription_failed"
-        case "paste.requested":
-            return "paste_requested"
-        case "paste.skipped_empty":
-            return "paste_skipped_empty"
-        case "paste.complete":
-            return "paste_completed"
-        case "app.processing.failed":
-            return "processing_failed"
-        default:
-            return nil
-        }
-    }
-
-    private func writePersistedCaptureState(_ state: PersistedCaptureState) {
-        do {
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            let data = try encoder.encode(state)
-            try data.write(to: persistedCaptureStateURL, options: [.atomic])
-        } catch {
-            logger.error("capture diagnostics state write failed: \(error.localizedDescription, privacy: .public)")
-        }
-    }
-
-    private func recoverPersistedCaptureStateIfPresent() -> PersistedCaptureState? {
-        guard FileManager.default.fileExists(atPath: persistedCaptureStateURL.path) else {
-            return nil
-        }
-
-        defer {
-            try? FileManager.default.removeItem(at: persistedCaptureStateURL)
-        }
-
-        do {
-            let data = try Data(contentsOf: persistedCaptureStateURL)
-            return try JSONDecoder().decode(PersistedCaptureState.self, from: data)
-        } catch {
-            logger.error("capture diagnostics state recovery failed: \(error.localizedDescription, privacy: .public)")
-            return PersistedCaptureState(
-                schemaVersion: 1,
-                sessionID: "unknown",
-                captureID: "unknown",
-                lastKnownPhase: "unreadable_state",
-                lastEvent: "unreadable_state",
-                updatedAt: formatter.string(from: Date()),
-                metadata: ["recovery_error": error.localizedDescription]
-            )
-        }
-    }
-
-    private func clearPersistedCaptureState(for captureID: String) {
-        guard FileManager.default.fileExists(atPath: persistedCaptureStateURL.path) else {
-            return
-        }
-
-        do {
-            let data = try Data(contentsOf: persistedCaptureStateURL)
-            let state = try JSONDecoder().decode(PersistedCaptureState.self, from: data)
-            guard state.captureID == captureID else { return }
-            try FileManager.default.removeItem(at: persistedCaptureStateURL)
-        } catch {
-            logger.error("capture diagnostics state clear failed: \(error.localizedDescription, privacy: .public)")
-        }
-    }
-
-    private func recoveryMetadata(from state: PersistedCaptureState) -> [String: String] {
-        var metadata: [String: String] = [
-            "previous_session_id": state.sessionID,
-            "previous_capture_id": state.captureID,
-            "last_known_phase": state.lastKnownPhase,
-            "last_event": state.lastEvent,
-            "stale_updated_at": state.updatedAt
-        ]
-
-        if let updatedAt = formatter.date(from: state.updatedAt) {
-            let staleAgeMs = max(0, Int(Date().timeIntervalSince(updatedAt) * 1000))
-            metadata["stale_age_ms"] = String(staleAgeMs)
-        }
-
-        for (key, value) in state.metadata {
-            metadata["previous_\(key)"] = value
-        }
-
-        return metadata
-    }
-}
 
 @MainActor
 final class AppState: ObservableObject {
@@ -318,6 +19,7 @@ final class AppState: ObservableObject {
     @Published private(set) var recordingPhase: RecordingPhase = .idle
     @Published private(set) var audioLevel: Float = 0
     @Published var lastError: String?
+    @Published private(set) var pasteFailurePresentation: PasteFailurePresentation?
     
     /// Backward-compatible computed property for UI bindings
     var isRecording: Bool {
@@ -335,6 +37,30 @@ final class AppState: ObservableObject {
     private let pasteService: any PasteServicing
     private let historyStore: any HistoryStoring
     private let permissionService: any MicrophonePermissionChecking
+    private let accessibilityAnnouncement: @MainActor (String) -> Void
+    private let pipelineSettingsSnapshot: @MainActor () -> PipelineSettingsSnapshot
+    @Published private(set) var recoveryEntryID: UUID?
+    @Published private(set) var recoveryMessage: String?
+    @Published private(set) var recoveryDismissed = false
+    @Published private(set) var captureAdmissionMessage: String?
+    @Published private(set) var isTerminating = false
+    private var captureReservation: UUID?
+    private var retainedDeliveryID: UUID?
+    private var processingTask: Task<Void, Never>?
+    private var captureTasks: [UUID: Task<Void, Never>] = [:]
+
+    /// Keep cancelled work owned until it actually returns, even when the
+    /// current warm-up/recording handle has been replaced.
+    @discardableResult
+    private func launchCaptureTask(_ operation: @escaping @MainActor () async -> Void) -> Task<Void, Never> {
+        let id = UUID()
+        let task = Task { @MainActor in
+            defer { captureTasks[id] = nil }
+            await operation()
+        }
+        captureTasks[id] = task
+        return task
+    }
     private var recordingTask: Task<Void, Never>?
     private var warmUpTask: Task<Void, Never>?
     private var warmUpReady = false
@@ -346,6 +72,8 @@ final class AppState: ObservableObject {
     private var capturedSystemPrompt: String = ""
     private var capturedPresetsWithPrompts: [(id: UUID, name: String, prompt: String)] = []
     private var activeCaptureID: String?
+    private let capturePasteTarget: @MainActor () -> (any PasteTargetChecking)?
+    private var activePasteTarget: (any PasteTargetChecking)?
     
     /// Production wiring uses the `.shared` defaults; tests inject mocks.
     init(
@@ -354,7 +82,16 @@ final class AppState: ObservableObject {
         overlay: any OverlayPresenting = OverlayWindowController.shared,
         pasteService: any PasteServicing = PasteService.shared,
         historyStore: any HistoryStoring = HistoryStore.shared,
-        permissionService: any MicrophonePermissionChecking = PermissionService.shared
+        permissionService: any MicrophonePermissionChecking = PermissionService.shared,
+        capturePasteTarget: @escaping @MainActor () -> (any PasteTargetChecking)? = { CapturedPasteTarget.capture() },
+        pipelineSettingsSnapshot: @escaping @MainActor () -> PipelineSettingsSnapshot = { AppSettings.shared.pipelineSettingsSnapshot() },
+        accessibilityAnnouncement: @escaping @MainActor (String) -> Void = { message in
+            NSAccessibility.post(
+                element: NSApp as Any,
+                notification: .announcementRequested,
+                userInfo: [.announcement: message, .priority: NSAccessibilityPriorityLevel.high]
+            )
+        }
     ) {
         self.audioRecorder = audioRecorder
         self.pipelineService = pipelineService
@@ -362,6 +99,13 @@ final class AppState: ObservableObject {
         self.pasteService = pasteService
         self.historyStore = historyStore
         self.permissionService = permissionService
+        self.capturePasteTarget = capturePasteTarget
+        self.accessibilityAnnouncement = accessibilityAnnouncement
+        self.pipelineSettingsSnapshot = pipelineSettingsSnapshot
+        historyStore.onEntriesChanged = { [weak self] in
+            guard let self, let id = self.recoveryEntryID, self.historyStore.entry(id: id) == nil else { return }
+            self.clearPasteRecovery()
+        }
     }
 
     private func ensureCaptureID() -> String {
@@ -371,12 +115,17 @@ final class AppState: ObservableObject {
 
         let newCaptureID = UUID().uuidString
         activeCaptureID = newCaptureID
+        // Sample once at the initiating gesture, before warm-up or UI changes.
+        activePasteTarget = capturePasteTarget()
         return newCaptureID
     }
 
     private func clearCaptureID(_ captureID: String) {
         if activeCaptureID == captureID {
+            if let captureReservation { historyStore.releaseReservation(captureReservation) }
+            captureReservation = nil
             activeCaptureID = nil
+            activePasteTarget = nil
         }
     }
 
@@ -406,11 +155,7 @@ final class AppState: ObservableObject {
     }
 
     func prepareCaptureIDForHotkeyPressIfPossible() -> String? {
-        if let activeCaptureID {
-            return activeCaptureID
-        }
-
-        guard recordingPhase == .idle else {
+        guard !isTerminating, recordingPhase == .idle else {
             return nil
         }
 
@@ -450,6 +195,15 @@ final class AppState: ObservableObject {
         pendingBeginRequestedAtNs = nil
     }
 
+    private func clearPasteRecovery() {
+        if lastError == pasteFailurePresentation?.message { lastError = nil }
+        pasteFailurePresentation = nil
+        recoveryEntryID = nil
+        recoveryMessage = nil
+        recoveryDismissed = false
+        historyStore.protectedRecoveryID = nil
+    }
+
     private func capturePromptSnapshot() {
         let settings = AppSettings.shared
         capturedPresetID = settings.selectedPreset?.id ?? PromptPreset.builtInPresets[0].id
@@ -472,7 +226,7 @@ final class AppState: ObservableObject {
             ])
         }
 
-        recordingTask = Task {
+        recordingTask = launchCaptureTask { [self] in
             do {
                 try await audioRecorder.beginCapture(captureID: captureID)
                 #if DEBUG
@@ -507,13 +261,92 @@ final class AppState: ObservableObject {
     }
     
     private func announceForAccessibility(_ message: String) {
-        NSAccessibility.post(
-            element: NSApp as Any,
-            notification: .announcementRequested,
-            userInfo: [.announcement: message, .priority: NSAccessibilityPriorityLevel.high]
-        )
+        accessibilityAnnouncement(message)
     }
-    
+
+    var hasPasteRecovery: Bool {
+        guard let recoveryEntryID else { return false }
+        return historyStore.entry(id: recoveryEntryID) != nil
+    }
+
+    /// A retained result remains available after its warning is acknowledged.
+    var needsPasteRecoveryAttention: Bool {
+        hasPasteRecovery && !recoveryDismissed
+    }
+
+    func copyFailedPasteAgain() {
+        guard let recoveryEntryID, let entry = historyStore.entry(id: recoveryEntryID) else { return }
+        let result = pasteService.copyResult(text: entry.displayText)
+        recoveryMessage = result.message
+        if result == .copied { acknowledgePasteRecovery(message: result.message) }
+        announceForAccessibility(result.message)
+    }
+
+    func dismissPasteRecovery() {
+        acknowledgePasteRecovery(message: "Your text remains available in History.")
+    }
+
+    private func acknowledgePasteRecovery(message: String) {
+        guard hasPasteRecovery else { return }
+        recoveryDismissed = true
+        recoveryMessage = message
+        if lastError == pasteFailurePresentation?.message { lastError = nil }
+    }
+
+    private func presentRecovery(entryID: UUID, presentation: PasteFailurePresentation?) {
+        guard historyStore.entry(id: entryID) != nil else { return }
+        recoveryEntryID = entryID
+        historyStore.protectedRecoveryID = entryID
+        pasteFailurePresentation = presentation
+        recoveryMessage = presentation?.message ?? "Delivery stopped. Your text is available to copy."
+        recoveryDismissed = false
+    }
+
+    private func reserveCaptureCapacity() -> Bool {
+        guard !isTerminating else { return false }
+        if captureReservation != nil { return true }
+        guard let token = historyStore.reserveCapacity() else {
+            // A hotkey can allocate identity before admission. Do not retain
+            // that rejected gesture's editor proof for a later capture.
+            if recordingPhase == .idle, let activeCaptureID { clearCaptureID(activeCaptureID) }
+            captureAdmissionMessage = "History cannot safely accept another result. Open History to retry saving or explicitly discard an entry."
+            overlay.hide()
+            return false
+        }
+        captureReservation = token
+        captureAdmissionMessage = nil
+        return true
+    }
+
+    /// Stop admission before joining owned work. A known final result is already
+    /// in History; cancelled unfinished transcription is not completed for Quit.
+    func quiesceForTermination() async -> Bool {
+        isTerminating = true
+        historyStore.mutationsSuspended = true
+        while !captureTasks.isEmpty {
+            let tasks = Array(captureTasks.values)
+            for task in tasks { task.cancel() }
+            for task in tasks { await task.value }
+        }
+        await audioRecorder.cancelWarmUp()
+        if let captureReservation { historyStore.releaseReservation(captureReservation) }
+        captureReservation = nil
+        activeCaptureID = nil
+        activePasteTarget = nil
+        recordingTask = nil
+        warmUpTask = nil
+        processingTask = nil
+        recordingPhase = .idle
+        resetWarmUpCoordinationState()
+        overlay.hide()
+        return await historyStore.flush()
+    }
+
+    func resumeAfterCancelledTermination() {
+        historyStore.mutationsSuspended = false
+        isTerminating = false
+    }
+
     private func promptWithDictionary(_ basePrompt: String) -> String {
         let settings = AppSettings.shared
         guard settings.personalDictionaryEnabled, !settings.personalDictionary.isEmpty else {
@@ -529,6 +362,7 @@ final class AppState: ObservableObject {
     /// Starts engine warm-up immediately on Fn press.
     /// This eliminates audio startup latency by the time recording actually begins.
     func warmUpEngine() {
+        guard reserveCaptureCapacity() else { return }
         guard recordingPhase == .idle else {
             logDiagnostics("app.warmup.ignored", metadata: ["phase": phaseName(recordingPhase)])
             return
@@ -543,8 +377,9 @@ final class AppState: ObservableObject {
         
         recordingPhase = .warmingUp
         
-        warmUpTask = Task {
+        warmUpTask = launchCaptureTask { [self] in
             let hasPermission = await permissionService.checkMicrophonePermission()
+            guard !Task.isCancelled, activeCaptureID == captureID else { return }
             guard hasPermission else {
                 lastError = "Microphone access denied. Open System Settings → Privacy & Security → Microphone to grant access."
                 recordingPhase = .idle
@@ -557,6 +392,8 @@ final class AppState: ObservableObject {
             do {
                 let highQuality = AppSettings.shared.highQualityAudio
                 let levelStream = try await audioRecorder.prepareEngine(highQuality: highQuality, captureID: captureID)
+                try Task.checkCancellation()
+                guard activeCaptureID == captureID else { return }
                 warmUpReady = true
                 #if DEBUG
                 print("🔥 Engine warm-up complete")
@@ -589,6 +426,7 @@ final class AppState: ObservableObject {
                     overlay.updateAudioLevel(level)
                 }
             } catch {
+                guard !Task.isCancelled, activeCaptureID == captureID else { return }
                 #if DEBUG
                 print("❌ Warm-up failed: \(error.localizedDescription)")
                 #endif
@@ -608,11 +446,13 @@ final class AppState: ObservableObject {
         let captureID = activeCaptureID
         logDiagnostics("app.warmup.cancel", captureID: captureID)
         
-        warmUpTask?.cancel()
+        let cancelledWarmUp = warmUpTask
+        cancelledWarmUp?.cancel()
         warmUpTask = nil
         resetWarmUpCoordinationState()
         
-        Task {
+        launchCaptureTask { [self] in
+            await cancelledWarmUp?.value
             await audioRecorder.cancelWarmUp()
             audioLevel = 0
             recordingPhase = .idle
@@ -625,7 +465,20 @@ final class AppState: ObservableObject {
     
     /// Begins actual recording after 400ms threshold is met.
     /// Engine is already warm, so this is near-instant.
+    @discardableResult
+    func beginRecording(expectedCaptureID: String?) -> Bool {
+        guard !isTerminating, let expectedCaptureID, activeCaptureID == expectedCaptureID else {
+            return false
+        }
+        // A held recording can become locked without starting audio again.
+        if recordingPhase == .recording || recordingPhase == .requestingPermission { return true }
+        guard recordingPhase == .idle || recordingPhase == .warmingUp else { return false }
+        beginRecording()
+        return recordingPhase == .recording || recordingPhase == .requestingPermission || recordingPhase == .warmingUp
+    }
+
     func beginRecording() {
+        guard reserveCaptureCapacity() else { return }
         guard recordingPhase == .warmingUp else {
             logDiagnostics("app.recording.begin_fallback", metadata: ["phase": phaseName(recordingPhase)])
             // Fallback: if not warmed up, use legacy flow
@@ -653,6 +506,7 @@ final class AppState: ObservableObject {
     // MARK: - Legacy Flow (for backward compatibility and lock mode)
     
     func startRecording() {
+        guard reserveCaptureCapacity() else { return }
         guard recordingPhase == .idle else {
             logDiagnostics("app.recording.legacy_ignored", metadata: ["phase": phaseName(recordingPhase)])
             return
@@ -675,7 +529,7 @@ final class AppState: ObservableObject {
         // This ensures stopAndProcess() knows we're in the recording flow
         recordingPhase = .requestingPermission
         
-        recordingTask = Task {
+        recordingTask = launchCaptureTask { [self] in
             let hasPermission = await permissionService.checkMicrophonePermission()
 
             // H2/spec-002 guard: a quick lock-disengage cancels this task and
@@ -740,6 +594,7 @@ final class AppState: ObservableObject {
     }
     
     func stopAndProcess() {
+        guard processingTask == nil, !isTerminating else { return }
         // Handle .recording, .requestingPermission, and .warmingUp states
         // This fixes race conditions during various phases
         guard recordingPhase == .recording || recordingPhase == .requestingPermission || recordingPhase == .warmingUp else {
@@ -749,6 +604,7 @@ final class AppState: ObservableObject {
 
         let captureID = ensureCaptureID()
         let stopRequestedNs = DispatchTime.now().uptimeNanoseconds
+        let pasteTarget = activePasteTarget
         logDiagnostics("app.stop.requested", captureID: captureID, metadata: ["phase": phaseName(recordingPhase)])
         
         // If still warming up, just cancel (no audio to process)
@@ -763,11 +619,18 @@ final class AppState: ObservableObject {
         warmUpTask?.cancel()
         warmUpTask = nil
         
-        Task {
+        processingTask = launchCaptureTask { [self] in
+            defer { retainedDeliveryID = nil; processingTask = nil }
             #if DEBUG
             print("⏹️ Stopping recording...")
             #endif
             let audioURL = await audioRecorder.stopRecording(captureID: captureID)
+            if Task.isCancelled {
+                if let audioURL { await cleanupTempFile(at: audioURL) }
+                clearCaptureID(captureID)
+                recordingPhase = .idle
+                return
+            }
             // Stay in .recording state during VAD/trim to prevent race conditions
             // Only transition to .idle on early returns, or to .processing on success
             audioLevel = 0
@@ -907,7 +770,7 @@ final class AppState: ObservableObject {
                 ])
             }
             
-            let pipelineSettings = settings.pipelineSettingsSnapshot()
+            let pipelineSettings = pipelineSettingsSnapshot()
             let selectedPipelineMode = pipelineService.pipelineMode(for: pipelineSettings)
             let audioDurationMs = audioDurationMs(for: audioToProcess)
             let audioReadyNs = DispatchTime.now().uptimeNanoseconds
@@ -998,6 +861,7 @@ final class AppState: ObservableObject {
                     break
 
                 case .twoCallRefinement:
+                    try Task.checkCancellation()
                     let presets = capturedPresetsWithPrompts
 
                     if pipelineSettings.parallelRefinementEnabled {
@@ -1016,7 +880,8 @@ final class AppState: ObservableObject {
                                 selectedPresetName: capturedPresetName,
                                 presets: refinementPlans
                             ).run { plan in
-                                try await pipelineService.executeRefinement(
+                                try Task.checkCancellation()
+                                return try await pipelineService.executeRefinement(
                                     request: RefinementRequest(
                                         captureID: captureID,
                                         text: originalText,
@@ -1062,6 +927,7 @@ final class AppState: ObservableObject {
                                 ])
                             }
                         } catch {
+                            if error is CancellationError || Task.isCancelled { throw CancellationError() }
                             logDiagnostics("app.refinement.selected_failed", captureID: captureID, metadata: [
                                 "preset": capturedPresetName,
                                 "preset_id": capturedPresetID.uuidString,
@@ -1089,6 +955,7 @@ final class AppState: ObservableObject {
                             finalSystemPrompt = capturedSystemPrompt
                             effectiveSystemPrompt = enhancedPrompt
                         } catch {
+                            if error is CancellationError || Task.isCancelled { throw CancellationError() }
                             degradeToRawTranscript(error)
                         }
                     }
@@ -1120,16 +987,42 @@ final class AppState: ObservableObject {
                         ?? transcriptionResult.transcriptionTiming.finishedAt
                 }
 
+                if !finalResult.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    let entry = HistoryEntry(original: originalText, refined: finalResult,
+                        presetName: finalPresetName, systemPrompt: finalSystemPrompt,
+                        effectiveSystemPrompt: effectiveSystemPrompt,
+                        variants: variants.isEmpty ? nil : variants,
+                        variantPrompts: variantPrompts.isEmpty ? nil : variantPrompts,
+                        effectiveVariantPrompts: effectiveVariantPrompts.isEmpty ? nil : effectiveVariantPrompts,
+                        captureID: captureID)
+                    guard let reservation = captureReservation,
+                          historyStore.retain(entry, reservation: reservation) else {
+                        throw CocoaError(.fileWriteUnknown)
+                    }
+                    captureReservation = nil
+                    retainedDeliveryID = entry.id
+                }
+                try Task.checkCancellation()
                 let pasteStartNs = DispatchTime.now().uptimeNanoseconds
-                let pasteTiming = await pasteService.pasteAndRestore(text: finalResult, captureID: captureID)
-                if pasteTiming.succeeded {
-                    announceForAccessibility("Text pasted")
+                let pasteTiming = try await pasteService.pasteAndRestore(
+                    text: finalResult, captureID: captureID, target: pasteTarget)
+                let pasteBlocker: PasteBlocker?
+                if case .blocked(let blocker) = pasteTiming.commandOutcome {
+                    pasteBlocker = blocker
+                } else {
+                    pasteBlocker = nil
+                }
+                if pasteTiming.commandOutcome == .posted {
+                    dismissPasteRecovery()
+                    announceForAccessibility("Paste command sent")
                 }
 
                 let observedProcessedAudioDurationMs = processedAudioDurationMs == 0 ? audioDurationMs : processedAudioDurationMs
                 let completion = CaptureCompletionOutcome.classify(
-                    transcriptionText: originalText,
-                    pasteSucceeded: pasteTiming.succeeded,
+                    transcriptionText: finalResult,
+                    pasteCommandOutcome: pasteTiming.commandOutcome,
+                    clipboardDisposition: pasteTiming.clipboardDisposition,
+                    pasteAttemptID: pasteTiming.pasteAttemptID,
                     processedAudioDurationMs: observedProcessedAudioDurationMs,
                     speechDetected: speechDetected
                 )
@@ -1140,14 +1033,18 @@ final class AppState: ObservableObject {
                     announceForAccessibility(message)
                 }
 
-                let pasteCommandSentAtNs = pasteStartNs + (pasteTiming.commandSentElapsedMs * 1_000_000)
-                let pasteCompletedAtNs = pasteStartNs + (pasteTiming.totalElapsedMs * 1_000_000)
+                let pasteCommandSentAtNs = pasteTiming.commandSentElapsedMs.map {
+                    pasteStartNs + ($0 * 1_000_000)
+                }
+                let pasteAttemptFinishedAtNs = pasteStartNs + (pasteTiming.totalElapsedMs * 1_000_000)
 
-                let stopToPasteCommandMs = pasteCommandSentAtNs >= stopRequestedNs
-                    ? (pasteCommandSentAtNs - stopRequestedNs) / 1_000_000
-                    : 0
-                let stopToPasteCompleteMs = pasteCompletedAtNs >= stopRequestedNs
-                    ? (pasteCompletedAtNs - stopRequestedNs) / 1_000_000
+                let stopToPasteCommandMs = pasteCommandSentAtNs.map { commandSentAtNs in
+                    commandSentAtNs >= stopRequestedNs
+                        ? (commandSentAtNs - stopRequestedNs) / 1_000_000
+                        : 0
+                }
+                let stopToPasteAttemptFinishedMs = pasteAttemptFinishedAtNs >= stopRequestedNs
+                    ? (pasteAttemptFinishedAtNs - stopRequestedNs) / 1_000_000
                     : 0
 
                 let pathLabel: String
@@ -1161,18 +1058,22 @@ final class AppState: ObservableObject {
                 }
 
                 logDiagnostics("app.stop_to_paste", captureID: captureID, metadata: [
-                    "command_elapsed_ms": String(stopToPasteCommandMs),
-                    "complete_elapsed_ms": String(stopToPasteCompleteMs),
+                    "command_elapsed_ms": stopToPasteCommandMs.map(String.init) ?? "not_applicable",
+                    "attempt_finished_elapsed_ms": String(stopToPasteAttemptFinishedMs),
                     "path": pathLabel,
-                    "paste_succeeded": String(pasteTiming.succeeded)
+                    "paste_command_outcome": pasteTiming.commandOutcome.telemetryValue,
+                    "paste_blocker": pasteBlocker?.rawValue ?? "not_applicable",
+                    "clipboard_disposition": pasteTiming.clipboardDisposition.rawValue
                 ])
 
                 logDiagnostics("app.latency.summary", captureID: captureID, metadata: [
                     "transcription_elapsed_ms": String(transcriptionElapsedMs),
-                    "stop_to_paste_command_ms": String(stopToPasteCommandMs),
-                    "stop_to_paste_complete_ms": String(stopToPasteCompleteMs),
+                    "stop_to_paste_command_ms": stopToPasteCommandMs.map(String.init) ?? "not_applicable",
+                    "stop_to_paste_attempt_finished_ms": String(stopToPasteAttemptFinishedMs),
                     "path": pathLabel,
-                    "paste_succeeded": String(pasteTiming.succeeded)
+                    "paste_command_outcome": pasteTiming.commandOutcome.telemetryValue,
+                    "paste_blocker": pasteBlocker?.rawValue ?? "not_applicable",
+                    "clipboard_disposition": pasteTiming.clipboardDisposition.rawValue
                 ])
 
                 logCaptureSummary(
@@ -1193,8 +1094,9 @@ final class AppState: ObservableObject {
                         auditVariantFailureCount: auditVariantFailureCount,
                         finalResultReadyAt: finalResultReadyAtNs,
                         pasteCommandSentAt: pasteCommandSentAtNs,
-                        pasteCompletedAt: pasteCompletedAtNs,
-                        pasteSucceeded: pasteTiming.succeeded
+                        pasteAttemptFinishedAt: pasteAttemptFinishedAtNs,
+                        pasteCommandOutcome: pasteTiming.commandOutcome,
+                        clipboardDisposition: pasteTiming.clipboardDisposition
                     ),
                     processing: CaptureProcessingObservations(
                         rawAudioDurationMs: rawAudioDurationMs,
@@ -1208,27 +1110,36 @@ final class AppState: ObservableObject {
                     )
                 )
 
-                historyStore.add(
-                    original: originalText,
-                    refined: finalResult,
-                    presetName: finalPresetName,
-                    systemPrompt: finalSystemPrompt,
-                    effectiveSystemPrompt: effectiveSystemPrompt,
-                    variants: variants.isEmpty ? nil : variants,
-                    variantPrompts: variantPrompts.isEmpty ? nil : variantPrompts,
-                    effectiveVariantPrompts: effectiveVariantPrompts.isEmpty ? nil : effectiveVariantPrompts
-                )
-                
+                if let pasteBlocker, let retainedDeliveryID {
+                    presentRecovery(entryID: retainedDeliveryID, presentation: PasteFailurePresentation(
+                        blocker: pasteBlocker, clipboardDisposition: pasteTiming.clipboardDisposition,
+                        pasteAttemptID: pasteTiming.pasteAttemptID))
+                }
+
                 if completion.userFacingMessage == nil {
-                    // Keep the degraded-refinement notice visible in the UI even
-                    // though the raw transcript pasted successfully.
-                    lastError = refinementFailed ? "Refinement failed — pasted the raw transcript." : nil
+                    if !refinementFailed {
+                        lastError = nil
+                    } else {
+                        switch pasteTiming.commandOutcome {
+                        case .posted:
+                            lastError = "Refinement failed — raw transcript paste command sent."
+                        case .notAttempted:
+                            lastError = "Refinement failed — the raw transcript was empty, so no paste command was sent."
+                        case .blocked(let blocker):
+                            lastError = PasteFailurePresentation(
+                                blocker: blocker,
+                                clipboardDisposition: pasteTiming.clipboardDisposition,
+                                pasteAttemptID: pasteTiming.pasteAttemptID
+                            ).message
+                        }
+                    }
                 }
             } catch {
                 #if DEBUG
-                print("❌ Multi-refinement failed: \(error.localizedDescription)")
+                print("❌ Capture processing stopped")
                 #endif
-                lastError = error.localizedDescription
+                if let retainedDeliveryID { presentRecovery(entryID: retainedDeliveryID, presentation: nil) }
+                lastError = error is CancellationError ? nil : "Processing failed. Any completed result remains in History."
                 completionOutcome = "failed"
                 completionReason = "processing_error"
                 logDiagnostics("app.processing.failed", captureID: captureID, metadata: [
@@ -1237,8 +1148,6 @@ final class AppState: ObservableObject {
                 ])
             }
             
-            recordingPhase = .idle
-            resetWarmUpCoordinationState()
             overlay.hide()
             await cleanupTempFile(at: url)
             if audioToProcess != url {
@@ -1249,6 +1158,8 @@ final class AppState: ObservableObject {
                 "reason": completionReason
             ])
             clearCaptureID(captureID)
+            recordingPhase = .idle
+            resetWarmUpCoordinationState()
         }
     }
     

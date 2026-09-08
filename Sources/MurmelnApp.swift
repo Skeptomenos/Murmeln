@@ -12,7 +12,7 @@ struct MurmelnApp: App {
     
     var body: some Scene {
         MenuBarExtra(AppIdentity.menuBarTitle, systemImage: iconName) {
-            MenuContent()
+            MenuContent(appDelegate: appDelegate)
         }
         .menuBarExtraStyle(.menu)
     }
@@ -22,6 +22,8 @@ struct MurmelnApp: App {
             return "mic.fill"
         } else if appState.isProcessing {
             return "sparkles"
+        } else if appState.needsPasteRecoveryAttention {
+            return "exclamationmark.bubble"
         } else {
             return "mic"
         }
@@ -34,98 +36,211 @@ struct MenuContent: View {
     @ObservedObject private var historyStore = HistoryStore.shared
     @ObservedObject private var updateService = UpdateService.shared
     @ObservedObject private var settings = AppSettings.shared
-    
-    var body: some View {
-        if overlay.state == .locked {
-            Text("Recording (Locked) - Tap Right Option to stop")
-                .foregroundColor(.orange)
-        } else if appState.isRecording {
-            Text("Recording...")
-                .foregroundColor(.red)
-        } else if appState.isProcessing {
-            Text("Processing...")
-                .foregroundColor(.blue)
-        } else {
-            Text("Hold Fn · Double-tap ⌥ for lock")
-                .foregroundColor(.secondary)
-        }
-        
-        if let error = appState.lastError {
-            Text(error)
-                .foregroundColor(.red)
-                .font(.caption)
-        }
-        
-        Divider()
-        
-        Button("Show History (\(historyStore.entries.count))") {
-            HistoryWindowController.shared.show()
-        }
-        
-        Divider()
-        
-        if !PermissionService.shared.checkAccessibilityPermission() {
-            Button("Grant Accessibility Permission") {
-                _ = PermissionService.shared.checkAccessibilityPermission(prompt: true)
-            }
-            Divider()
-        }
-        
-        Button("Settings...") {
-            SettingsWindowController.shared.show()
-        }
-        .keyboardShortcut(",", modifiers: .command)
-        
-        Button(updateService.isChecking ? "Checking..." : "Check for Updates...") {
-            Task {
-                await updateService.checkForUpdates()
-                if updateService.updateAvailable {
-                    updateService.showUpdateAlert()
-                } else {
-                    updateService.showUpToDateAlert()
-                }
-            }
-        }
-        .disabled(updateService.isChecking)
-        
-        if updateService.updateAvailable, let version = updateService.latestVersion {
-            Button("Download Update (v\(version))") {
-                updateService.openReleasePage()
-            }
-            .foregroundColor(.blue)
-        }
-        
-        Button("Restart") {
-            restartApp()
-        }
-        .keyboardShortcut("r", modifiers: .command)
-        
-        Button("Quit") {
-            NSApplication.shared.terminate(nil)
-        }
-        .keyboardShortcut("q", modifiers: .command)
+    @State private var pasteDiagnosticCommand: PasteDiagnosticCommand
+    @State private var pastePermissionController: PastePermissionController
+    @State private var termination: TerminationCoordinator
+    private let appDelegate: AppDelegate
+
+    init(
+        appDelegate: AppDelegate,
+        permissionService: PermissionService = .shared,
+        pastePermissionController: PastePermissionController? = nil,
+        pasteDiagnosticCommand: PasteDiagnosticCommand = .shared
+    ) {
+        self.appDelegate = appDelegate
+        _pastePermissionController = State(initialValue: pastePermissionController ?? PastePermissionController(permissionService: permissionService))
+        _termination = State(initialValue: appDelegate.termination)
+        _pasteDiagnosticCommand = State(initialValue: pasteDiagnosticCommand)
     }
     
-    private func restartApp() {
-        let url = Bundle.main.bundleURL
-        let task = Process()
-        task.launchPath = "/usr/bin/open"
-        task.arguments = [url.path]
-        try? task.run()
-        NSApplication.shared.terminate(nil)
+    var body: some View {
+        Group {
+            if overlay.state == .locked {
+                Text("Recording (Locked) - Tap Right Option to stop")
+                    .foregroundColor(.orange)
+            } else if appState.isRecording {
+                Text("Recording...")
+                    .foregroundColor(.red)
+            } else if appState.isProcessing {
+                Text("Processing...")
+                    .foregroundColor(.blue)
+            } else {
+                Text("Hold Fn · Double-tap ⌥ for lock")
+                    .foregroundColor(.secondary)
+            }
+        
+            if let error = appState.lastError {
+                Text(error)
+                    .foregroundColor(.red)
+                    .font(.caption)
+            }
+
+            RecoveryActionsView(appState: appState)
+            HistorySaveNotice(store: historyStore)
+            if let message = appState.captureAdmissionMessage {
+                Text(message)
+                Button("Open History to recover space") { HistoryWindowController.shared.show() }
+            }
+            if termination.needsLossConfirmation {
+                Text("Quit was cancelled because History could not be saved.")
+                Button("Quit anyway…") { confirmLossAndQuit() }
+                    .disabled(termination.isInFlight)
+            }
+
+            Divider()
+        
+            Button("Show History (\(historyStore.entries.count))") {
+                HistoryWindowController.shared.show()
+            }
+        
+            Divider()
+
+            if pasteDiagnosticCommand.isVisible {
+                Button(pasteDiagnosticCommand.isRunning ? "Running Paste Diagnostic..." : "Run Paste Diagnostic") {
+                    pasteDiagnosticCommand.start()
+                }
+                .disabled(pasteDiagnosticCommand.isRunning)
+
+                if let resultMessage = pasteDiagnosticCommand.resultMessage {
+                    Text(resultMessage)
+                        .foregroundStyle(.secondary)
+                        .font(.caption)
+                }
+
+                Divider()
+            }
+        
+            if !pastePermissionController.hasPostEventAccess {
+                Button("Open Accessibility Settings") {
+                    openAccessibilitySettings()
+                }
+                if let message = pastePermissionController.navigationMessage {
+                    Text(message).font(.caption)
+                    Text("Enable \(AppIdentity.menuBarTitle), then restart.").font(.caption)
+                }
+                Divider()
+            }
+        
+            Button("Settings...") {
+                SettingsWindowController.shared.show()
+            }
+            .keyboardShortcut(",", modifiers: .command)
+        
+            Button(updateService.isChecking ? "Checking..." : "Check for Updates...") {
+                Task {
+                    await updateService.checkForUpdates()
+                    if updateService.updateAvailable {
+                        updateService.showUpdateAlert()
+                    } else {
+                        updateService.showUpToDateAlert()
+                    }
+                }
+            }
+            .disabled(updateService.isChecking)
+        
+            if updateService.updateAvailable, let version = updateService.latestVersion {
+                Button("Download Update (v\(version))") {
+                    updateService.openReleasePage()
+                }
+                .foregroundColor(.blue)
+            }
+        
+            Button("Restart") {
+                restartApp()
+            }
+            .keyboardShortcut("r", modifiers: .command)
+            .disabled(termination.isInFlight)
+        
+            Button("Quit") {
+                NSApplication.shared.terminate(nil)
+            }
+            .keyboardShortcut("q", modifiers: .command)
+            .disabled(termination.isInFlight)
+        }
+        .onAppear { pastePermissionController.refresh() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            pastePermissionController.refresh()
+        }
+    }
+
+    func openAccessibilitySettings() {
+        pastePermissionController.openSettings()
+    }
+    
+    func restartApp() {
+        appDelegate.requestRestart()
+    }
+
+    func confirmLossAndQuit() {
+        appDelegate.confirmLossAndQuit()
     }
 }
 
 @MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
-    private var terminationInFlight = false
+    private let terminateApplication: @MainActor () -> Void
+    private let restartService: RestartService
+
+    override convenience init() {
+        self.init(terminateApplication: { NSApp.terminate(nil) })
+    }
+
+    init(terminateApplication: @escaping @MainActor () -> Void, restartService: RestartService = RestartService()) {
+        self.terminateApplication = terminateApplication
+        self.restartService = restartService
+        super.init()
+    }
+    private var allowLossOnNextQuit = false
+    private var restartRequested = false
+    lazy var termination: TerminationCoordinator = makeTerminationCoordinator()
+
+    private func makeTerminationCoordinator() -> TerminationCoordinator {
+        TerminationCoordinator(
+        suspend: {
+            HotkeyService.shared.stop(reason: .applicationTerminating)
+            PasteDiagnosticCommand.shared.suspend()
+            DevDeliveryDiagnosticRunner.shared.suspend()
+        },
+        quiesce: {
+            let saved = await AppState.shared.quiesceForTermination()
+            await PasteDiagnosticCommand.shared.quiesce()
+            await DevDeliveryDiagnosticRunner.shared.quiesce()
+            return saved
+        },
+        restore: { [weak self] in
+            self?.restartRequested = false
+            self?.restartService.resumeCurrentAppIfSafe {
+                AppState.shared.resumeAfterCancelledTermination()
+                PasteDiagnosticCommand.shared.resume()
+                HotkeyService.shared.start()
+            }
+        },
+        beforeExit: { [weak self] in await self?.prepareToExit() ?? false })
+    }
+
+    private func prepareToExit() async -> Bool {
+            if restartRequested {
+                guard await restartService.launchReplacement() else {
+                    AppState.shared.lastError = restartService.failureMessage
+                    return false
+                }
+            }
+            let phase = AppState.shared.diagnosticsRecordingPhaseName
+            let captureID = AppState.shared.diagnosticsActiveCaptureID
+            await CaptureDiagnostics.shared.endSession(reason: "application_terminating",
+                recordingPhase: phase, activeCaptureID: captureID)
+            return true
+    }
     private var cancellables = Set<AnyCancellable>()
+    private var recoveryNotice: RecoveryNoticeController?
     private lazy var selectionLifecycle = TranscriptionSelectionLifecycle(
         runtimeForModel: Self.runtime(for:)
     )
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+        recoveryNotice = RecoveryNoticeController(appState: .shared, history: .shared)
+        DevDeliveryDiagnosticRunner.shared.startIfRequested()
 
         Task {
             await CaptureDiagnostics.shared.startSession()
@@ -159,10 +274,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             AppState.shared.cancelWarmUp()
         }
         
-        hotkey.onKeyDown = {
-            overlay.state = .listening
+        hotkey.onKeyDown = { captureID in
             // Engine is already warm, begin actual recording (near-instant)
-            AppState.shared.beginRecording()
+            let admitted = AppState.shared.beginRecording(expectedCaptureID: captureID)
+            if admitted { overlay.state = .listening }
+            return admitted
         }
         
         hotkey.onKeyUp = {
@@ -233,29 +349,28 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    func requestRestart() {
+        guard !termination.isInFlight, !restartRequested else { return }
+        restartRequested = true
+        terminateApplication()
+    }
+
+    func confirmLossAndQuit() {
+        guard termination.needsLossConfirmation, !termination.isInFlight else { return }
+        let alert = NSAlert()
+        alert.messageText = "Quit without saving?"
+        alert.informativeText = "Unsaved text will be lost. History deletions that could not be saved may reappear after restart. Copying text does not save History."
+        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: "Quit anyway")
+        guard alert.runModal() == .alertSecondButtonReturn else { return }
+        allowLossOnNextQuit = true
+        NSApp.terminate(nil)
+    }
+
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard !terminationInFlight else {
-            return .terminateNow
-        }
-
-        terminationInFlight = true
-        HotkeyService.shared.stop(reason: .applicationTerminating)
-
-        let activeCaptureID = AppState.shared.diagnosticsActiveCaptureID
-        let recordingPhase = AppState.shared.diagnosticsRecordingPhaseName
-
-        Task {
-            await CaptureDiagnostics.shared.endSession(
-                reason: HotkeyServiceStopReason.applicationTerminating.rawValue,
-                recordingPhase: recordingPhase,
-                activeCaptureID: activeCaptureID
-            )
-
-            await MainActor.run {
-                sender.reply(toApplicationShouldTerminate: true)
-            }
-        }
-
+        let allowLoss = allowLossOnNextQuit
+        allowLossOnNextQuit = false
+        termination.begin(allowLoss: allowLoss) { sender.reply(toApplicationShouldTerminate: $0) }
         return .terminateLater
     }
 }

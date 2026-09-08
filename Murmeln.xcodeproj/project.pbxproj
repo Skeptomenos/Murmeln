@@ -7,9 +7,16 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		CPT001 /* CapturedPasteTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = CPT002 /* CapturedPasteTarget.swift */; };
+		UPT001 /* UnverifiedPasteTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = UPT002 /* UnverifiedPasteTarget.swift */; };
+		UI91 /* SettingsPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = UIR91 /* SettingsPresentation.swift */; };
+		UI90 /* HistoryPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = UIR90 /* HistoryPresentation.swift */; };
 		APP001 /* MurmelnApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC001 /* MurmelnApp.swift */; };
 		APP002 /* AppSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC002 /* AppSettings.swift */; };
 		APP003 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC003 /* AppState.swift */; };
+		DVP005 /* PastePermissionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = DVR005 /* PastePermissionController.swift */; };
+		DVP006 /* RestartService.swift in Sources */ = {isa = PBXBuildFile; fileRef = DVR006 /* RestartService.swift */; };
+		DVP007 /* RestartLaunchAwaiter.swift in Sources */ = {isa = PBXBuildFile; fileRef = DVR007 /* RestartLaunchAwaiter.swift */; };
 		APP022 /* AppIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC022 /* AppIdentity.swift */; };
 		APP005 /* AudioService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC005 /* AudioService.swift */; };
 		APP006 /* NetworkService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC006 /* NetworkService.swift */; };
@@ -40,18 +47,52 @@
 		APP034 /* AudioChunkingRoute.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC035 /* AudioChunkingRoute.swift */; };
 		APP035 /* RuntimeStatusModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC036 /* RuntimeStatusModel.swift */; };
 		APP036 /* CatalogDownloadManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC037 /* CatalogDownloadManager.swift */; };
+		APP037 /* PasteBlocker.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC038 /* PasteBlocker.swift */; };
+		APP038 /* PasteTiming.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC039 /* PasteTiming.swift */; };
+		APP039 /* ClipboardSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC040 /* ClipboardSnapshot.swift */; };
+		APP040 /* PasteServiceDependencies.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC041 /* PasteServiceDependencies.swift */; };
+		APP041 /* PasteFailurePresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC042 /* PasteFailurePresentation.swift */; };
+		APP042 /* PasteCommandOutcome.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC043 /* PasteCommandOutcome.swift */; };
+		APP043 /* ClipboardDisposition.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC044 /* ClipboardDisposition.swift */; };
+		APP044 /* PasteTransactionGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC045 /* PasteTransactionGate.swift */; };
+		APP045 /* PasteOperationalRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC046 /* PasteOperationalRecord.swift */; };
+		APP046 /* CaptureDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC047 /* CaptureDiagnostics.swift */; };
+		APP047 /* CaptureDiagnosticsDependencies.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC048 /* CaptureDiagnosticsDependencies.swift */; };
+		APP048 /* PasteDiagnosticCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC049 /* PasteDiagnosticCommand.swift */; };
+		DVP001 /* DevDeliveryDiagnostic.swift in Sources */ = {isa = PBXBuildFile; fileRef = DVR001 /* DevDeliveryDiagnostic.swift */; };
+		DVP002 /* DevDeliveryDiagnosticTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = DVR002 /* DevDeliveryDiagnosticTarget.swift */; };
+		DVP003 /* DevDeliveryDiagnosticRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = DVR003 /* DevDeliveryDiagnosticRunner.swift */; };
+		DVP004 /* HotkeyMonitorClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = DVR004 /* HotkeyMonitorClient.swift */; };
 		RES001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F2B02ABB2F0409FC00DD12FC /* Assets.xcassets */; };
 		PKG004 /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = PKG005 /* WhisperKit */; };
 		PKG007 /* FluidAudio in Frameworks */ = {isa = PBXBuildFile; productRef = PKG008 /* FluidAudio */; };
+		03104A5DCAD6A0FD147BAB8F /* HistoryStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D4B676055D491D8845C1E7C /* HistoryStorage.swift */; };
+		2A979D1EE8202BA48C78A36C /* HistoryPersistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16C49767305ADF20F5375216 /* HistoryPersistence.swift */; };
+		5853EA50E9E22771515D0244 /* ClipboardCopyOutcome.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAB4935933E628DB7110CBC3 /* ClipboardCopyOutcome.swift */; };
+		22F6DDCC001D61E2661DACD7 /* HistorySaveState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A273E05565221DCFC4788BB6 /* HistorySaveState.swift */; };
+		B95089207CB8D5A7C3C775E7 /* HistoryWriteReceipt.swift in Sources */ = {isa = PBXBuildFile; fileRef = C874DCF0EB87665F08AB9058 /* HistoryWriteReceipt.swift */; };
+		A0C4F87F7F23E686D05285F1 /* TerminationCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF15967CB5F21A14A92C59A4 /* TerminationCoordinator.swift */; };
+		5542F1B34943C0E265AF5879 /* HistorySaveNotice.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67E0A4E47B4C5E3A184F02BB /* HistorySaveNotice.swift */; };
+		C468BEF1C481EFFA9C584A8D /* RecoveryActionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19EE8339572A03D4D197A0A2 /* RecoveryActionsView.swift */; };
+		F98CFDD351D3865228CF5F5F /* HistoryCopyController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 556C328EA3171DC5624DB5C9 /* HistoryCopyController.swift */; };
+		26C33CF8505E86811268F748 /* RecoveryNoticeController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD2DE7271C956C684F3A3CBC /* RecoveryNoticeController.swift */; };
+		F2D3429A03324BEC2CB997C1 /* HistorySelectableText.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59AD313F90207CB2FDB66E4E /* HistorySelectableText.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		CPT002 /* CapturedPasteTarget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CapturedPasteTarget.swift; sourceTree = "<group>"; };
+		UPT002 /* UnverifiedPasteTarget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnverifiedPasteTarget.swift; sourceTree = "<group>"; };
+		UIR91 /* SettingsPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsPresentation.swift; sourceTree = "<group>"; };
+		UIR90 /* HistoryPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryPresentation.swift; sourceTree = "<group>"; };
 		F2B02ABB2F0409FC00DD12FC /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		PROD01 /* Murmeln.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "$(PRODUCT_NAME).app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		PROD02 /* Murmeln Dev.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Murmeln Dev.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		SRC001 /* MurmelnApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MurmelnApp.swift; sourceTree = "<group>"; };
 		SRC002 /* AppSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettings.swift; sourceTree = "<group>"; };
 		SRC003 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
+		DVR005 /* PastePermissionController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PastePermissionController.swift; sourceTree = "<group>"; };
+		DVR006 /* RestartService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RestartService.swift; sourceTree = "<group>"; };
+		DVR007 /* RestartLaunchAwaiter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RestartLaunchAwaiter.swift; sourceTree = "<group>"; };
 		SRC030 /* AppStateDependencies.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStateDependencies.swift; sourceTree = "<group>"; };
 		SRC031 /* ModelCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelCatalog.swift; sourceTree = "<group>"; };
 		SRC032 /* TranscriptionRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionRuntime.swift; sourceTree = "<group>"; };
@@ -60,6 +101,22 @@
 		SRC035 /* AudioChunkingRoute.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioChunkingRoute.swift; sourceTree = "<group>"; };
 		SRC036 /* RuntimeStatusModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RuntimeStatusModel.swift; sourceTree = "<group>"; };
 		SRC037 /* CatalogDownloadManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogDownloadManager.swift; sourceTree = "<group>"; };
+		SRC038 /* PasteBlocker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasteBlocker.swift; sourceTree = "<group>"; };
+		SRC039 /* PasteTiming.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasteTiming.swift; sourceTree = "<group>"; };
+		SRC040 /* ClipboardSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipboardSnapshot.swift; sourceTree = "<group>"; };
+		SRC041 /* PasteServiceDependencies.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasteServiceDependencies.swift; sourceTree = "<group>"; };
+		SRC042 /* PasteFailurePresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasteFailurePresentation.swift; sourceTree = "<group>"; };
+		SRC043 /* PasteCommandOutcome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasteCommandOutcome.swift; sourceTree = "<group>"; };
+		SRC044 /* ClipboardDisposition.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipboardDisposition.swift; sourceTree = "<group>"; };
+		SRC045 /* PasteTransactionGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasteTransactionGate.swift; sourceTree = "<group>"; };
+		SRC046 /* PasteOperationalRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasteOperationalRecord.swift; sourceTree = "<group>"; };
+		SRC047 /* CaptureDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureDiagnostics.swift; sourceTree = "<group>"; };
+		SRC048 /* CaptureDiagnosticsDependencies.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureDiagnosticsDependencies.swift; sourceTree = "<group>"; };
+		SRC049 /* PasteDiagnosticCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasteDiagnosticCommand.swift; sourceTree = "<group>"; };
+		DVR001 /* DevDeliveryDiagnostic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevDeliveryDiagnostic.swift; sourceTree = "<group>"; };
+		DVR002 /* DevDeliveryDiagnosticTarget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevDeliveryDiagnosticTarget.swift; sourceTree = "<group>"; };
+		DVR003 /* DevDeliveryDiagnosticRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevDeliveryDiagnosticRunner.swift; sourceTree = "<group>"; };
+		DVR004 /* HotkeyMonitorClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotkeyMonitorClient.swift; sourceTree = "<group>"; };
 		SRC022 /* AppIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIdentity.swift; sourceTree = "<group>"; };
 		SRC005 /* AudioService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioService.swift; sourceTree = "<group>"; };
 		SRC006 /* NetworkService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkService.swift; sourceTree = "<group>"; };
@@ -82,6 +139,17 @@
 		SRC025 /* TranscriptionPipelineModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionPipelineModels.swift; sourceTree = "<group>"; };
 		SRC026 /* TranscriptionPipelineService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionPipelineService.swift; sourceTree = "<group>"; };
 		SRC027 /* BackendSettingsSections.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackendSettingsSections.swift; sourceTree = "<group>"; };
+		3D4B676055D491D8845C1E7C /* HistoryStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/Models/HistoryStorage.swift"; sourceTree = SOURCE_ROOT; };
+		16C49767305ADF20F5375216 /* HistoryPersistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/Services/HistoryPersistence.swift"; sourceTree = SOURCE_ROOT; };
+		AAB4935933E628DB7110CBC3 /* ClipboardCopyOutcome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/Models/ClipboardCopyOutcome.swift"; sourceTree = SOURCE_ROOT; };
+		A273E05565221DCFC4788BB6 /* HistorySaveState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/Models/HistorySaveState.swift"; sourceTree = SOURCE_ROOT; };
+		C874DCF0EB87665F08AB9058 /* HistoryWriteReceipt.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/Models/HistoryWriteReceipt.swift"; sourceTree = SOURCE_ROOT; };
+		EF15967CB5F21A14A92C59A4 /* TerminationCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/Models/TerminationCoordinator.swift"; sourceTree = SOURCE_ROOT; };
+		67E0A4E47B4C5E3A184F02BB /* HistorySaveNotice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/Views/HistorySaveNotice.swift"; sourceTree = SOURCE_ROOT; };
+		19EE8339572A03D4D197A0A2 /* RecoveryActionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/Views/RecoveryActionsView.swift"; sourceTree = SOURCE_ROOT; };
+		556C328EA3171DC5624DB5C9 /* HistoryCopyController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/Models/HistoryCopyController.swift"; sourceTree = SOURCE_ROOT; };
+		AD2DE7271C956C684F3A3CBC /* RecoveryNoticeController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/Views/RecoveryNoticeController.swift"; sourceTree = SOURCE_ROOT; };
+		59AD313F90207CB2FDB66E4E /* HistorySelectableText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/Views/HistorySelectableText.swift"; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -112,6 +180,17 @@
 			isa = PBXGroup;
 			children = (
 				SRC001 /* MurmelnApp.swift */,
+				59AD313F90207CB2FDB66E4E /* HistorySelectableText.swift */,
+				AD2DE7271C956C684F3A3CBC /* RecoveryNoticeController.swift */,
+				556C328EA3171DC5624DB5C9 /* HistoryCopyController.swift */,
+				19EE8339572A03D4D197A0A2 /* RecoveryActionsView.swift */,
+				67E0A4E47B4C5E3A184F02BB /* HistorySaveNotice.swift */,
+				EF15967CB5F21A14A92C59A4 /* TerminationCoordinator.swift */,
+				C874DCF0EB87665F08AB9058 /* HistoryWriteReceipt.swift */,
+				A273E05565221DCFC4788BB6 /* HistorySaveState.swift */,
+				AAB4935933E628DB7110CBC3 /* ClipboardCopyOutcome.swift */,
+				16C49767305ADF20F5375216 /* HistoryPersistence.swift */,
+				3D4B676055D491D8845C1E7C /* HistoryStorage.swift */,
 				GRP002 /* Models */,
 				GRP003 /* Services */,
 				GRP004 /* Views */,
@@ -124,6 +203,7 @@
 			children = (
 				SRC002 /* AppSettings.swift */,
 				SRC003 /* AppState.swift */,
+				DVR005 /* PastePermissionController.swift */,
 				SRC030 /* AppStateDependencies.swift */,
 				SRC031 /* ModelCatalog.swift */,
 				SRC022 /* AppIdentity.swift */,
@@ -131,6 +211,12 @@
 				SRC011 /* Provider.swift */,
 				SRC016 /* HistoryEntry.swift */,
 				SRC017 /* HistoryStore.swift */,
+				SRC038 /* PasteBlocker.swift */,
+				SRC043 /* PasteCommandOutcome.swift */,
+				SRC044 /* ClipboardDisposition.swift */,
+				SRC039 /* PasteTiming.swift */,
+				SRC042 /* PasteFailurePresentation.swift */,
+				SRC046 /* PasteOperationalRecord.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -141,7 +227,21 @@
 				SRC005 /* AudioService.swift */,
 				SRC006 /* NetworkService.swift */,
 				SRC007 /* PasteService.swift */,
+				SRC040 /* ClipboardSnapshot.swift */,
+				SRC041 /* PasteServiceDependencies.swift */,
+				SRC045 /* PasteTransactionGate.swift */,
+				SRC047 /* CaptureDiagnostics.swift */,
+				SRC048 /* CaptureDiagnosticsDependencies.swift */,
+				SRC049 /* PasteDiagnosticCommand.swift */,
+				DVR001 /* DevDeliveryDiagnostic.swift */,
+				DVR002 /* DevDeliveryDiagnosticTarget.swift */,
+				CPT002 /* CapturedPasteTarget.swift */,
+				UPT002 /* UnverifiedPasteTarget.swift */,
+				DVR003 /* DevDeliveryDiagnosticRunner.swift */,
+				DVR004 /* HotkeyMonitorClient.swift */,
 				SRC008 /* PermissionService.swift */,
+				DVR006 /* RestartService.swift */,
+				DVR007 /* RestartLaunchAwaiter.swift */,
 				SRC012 /* ModelDiscoveryService.swift */,
 				SRC014 /* HotkeyService.swift */,
 				SRC019 /* OllamaService.swift */,
@@ -165,6 +265,8 @@
 				SRC013 /* OverlayWindow.swift */,
 				SRC015 /* SettingsWindowController.swift */,
 				SRC018 /* HistoryWindow.swift */,
+				UIR91 /* SettingsPresentation.swift */,
+				UIR90 /* HistoryPresentation.swift */,
 				SRC024 /* WhisperKitSetupView.swift */,
 				SRC027 /* BackendSettingsSections.swift */,
 				SRC036 /* RuntimeStatusModel.swift */,
@@ -258,8 +360,22 @@
 			buildActionMask = 2147483647;
 			files = (
 				APP001 /* MurmelnApp.swift in Sources */,
+				F2D3429A03324BEC2CB997C1 /* HistorySelectableText.swift in Sources */,
+				26C33CF8505E86811268F748 /* RecoveryNoticeController.swift in Sources */,
+				F98CFDD351D3865228CF5F5F /* HistoryCopyController.swift in Sources */,
+				C468BEF1C481EFFA9C584A8D /* RecoveryActionsView.swift in Sources */,
+				5542F1B34943C0E265AF5879 /* HistorySaveNotice.swift in Sources */,
+				A0C4F87F7F23E686D05285F1 /* TerminationCoordinator.swift in Sources */,
+				B95089207CB8D5A7C3C775E7 /* HistoryWriteReceipt.swift in Sources */,
+				22F6DDCC001D61E2661DACD7 /* HistorySaveState.swift in Sources */,
+				5853EA50E9E22771515D0244 /* ClipboardCopyOutcome.swift in Sources */,
+				2A979D1EE8202BA48C78A36C /* HistoryPersistence.swift in Sources */,
+				03104A5DCAD6A0FD147BAB8F /* HistoryStorage.swift in Sources */,
 				APP002 /* AppSettings.swift in Sources */,
 				APP003 /* AppState.swift in Sources */,
+				DVP005 /* PastePermissionController.swift in Sources */,
+				DVP006 /* RestartService.swift in Sources */,
+				DVP007 /* RestartLaunchAwaiter.swift in Sources */,
 				APP029 /* AppStateDependencies.swift in Sources */,
 				APP030 /* ModelCatalog.swift in Sources */,
 				APP031 /* TranscriptionRuntime.swift in Sources */,
@@ -268,6 +384,24 @@
 				APP034 /* AudioChunkingRoute.swift in Sources */,
 				APP035 /* RuntimeStatusModel.swift in Sources */,
 				APP036 /* CatalogDownloadManager.swift in Sources */,
+				APP037 /* PasteBlocker.swift in Sources */,
+				APP042 /* PasteCommandOutcome.swift in Sources */,
+				APP043 /* ClipboardDisposition.swift in Sources */,
+				APP038 /* PasteTiming.swift in Sources */,
+				APP039 /* ClipboardSnapshot.swift in Sources */,
+				APP040 /* PasteServiceDependencies.swift in Sources */,
+				APP044 /* PasteTransactionGate.swift in Sources */,
+				APP041 /* PasteFailurePresentation.swift in Sources */,
+				APP045 /* PasteOperationalRecord.swift in Sources */,
+				APP046 /* CaptureDiagnostics.swift in Sources */,
+				APP047 /* CaptureDiagnosticsDependencies.swift in Sources */,
+				APP048 /* PasteDiagnosticCommand.swift in Sources */,
+				DVP001 /* DevDeliveryDiagnostic.swift in Sources */,
+				DVP002 /* DevDeliveryDiagnosticTarget.swift in Sources */,
+				CPT001 /* CapturedPasteTarget.swift in Sources */,
+				UPT001 /* UnverifiedPasteTarget.swift in Sources */,
+				DVP003 /* DevDeliveryDiagnosticRunner.swift in Sources */,
+				DVP004 /* HotkeyMonitorClient.swift in Sources */,
 				APP022 /* AppIdentity.swift in Sources */,
 				APP005 /* AudioService.swift in Sources */,
 				APP006 /* NetworkService.swift in Sources */,
@@ -282,6 +416,8 @@
 				APP016 /* HistoryEntry.swift in Sources */,
 				APP017 /* HistoryStore.swift in Sources */,
 				APP018 /* HistoryWindow.swift in Sources */,
+				UI91 /* SettingsPresentation.swift in Sources */,
+				UI90 /* HistoryPresentation.swift in Sources */,
 				APP019 /* OllamaService.swift in Sources */,
 				APP020 /* UpdateService.swift in Sources */,
 				APP021 /* KeychainService.swift in Sources */,
@@ -437,9 +573,11 @@
 		CFG007 /* Debug Dev */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) MURMELN_DEV_DIAGNOSTICS";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = Murmeln.entitlements;
-				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_IDENTITY = "Murmeln Dev";
+				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "";
@@ -468,7 +606,8 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = Murmeln.entitlements;
-				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_IDENTITY = "Murmeln Dev";
+				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "";

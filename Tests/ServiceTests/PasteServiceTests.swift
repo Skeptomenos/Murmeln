@@ -95,22 +95,22 @@ struct PastePreflightTests {
 
     @Test("Trusted process without secure input has no blocker")
     func trustedNoSecureInputPasses() {
-        #expect(PasteService.preflightBlocker(axTrusted: true, secureInputActive: false) == nil)
+        #expect(PasteService.preflightBlocker(postEventAccessAllowed: true, secureInputActive: false) == nil)
     }
 
-    @Test("Missing Accessibility trust blocks paste")
-    func missingAccessibilityBlocks() {
-        #expect(PasteService.preflightBlocker(axTrusted: false, secureInputActive: false) == .accessibilityNotTrusted)
+    @Test("Missing event-post access blocks paste")
+    func missingPostEventAccessBlocks() {
+        #expect(PasteService.preflightBlocker(postEventAccessAllowed: false, secureInputActive: false) == .postEventAccessDenied)
     }
 
     @Test("Secure Input blocks paste")
     func secureInputBlocks() {
-        #expect(PasteService.preflightBlocker(axTrusted: true, secureInputActive: true) == .secureInputActive)
+        #expect(PasteService.preflightBlocker(postEventAccessAllowed: true, secureInputActive: true) == .secureInputActive)
     }
 
-    @Test("Accessibility trust is reported before secure input")
-    func accessibilityReportedFirst() {
-        #expect(PasteService.preflightBlocker(axTrusted: false, secureInputActive: true) == .accessibilityNotTrusted)
+    @Test("Event-post denial is reported before Secure Input")
+    func postEventDenialReportedFirst() {
+        #expect(PasteService.preflightBlocker(postEventAccessAllowed: false, secureInputActive: true) == .postEventAccessDenied)
     }
 }
 
@@ -138,37 +138,54 @@ struct ClipboardPreservationTests {
     
     @Test("Empty text is not pasted")
     @MainActor
-    func emptyTextNotPasted() async {
-        // Save current clipboard state
-        let pasteboard = NSPasteboard.general
-        let originalContent = pasteboard.string(forType: .string)
-        
-        // Set known content
+    func emptyTextNotPasted() async throws {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+
         pasteboard.clearContents()
-        pasteboard.setString("original content", forType: .string)
-        
-        // Try to paste empty text
-        PasteService.shared.paste(text: "")
-        
-        // Wait a moment for any async operations
-        try? await Task.sleep(for: .milliseconds(50))
-        
-        // Clipboard should still have original content (paste was skipped)
-        let currentContent = pasteboard.string(forType: .string)
-        #expect(currentContent == "original content")
-        
-        // Restore original clipboard
-        if let original = originalContent {
-            pasteboard.clearContents()
-            pasteboard.setString(original, forType: .string)
-        }
+        #expect(pasteboard.setString("original content", forType: .string))
+
+        let service = PasteService(dependencies: PasteServiceDependencies(
+            pasteboard: pasteboard,
+            setPasteboardString: { text, pasteboard in pasteboard.setString(text, forType: .string) },
+            preflightPostEventAccess: { true },
+            secureInputActive: { false },
+            readModifierFlags: { [] },
+            makePasteEvents: { _ in nil },
+            postEvent: { _ in },
+            sleep: { _ in },
+            nowNanoseconds: { 0 }
+        ))
+
+        let timing = try await service.pasteAndRestore(text: "", captureID: nil)
+
+        #expect(timing.commandOutcome == .notAttempted)
+        #expect(timing.clipboardDisposition == .unchanged)
+        #expect(timing.commandSentElapsedMs == nil)
+        #expect(pasteboard.string(forType: .string) == "original content")
     }
     
     @Test("Whitespace-only text is not pasted")
     @MainActor
-    func whitespaceOnlyTextNotPasted() async {
-        let timing = await PasteService.shared.pasteAndRestore(text: "   \n\t  ", captureID: nil)
-        #expect(timing.succeeded == false)
-        #expect(timing.blocker == nil)
+    func whitespaceOnlyTextNotPasted() async throws {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+
+        let service = PasteService(dependencies: PasteServiceDependencies(
+            pasteboard: pasteboard,
+            setPasteboardString: { text, pasteboard in pasteboard.setString(text, forType: .string) },
+            preflightPostEventAccess: { true },
+            secureInputActive: { false },
+            readModifierFlags: { [] },
+            makePasteEvents: { _ in nil },
+            postEvent: { _ in },
+            sleep: { _ in },
+            nowNanoseconds: { 0 }
+        ))
+
+        let timing = try await service.pasteAndRestore(text: "   \n\t  ", captureID: nil)
+        #expect(timing.commandOutcome == .notAttempted)
+        #expect(timing.clipboardDisposition == .unchanged)
+        #expect(timing.commandSentElapsedMs == nil)
     }
 }

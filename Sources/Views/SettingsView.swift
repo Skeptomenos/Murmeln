@@ -169,407 +169,248 @@ struct ValidatedURLField: View {
 }
 
 struct SettingsView: View {
+    @AppStorage("windowAppearance") private var appearance: WindowAppearance = .dark
     @ObservedObject private var settings = AppSettings.shared
     @ObservedObject private var ollamaService = OllamaService.shared
     @ObservedObject private var whisperKitService = WhisperKitService.shared
-    @State private var selectedTab: SettingsTab = .transcription
+    @State private var selectedPage: SettingsPage = .transcription
     @State private var showingWhisperKitSetup = false
-    
+
     @State private var transcriptionModels: [ModelInfo] = []
     @State private var refinementModels: [ModelInfo] = []
     @State private var isLoadingTranscriptionModels = false
     @State private var isLoadingRefinementModels = false
-    
-    enum SettingsTab: String, CaseIterable {
-        case transcription = "Transcription"
-        case refinement = "Refinement"
-        case prompt = "Prompt"
-        case recording = "Recording"
-        
-        var icon: String {
-            switch self {
-            case .transcription: return "waveform"
-            case .refinement: return "sparkles"
-            case .prompt: return "text.quote"
-            case .recording: return "mic"
-            }
-        }
-    }
-    
-    var body: some View {
-        HSplitView {
-            sidebar
-                .frame(width: 180)
-            
-            content
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-        .frame(width: 650, height: 500)
-    }
-    
-    private var sidebar: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            ForEach(SettingsTab.allCases, id: \.self) { tab in
-                Button {
-                    selectedTab = tab
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: tab.icon)
-                            .frame(width: 20)
-                        Text(tab.rawValue)
-                        Spacer()
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(selectedTab == tab ? Color.accentColor.opacity(0.2) : Color.clear)
-                    .cornerRadius(6)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("\(tab.rawValue) settings")
-                .accessibilityHint(accessibilityHintForTab(tab))
-                .accessibilityAddTraits(selectedTab == tab ? .isSelected : [])
-            }
-            
-            Spacer()
-            
-            pipelineInfo
-        }
-        .padding(12)
-        .background(Color(nsColor: .windowBackgroundColor))
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Settings navigation")
-    }
-    
-    private func accessibilityHintForTab(_ tab: SettingsTab) -> String {
-        switch tab {
-        case .transcription:
-            return "Configure speech-to-text provider"
-        case .refinement:
-            return "Configure text cleanup and formatting"
-        case .prompt:
-            return "Manage prompt presets and personal dictionary"
-        case .recording:
-            return "Configure audio capture settings"
-        }
-    }
-    
-    private var pipelineInfo: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Divider()
-            
-            Text("Current Pipeline")
-                .font(.caption.weight(.semibold))
-                .foregroundColor(.secondary)
-            
-            if settings.skipRefinement {
-                Label {
-                    Text("Raw Mode")
-                        .font(.caption)
-                } icon: {
-                    Image(systemName: "waveform")
-                        .foregroundColor(.orange)
-                }
-                
-                Text("Transcription only, no LLM refinement")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-            } else if settings.transcriptionProvider.supportsRefinementInOneCall {
-                Label {
-                    Text("1 API Call")
-                        .font(.caption)
-                } icon: {
-                    Image(systemName: "bolt.fill")
-                        .foregroundColor(.green)
-                }
-                
-                Text("\(settings.transcriptionProvider.rawValue) handles both transcription and refinement")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-            } else {
-                Label {
-                    Text("2 API Calls")
-                        .font(.caption)
-                } icon: {
-                    Image(systemName: "arrow.triangle.branch")
-                        .foregroundColor(.orange)
-                }
-                
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("1. \(settings.transcriptionProvider.rawValue)")
-                        .font(.caption2)
-                    Text("2. \(settings.refinementProvider.rawValue)")
-                        .font(.caption2)
-                }
-                .foregroundColor(.secondary)
-            }
-        }
-    }
-    
-    @ViewBuilder
-    private var content: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                switch selectedTab {
-                case .transcription:
-                    transcriptionContent
-                case .refinement:
-                    refinementContent
-                case .prompt:
-                    promptContent
-                case .recording:
-                    recordingContent
-                }
-            }
-            .padding(20)
-        }
-        .background(Color(nsColor: .textBackgroundColor))
-    }
-    
-    private var transcriptionContent: some View {
-        TranscriptionSettingsSection(
-            settings: settings,
-            whisperKitService: whisperKitService,
-            showingWhisperKitSetup: $showingWhisperKitSetup,
-            transcriptionModels: $transcriptionModels,
-            isLoadingTranscriptionModels: $isLoadingTranscriptionModels,
-            loadTranscriptionModels: loadTranscriptionModels
-        )
-    }
-
-    private var refinementContent: some View {
-        RefinementSettingsSection(
-            settings: settings,
-            ollamaService: ollamaService,
-            refinementModels: $refinementModels,
-            isLoadingRefinementModels: $isLoadingRefinementModels,
-            loadRefinementModels: loadRefinementModels
-        )
-    }
-    
     @State private var showingAddPreset = false
     @State private var newPresetName = ""
     @State private var newPresetDescription = ""
-    @State private var editingPrompt = ""
     @State private var newDictionaryWord = ""
+
+    var body: some View {
+        SettingsShell(
+            selectedPage: $selectedPage,
+            appearance: $appearance
+        ) {
+            switch selectedPage {
+            case .transcription:
+                TranscriptionSettingsSection(
+                    settings: settings,
+                    whisperKitService: whisperKitService,
+                    showingWhisperKitSetup: $showingWhisperKitSetup,
+                    transcriptionModels: $transcriptionModels,
+                    isLoadingTranscriptionModels: $isLoadingTranscriptionModels,
+                    loadTranscriptionModels: loadTranscriptionModels
+                )
+            case .refinement:
+                RefinementSettingsSection(
+                    settings: settings,
+                    ollamaService: ollamaService,
+                    refinementModels: $refinementModels,
+                    isLoadingRefinementModels: $isLoadingRefinementModels,
+                    loadRefinementModels: loadRefinementModels
+                )
+            case .prompt:
+                promptContent
+            case .recording:
+                recordingContent
+            }
+        }
+        .windowAppearance(appearance)
+    }
 
     private var newPresetNameIsAvailable: Bool {
         AppSettings.isPresetNameAvailable(newPresetName, among: settings.allPresets)
     }
-    
+
     private var promptContent: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                Text("Prompt Presets")
-                    .font(.title2.weight(.semibold))
-                
-                Spacer()
-                
-                Toggle(isOn: $settings.parallelRefinementEnabled) {
-                    Label("Parallel Audit", systemImage: "bolt.horizontal.circle")
-                        .font(.caption.weight(.medium))
-                }
-                .toggleStyle(.button)
-                .controlSize(.small)
-                .help("Process all presets in parallel for the history audit trail")
-                
-                Button {
-                    showingAddPreset = true
-                } label: {
-                    Image(systemName: "plus")
-                }
-                .buttonStyle(.borderless)
-                .help("Add custom preset")
-            }
-            
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Preset")
-                        .font(.caption.weight(.medium))
-                    
-                    Picker("", selection: Binding(
+            SettingsGroup(title: "Writing style", subtitle: "Choose the instructions used to refine your transcript.") {
+                HStack(spacing: 12) {
+                    Picker("Preset", selection: Binding(
                         get: { settings.selectedPreset },
                         set: { if let p = $0 { settings.selectedPreset = p } }
                     )) {
                         ForEach(settings.allPresets) { preset in
-                            HStack {
-                                Image(systemName: preset.icon)
-                                Text(preset.name)
-                                if settings.isPresetModified(preset) {
-                                    Text("•").foregroundColor(.orange)
-                                }
-                            }
+                            Label(
+                                settings.isPresetModified(preset) ? "\(preset.name) · Modified" : preset.name,
+                                systemImage: preset.icon
+                            )
                             .tag(preset as PromptPreset?)
                         }
                     }
-                    .labelsHidden()
-                    .frame(maxWidth: 200)
-                }
-                
-                if let preset = settings.selectedPreset, !preset.isBuiltIn {
+                    .pickerStyle(.menu)
+                    .accessibilityLabel("Prompt preset")
+
                     Button {
-                        settings.deleteCustomPreset(preset)
+                        showingAddPreset = true
                     } label: {
-                        Image(systemName: "trash")
-                            .foregroundColor(.red)
+                        Label("New", systemImage: "plus")
                     }
-                    .buttonStyle(.borderless)
-                    .help("Delete preset")
-                }
-            }
-            
-            if let preset = settings.selectedPreset {
-                Text(preset.description)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-            
-            Divider()
-            
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text("Prompt")
-                        .font(.caption.weight(.medium))
-                    
-                    Spacer()
-                    
-                    if let preset = settings.selectedPreset, settings.isPresetModified(preset) {
-                        Button("Reset") {
-                            settings.resetPresetToDefault(preset)
+                    .help("Add custom preset")
+                    .accessibilityLabel("Add custom preset")
+
+                    if let preset = settings.selectedPreset, !preset.isBuiltIn {
+                        Button(role: .destructive) {
+                            settings.deleteCustomPreset(preset)
+                        } label: {
+                            Image(systemName: "trash")
                         }
-                        .font(.caption)
-                        .buttonStyle(.borderless)
+                        .help("Delete preset")
+                        .accessibilityLabel("Delete \(preset.name) preset")
                     }
                 }
-                
-                TextEditor(text: Binding(
-                    get: { settings.systemPrompt },
-                    set: { settings.systemPrompt = $0 }
-                ))
-                .font(.system(.body, design: .monospaced))
-                .frame(minHeight: 120)
-                .padding(8)
-                .background(Color(nsColor: .controlBackgroundColor))
-                .cornerRadius(8)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
-                )
+
+                if let preset = settings.selectedPreset {
+                    Text(preset.description)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Divider()
+
+                DisclosureGroup("Edit prompt instructions") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack {
+                            Text("Instructions for the refiner")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            if let preset = settings.selectedPreset, settings.isPresetModified(preset) {
+                                Button("Reset to Default") {
+                                    settings.resetPresetToDefault(preset)
+                                }
+                                .controlSize(.small)
+                            }
+                        }
+                        TextEditor(text: Binding(
+                            get: { settings.systemPrompt },
+                            set: { settings.systemPrompt = $0 }
+                        ))
+                        .font(.system(size: 12, design: .monospaced))
+                        .scrollContentBackground(.hidden)
+                        .frame(minHeight: 180)
+                        .padding(10)
+                        .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 8)
+                                .strokeBorder(Color.primary.opacity(0.1), lineWidth: 1)
+                        }
+                        .accessibilityLabel("Prompt instructions")
+                    }
+                    .padding(.top, 12)
+                }
             }
-            
+
             personalDictionarySection
+
+            SettingsGroup(title: "Advanced") {
+                DisclosureGroup("Compare prompt presets") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Toggle("Parallel audit", isOn: $settings.parallelRefinementEnabled)
+                            .toggleStyle(.switch)
+                            .help("Process all presets in parallel for the history audit trail")
+                        SettingsNote(text: "Process all presets in parallel and keep their results in history. This runs additional refinement requests.")
+                    }
+                    .padding(.top, 12)
+                }
+            }
         }
         .sheet(isPresented: $showingAddPreset) {
             addPresetSheet
         }
     }
-    
+
     private var personalDictionarySection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Divider()
-                .padding(.top, 8)
-            
+        SettingsGroup(title: "Personal dictionary") {
             Toggle(isOn: $settings.personalDictionaryEnabled) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Personal Dictionary")
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Use custom spelling")
                         .font(.body.weight(.medium))
-                    Text("Teach the refiner how to spell names and terms")
+                    Text("Help the refiner recognize names and specialized terms.")
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
             }
             .toggleStyle(.switch)
             .accessibilityLabel("Personal Dictionary")
             .accessibilityValue(settings.personalDictionaryEnabled ? "On, \(settings.personalDictionary.count) words" : "Off")
             .accessibilityHint("Toggle to enable custom spelling for names and terms")
-            
+
             if settings.personalDictionaryEnabled {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        TextField("Add name or term...", text: $newDictionaryWord)
-                            .textFieldStyle(.roundedBorder)
-                            .onSubmit {
-                                addDictionaryWord()
-                            }
-                        
-                        Button {
-                            addDictionaryWord()
-                        } label: {
-                            Image(systemName: "plus.circle.fill")
-                        }
-                        .buttonStyle(.borderless)
+                Divider()
+                HStack(spacing: 8) {
+                    TextField("Add a name or term", text: $newDictionaryWord)
+                        .textFieldStyle(.roundedBorder)
+                        .onSubmit { addDictionaryWord() }
+                        .accessibilityLabel("New dictionary word")
+                    Button("Add", action: addDictionaryWord)
                         .disabled(newDictionaryWord.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    }
-                    
-                    if settings.personalDictionary.isEmpty {
-                        Text("No words added yet. Add names, technical terms, or brand names that are often misspelled.")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .padding(.vertical, 4)
-                    } else {
-                        FlowLayout(spacing: 6) {
-                            ForEach(settings.personalDictionary, id: \.self) { word in
-                                HStack(spacing: 4) {
-                                    Text(word)
-                                        .font(.caption)
-                                    Button {
-                                        settings.removeFromDictionary(word)
-                                    } label: {
-                                        Image(systemName: "xmark.circle.fill")
-                                            .foregroundColor(.secondary)
-                                    }
-                                    .buttonStyle(.plain)
+                }
+
+                if settings.personalDictionary.isEmpty {
+                    SettingsNote(text: "No words yet. Add a name, brand, or technical term that is often misspelled.", icon: "character.book.closed")
+                } else {
+                    FlowLayout(spacing: 7) {
+                        ForEach(settings.personalDictionary, id: \.self) { word in
+                            HStack(spacing: 6) {
+                                Text(word)
+                                    .font(.caption)
+                                Button {
+                                    settings.removeFromDictionary(word)
+                                } label: {
+                                    Image(systemName: "xmark")
+                                        .font(.system(size: 9, weight: .semibold))
+                                        .foregroundStyle(.secondary)
+                                        .frame(width: 18, height: 18)
+                                        .contentShape(Circle())
                                 }
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(Color.accentColor.opacity(0.15))
-                                .cornerRadius(12)
+                                .buttonStyle(.plain)
+                                .help("Remove \(word)")
+                                .accessibilityLabel("Remove \(word) from dictionary")
                             }
+                            .padding(.leading, 10)
+                            .padding(.trailing, 4)
+                            .padding(.vertical, 4)
+                            .background(Color.primary.opacity(0.05), in: Capsule())
                         }
                     }
-                    
-                    Text("\(settings.personalDictionary.count)/20 words")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
                 }
-                .padding(12)
-                .background(Color(nsColor: .controlBackgroundColor))
-                .cornerRadius(8)
+                Text("\(settings.personalDictionary.count) of 20 words")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
     }
-    
+
     private func addDictionaryWord() {
         let trimmed = newDictionaryWord.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         settings.addToDictionary(trimmed)
         newDictionaryWord = ""
     }
-    
+
     private var addPresetSheet: some View {
-        VStack(spacing: 16) {
-            Text("New Preset")
-                .font(.headline)
-            
-            VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 20) {
+            SettingsPageHeader(title: "New preset", subtitle: "Create a writing style you can make your own.")
+            VStack(alignment: .leading, spacing: 6) {
                 Text("Name")
                     .font(.caption.weight(.medium))
                 TextField("My Preset", text: $newPresetName)
                     .textFieldStyle(.roundedBorder)
-
+                    .accessibilityLabel("Preset name")
                 if !newPresetName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !newPresetNameIsAvailable {
-                    Text("Preset names must be unique.")
-                        .font(.caption2)
-                        .foregroundColor(.red)
+                    Label("Preset names must be unique.", systemImage: "exclamationmark.circle")
+                        .font(.caption)
+                        .foregroundStyle(.red)
                 }
             }
-            
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 6) {
                 Text("Description")
                     .font(.caption.weight(.medium))
                 TextField("Short description", text: $newPresetDescription)
                     .textFieldStyle(.roundedBorder)
+                    .accessibilityLabel("Preset description")
             }
-            
             HStack {
                 Button("Cancel") {
                     showingAddPreset = false
@@ -577,10 +418,8 @@ struct SettingsView: View {
                     newPresetDescription = ""
                 }
                 .keyboardShortcut(.escape)
-                
                 Spacer()
-                
-                Button("Add") {
+                Button("Add Preset") {
                     guard settings.addCustomPreset(
                         name: newPresetName,
                         description: newPresetDescription,
@@ -597,51 +436,48 @@ struct SettingsView: View {
                 .disabled(newPresetName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !newPresetNameIsAvailable)
             }
         }
-        .padding(20)
-        .frame(width: 300)
+        .padding(28)
+        .frame(width: 400)
     }
-    
+
     private var recordingContent: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Recording")
-                    .font(.title2.weight(.semibold))
-                    .accessibilityAddTraits(.isHeader)
-                Text("Audio capture settings")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-            .accessibilityElement(children: .combine)
-            
-            VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 16) {
+            SettingsGroup(title: "Audio quality") {
                 Toggle(isOn: $settings.highQualityAudio) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("High Quality Audio")
+                        Text("High quality audio")
                             .font(.body.weight(.medium))
                         Text(settings.highQualityAudio ? "44.1 kHz · Larger files · Slower upload" : "16 kHz · Optimized for speech · Faster processing")
                             .font(.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
                 }
                 .toggleStyle(.switch)
                 .accessibilityLabel("High Quality Audio")
                 .accessibilityValue(settings.highQualityAudio ? "On, 44.1 kHz" : "Off, 16 kHz optimized")
                 .accessibilityHint("Toggle between high quality 44.1 kHz and optimized 16 kHz recording")
-                
-                HStack(spacing: 8) {
-                    Image(systemName: "lightbulb.fill")
-                        .foregroundColor(.orange)
-                    Text("16 kHz is optimal for speech recognition. Use high quality only if you experience issues.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                Divider()
+                SettingsNote(text: "16 kHz is recommended for speech. Try high quality if you experience recognition issues.", icon: "waveform")
+            }
+
+            SettingsGroup(title: "Silence handling") {
+                Toggle(isOn: $settings.disableSilenceTrimming) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Keep silence at the edges")
+                            .font(.body.weight(.medium))
+                        Text("Send the full recording without trimming silence from the start or end.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
-                .padding(10)
-                .background(Color.orange.opacity(0.1))
-                .cornerRadius(8)
+                .toggleStyle(.switch)
+                .accessibilityLabel("Disable Silence Trimming")
+                .accessibilityValue(settings.disableSilenceTrimming ? "On, full recording" : "Off, trim silence")
             }
         }
     }
-    
+
     private func loadTranscriptionModels() {
         isLoadingTranscriptionModels = true
         Task {

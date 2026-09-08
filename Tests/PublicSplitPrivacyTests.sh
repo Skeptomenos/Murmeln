@@ -36,6 +36,18 @@ assert_public_leak_rejected "Tests/Fixtures/history.json" "history leak"
 assert_public_leak_rejected "Tests/Fixtures/runtime-probe-results.md" "probe artifact"
 assert_public_leak_rejected "Tests/Fixtures/runtime-probe/results.txt" "probe path"
 
+# Public procedures must not retain session identifiers or private pointers.
+mkdir -p "$FIXTURE_ROOT/docs"
+for marker in '/Users/example/private' '_planning/private.md' '0123456789abcdef0123456789abcdef' 'PID 12345'; do
+    printf '%s\n' "$marker" > "$FIXTURE_ROOT/docs/agent-dictation-testing.md"
+    if bash "$CHECKER" "$FIXTURE_ROOT" >/dev/null 2>&1; then
+        echo "❌ public-split test: private procedure content was accepted"
+        exit 1
+    fi
+done
+printf '# Safe testing\nUse synthetic speech and a disposable target.\n' > "$FIXTURE_ROOT/docs/agent-dictation-testing.md"
+bash "$CHECKER" "$FIXTURE_ROOT" >/dev/null
+
 # A local ignored worktree is not part of a Git checkout or public split. The
 # source-level audio guard must still reject a real publishable working-tree
 # file while ignoring local caches and private _planning fixtures.

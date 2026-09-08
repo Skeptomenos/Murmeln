@@ -33,7 +33,12 @@ TranscriptionPipelineService
     +--> TextRefinementBackend (optional)
     |
     v
-PasteService -> HistoryStore
+HistoryStore (retain exact result + queue save receipt)
+    |
+    v
+PasteService (preflight -> snapshot -> guarded post -> conditional restore)
+    |
+    +--> Recovery notice + menu (explicit Copy / Check / Dismiss)
 
 Shared configuration: AppSettings
 Model metadata: ModelCatalog
@@ -75,10 +80,22 @@ The catalog currently ships Parakeet v3 multilingual (default), Parakeet v2 Engl
 
 ### PasteService and HistoryStore
 
-- `PasteService` validates paste preconditions, inserts through the clipboard, and preserves the transcript on the clipboard when delivery fails.
-- `HistoryStore` persists final transcripts and refinement/audit variants.
+- AppState reserves History capacity before capture and retains the immutable final result/capture ID before any paste wait. Failed or empty captures release the reservation. A new blocked result can replace the prominent card only after retention.
+- `HistoryStore` owns the existing bounded History, with no second recovery journal. `HistoryPersistence` serializes whole-snapshot writes and returns revision/content receipts. Per-entry saved status and the latest required snapshot are separate. Delete invalidates actions immediately; failed deletion remains visible until a newer snapshot succeeds.
+- `PasteService` shares one main-actor gate with recovery Copy and every History Copy route, including native text selection. Copy never queues. Known blockers and incomplete snapshots cause zero automatic writes/posts. Late blockers restore only while owned; changed ownership prevents posting.
+- `ClipboardSnapshot` materializes every advertised representation, checks reconstruction and generation before clearing, and rechecks ownership after reconstruction on restore. This cannot make cross-process clipboard access atomic or guarantee arbitrary file-promise semantics.
+- `RecoveryNoticeController` presents a nonactivating panel with generic text. It hides on lock, sleep and session switch. Successful Copy and Dismiss acknowledge attention without deleting the retained History entry; failed/busy Copy keeps attention open. The icon uses unresolved attention, not retained-result existence. Copy, exact History navigation and Dismiss share `RecoveryActionsView` with the menu. Only explicit History navigation activates a window.
+- The menu receives the actual SwiftUI adaptor-owned `AppDelegate`. Restart quiesces existing work and verifies a new process for the exact bundle before exit; failed launch restores the current app. Accessibility Settings navigation and permission preflight are distinct operations.
+- `AppState` captures a separate `CapturedPasteTarget` once at capture admission, before asynchronous work or UI activation. It retains ordinary TextEdit or verified Notion process/window/editor identity and empty-caret metadata; it reads no field text, selected text, title or path. Supplied proofs must still match before clipboard mutation and posting, even if Secure Input clears. Valid proofs waive only the global Secure Input flag. Unknown apps retain the default guard; failed Notion capture retains an invalid proof and cannot fall back. Supplied-proof paste never queues; failed admission, cancellation, completion and termination release the proof.
+- `paste_attempt` schema 2 records the deciding stage/reason, target policy and available invalidation reason from the existing checks. Paired service modifier samples retain raw flags; the equality check ignores only the mouse/pen coalescing flag. Optional cached `app_code_hash` correlates signing metadata across builds that reuse version numbers; it is not a permission, running-image or signature-validity receipt. Schema 1 remains readable. Early cancellation records a terminal decision without sampling OS state or changing throwing behavior. The bounded Notion walk separates local budget expiry, missing metadata, unsupported structure and AX transport failure using its original reads. These records contain no transcript, clipboard contents, title, path or target-app identity. `posted` still means command posting, not confirmed insertion.
+- A separately enabled Debug Dev experiment accepts only fixed text in one verified disposable TextEdit document. It shares clipboard ownership and records actual security samples. It cannot accept arbitrary transcripts and is not the normal delivery entry; see `agent-dictation-testing.md`.
+- `TerminationCoordinator` stops admission, cancels and joins AppState and diagnostic paste tasks, then waits for History receipts. Save/delete failure denies Quit once, clears the latch and restores input services. Quit anyway is a separate confirmation with Cancel as default. No power-loss durability or target-delivery acknowledgment is claimed.
 
 ## Settings and migration
+
+`SettingsShell` and its unboxed sections provide the resizable settings layout on a uniform background. `HistoryBrowser` and `HistoryTranscriptDetail` provide the transcript list and an unboxed reading pane. These presentation views do not access services or storage. History adapters supply selectable text and Copy actions, so a guarded clipboard implementation can retain its own selection and copy policy.
+
+Settings and History adapters share the `windowAppearance` UserDefaults key, defaulting to Dark. Their `preferredColorScheme` applies only to the hosted window. System mode inherits macOS appearance. Native window appearance transitions are checked by the offscreen preview helper; app-wide appearance and the recovery panel are unchanged.
 
 `selectedModelID` identifies a catalog model and `preferredLanguage` stores either `auto` or an ISO language code. Each catalog entry resolves that preference according to its language capability; hint-required models provide an explicit safe default.
 
@@ -92,7 +109,7 @@ Cloud and local-server choices remain represented by `TranscriptionProvider`. Se
 4. On release, `AppState` stops recording, performs speech checks, and sends the audio to `TranscriptionPipelineService`.
 5. The pipeline resolves the selected catalog runtime or legacy adapter and transcribes.
 6. Optional refinement runs unless the user keeps the default raw/transcribe-only mode.
-7. Murmeln pastes the result, records telemetry, and stores history. Failed paste delivery leaves the transcript recoverable on the clipboard.
+7. Murmeln retains the exact final result, then attempts the guarded paste transaction and records its outcome. Blocked delivery offers explicit recovery from History. Disk persistence and a posted command are reported separately.
 
 ## Invariants
 

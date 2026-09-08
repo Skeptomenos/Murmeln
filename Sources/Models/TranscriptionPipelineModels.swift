@@ -342,9 +342,13 @@ struct CaptureStageTimeline {
     let auditVariantFailureCount: Int
     // Final-result readiness is the timestamp that actually gates paste for the current path.
     let finalResultReadyAt: UInt64
-    let pasteCommandSentAt: UInt64
-    let pasteCompletedAt: UInt64
-    let pasteSucceeded: Bool
+    /// Time when Murmeln handed both paste key events to macOS.
+    /// Nil when no command was posted.
+    let pasteCommandSentAt: UInt64?
+    /// Time when Murmeln finished its paste and clipboard handling attempt.
+    let pasteAttemptFinishedAt: UInt64
+    let pasteCommandOutcome: PasteCommandOutcome
+    let clipboardDisposition: ClipboardDisposition
 
     init(
         stopRequestedAt: UInt64,
@@ -360,9 +364,10 @@ struct CaptureStageTimeline {
         auditVariantSuccessCount: Int = 0,
         auditVariantFailureCount: Int = 0,
         finalResultReadyAt: UInt64,
-        pasteCommandSentAt: UInt64,
-        pasteCompletedAt: UInt64,
-        pasteSucceeded: Bool
+        pasteCommandSentAt: UInt64?,
+        pasteAttemptFinishedAt: UInt64,
+        pasteCommandOutcome: PasteCommandOutcome,
+        clipboardDisposition: ClipboardDisposition
     ) {
         self.stopRequestedAt = stopRequestedAt
         self.audioReadyAt = audioReadyAt
@@ -378,8 +383,9 @@ struct CaptureStageTimeline {
         self.auditVariantFailureCount = auditVariantFailureCount
         self.finalResultReadyAt = finalResultReadyAt
         self.pasteCommandSentAt = pasteCommandSentAt
-        self.pasteCompletedAt = pasteCompletedAt
-        self.pasteSucceeded = pasteSucceeded
+        self.pasteAttemptFinishedAt = pasteAttemptFinishedAt
+        self.pasteCommandOutcome = pasteCommandOutcome
+        self.clipboardDisposition = clipboardDisposition
     }
 }
 
@@ -421,28 +427,35 @@ struct CaptureCompletionOutcome: Sendable, Equatable {
 
     static func classify(
         transcriptionText: String,
-        pasteSucceeded: Bool,
+        pasteCommandOutcome: PasteCommandOutcome,
+        clipboardDisposition: ClipboardDisposition,
+        pasteAttemptID: String? = nil,
         processedAudioDurationMs: UInt64,
         speechDetected: Bool
     ) -> CaptureCompletionOutcome {
-        if pasteSucceeded {
+        if pasteCommandOutcome == .posted {
             return CaptureCompletionOutcome(
                 completionOutcome: "completed",
-                completionReason: "paste_completed",
-                userFacingMessage: nil
+                completionReason: "paste_command_posted",
+                userFacingMessage: clipboardDisposition == .restoreFailed
+                    ? "Paste command sent, but Murmeln could not restore your previous clipboard contents."
+                    : nil
             )
         }
 
         let trimmedText = transcriptionText.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        // A non-empty transcript that did not paste is a real delivery failure
-        // (no Accessibility, Secure Input, CGEvent failure); the text stays on
-        // the clipboard instead of being restored away.
-        if !trimmedText.isEmpty {
+        if !trimmedText.isEmpty,
+           case .blocked(let blocker) = pasteCommandOutcome {
+            let presentation = PasteFailurePresentation(
+                blocker: blocker,
+                clipboardDisposition: clipboardDisposition,
+                pasteAttemptID: pasteAttemptID
+            )
             return CaptureCompletionOutcome(
                 completionOutcome: "completed_no_paste",
-                completionReason: "paste_failed",
-                userFacingMessage: "Paste failed — the text is on your clipboard."
+                completionReason: "paste_command_blocked",
+                userFacingMessage: presentation.message
             )
         }
 
@@ -506,6 +519,18 @@ struct CaptureTelemetrySummary {
         timeline.selectedResultReadyAt ?? timeline.finalResultReadyAt
     }
 
+    private var postedCommandSentAt: UInt64? {
+        guard timeline.pasteCommandOutcome == .posted else { return nil }
+        return timeline.pasteCommandSentAt
+    }
+
+    private var pasteBlockerValue: String {
+        guard case .blocked(let blocker) = timeline.pasteCommandOutcome else {
+            return Self.missingStage
+        }
+        return blocker.rawValue
+    }
+
     var metadata: [String: String] {
         var fields: [String: String] = [
             "capture_id": captureID,
@@ -543,16 +568,18 @@ struct CaptureTelemetrySummary {
             "audit_variant_success_count": String(timeline.auditVariantSuccessCount),
             "audit_variant_failure_count": String(timeline.auditVariantFailureCount),
             "final_result_ready_at": String(timeline.finalResultReadyAt),
-            "paste_command_sent_at": String(timeline.pasteCommandSentAt),
-            "paste_completed_at": String(timeline.pasteCompletedAt),
-            "paste_succeeded": String(timeline.pasteSucceeded),
+            "paste_command_sent_at": optionalTimestamp(postedCommandSentAt),
+            "paste_attempt_finished_at": String(timeline.pasteAttemptFinishedAt),
+            "paste_command_outcome": timeline.pasteCommandOutcome.telemetryValue,
+            "paste_blocker": pasteBlockerValue,
+            "clipboard_disposition": timeline.clipboardDisposition.rawValue,
             "app_pre_backend_elapsed_ms": String(elapsedMs(from: timeline.stopRequestedAt, to: timeline.transcriptionStartedAt)),
             "backend_load_elapsed_ms": optionalElapsedMs(start: timeline.backendLoadStartedAt, end: timeline.backendLoadFinishedAt),
             "backend_transcription_elapsed_ms": String(elapsedMs(from: timeline.transcriptionStartedAt, to: timeline.transcriptionFinishedAt)),
             "backend_refinement_elapsed_ms": optionalElapsedMs(start: timeline.refinementStartedAt, end: timeline.refinementFinishedAt),
             "audit_fanout_elapsed_ms": optionalElapsedMs(start: timeline.refinementStartedAt, end: timeline.auditFanoutFinishedAt),
-            "app_post_backend_elapsed_ms": String(elapsedMs(from: timeline.finalResultReadyAt, to: timeline.pasteCommandSentAt)),
-            "stop_to_paste_complete_ms": String(elapsedMs(from: timeline.stopRequestedAt, to: timeline.pasteCompletedAt))
+            "app_post_backend_elapsed_ms": optionalElapsedMs(start: timeline.finalResultReadyAt, end: postedCommandSentAt),
+            "stop_to_paste_attempt_finished_ms": String(elapsedMs(from: timeline.stopRequestedAt, to: timeline.pasteAttemptFinishedAt))
         ]
 
         if let languageCode = context.languageCode {

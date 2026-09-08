@@ -41,7 +41,25 @@ extension OverlayWindowController: OverlayPresenting {}
 /// Paste boundary used by AppState.
 protocol PasteServicing: Sendable {
     @MainActor
-    func pasteAndRestore(text: String, captureID: String?) async -> PasteTiming
+    func pasteAndRestore(text: String, captureID: String?) async throws -> PasteTiming
+
+    @MainActor
+    func pasteAndRestore(text: String, captureID: String?, target: (any PasteTargetChecking)?) async throws -> PasteTiming
+
+    @MainActor
+    func copyToClipboardForRecovery(text: String) -> Bool
+
+    @MainActor func copyResult(text: String) -> ClipboardCopyOutcome
+}
+
+extension PasteServicing {
+    @MainActor
+    func pasteAndRestore(text: String, captureID: String?, target: (any PasteTargetChecking)?) async throws -> PasteTiming {
+        try await pasteAndRestore(text: text, captureID: captureID)
+    }
+    @MainActor func copyResult(text: String) -> ClipboardCopyOutcome {
+        copyToClipboardForRecovery(text: text) ? .copied : .failed
+    }
 }
 
 extension PasteService: PasteServicing {}
@@ -49,6 +67,14 @@ extension PasteService: PasteServicing {}
 /// History persistence boundary used by AppState.
 @MainActor
 protocol HistoryStoring: AnyObject {
+    var mutationsSuspended: Bool { get set }
+    var protectedRecoveryID: UUID? { get set }
+    var onEntriesChanged: (@MainActor () -> Void)? { get set }
+    func reserveCapacity() -> UUID?
+    func releaseReservation(_ token: UUID)
+    func retain(_ entry: HistoryEntry, reservation: UUID) -> Bool
+    func entry(id: UUID) -> HistoryEntry?
+    func flush() async -> Bool
     func add(
         original: String,
         refined: String,

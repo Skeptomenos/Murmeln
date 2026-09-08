@@ -1,8 +1,9 @@
 import Foundation
 
-struct HistoryEntry: Codable, Identifiable, Equatable, Hashable {
+struct HistoryEntry: Codable, Identifiable, Equatable, Hashable, Sendable {
     let id: UUID
     let timestamp: Date
+    let captureID: String?
     let original: String
     let refined: String
     let presetName: String?
@@ -31,10 +32,12 @@ struct HistoryEntry: Codable, Identifiable, Equatable, Hashable {
         effectiveSystemPrompt: String? = nil,
         variants: [String: String]? = nil,
         variantPrompts: [String: String]? = nil,
-        effectiveVariantPrompts: [String: String]? = nil
+        effectiveVariantPrompts: [String: String]? = nil,
+        captureID: String? = nil
     ) {
         self.id = UUID()
         self.timestamp = Date()
+        self.captureID = captureID
         self.original = original
         self.refined = refined
         self.presetName = presetName

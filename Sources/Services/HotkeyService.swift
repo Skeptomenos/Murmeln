@@ -23,9 +23,18 @@ struct HotkeyModifierEvent {
 
 @MainActor
 final class HotkeyService {
+    enum MonitorStartFailure: String, Sendable {
+        case globalMonitorUnavailable = "global_monitor_unavailable"
+        case localMonitorUnavailable = "local_monitor_unavailable"
+        case bothMonitorsUnavailable = "both_monitors_unavailable"
+    }
+
     static let shared = HotkeyService()
-    
-    private var flagsMonitor: Any?
+
+    private let monitorClient: HotkeyMonitorClient
+    private let diagnostics: @MainActor (String, String?, [String: String]) -> Void
+    private var globalFlagsMonitor: Any?
+    private var localFlagsMonitor: Any?
     
     private var fnKeyIsDown = false
     private var fnCaptureID: String?
@@ -40,35 +49,81 @@ final class HotkeyService {
     var holdThreshold: TimeInterval = 0.4
     var doubleTapThreshold: TimeInterval = 0.4
     
-    var onKeyDown: (() -> Void)?
+    var onKeyDown: ((String?) -> Bool)?
     var onKeyUp: (() -> Void)?
     var onHoldStarted: (() -> Void)?
     var onHoldCancelled: (() -> Void)?
     var onLockEngaged: (() -> Void)?
     var onLockDisengaged: (() -> Void)?
+    var onMonitorStartFailure: ((MonitorStartFailure) -> Void)?
     var captureIDFactory: (() -> String?)?
 
     /// Internal (not private) so tests can drive fresh instances with
     /// synthetic HotkeyModifierEvents instead of sharing global state.
-    init() {}
+    init(
+        monitorClient: HotkeyMonitorClient = .live,
+        diagnostics: @escaping @MainActor (String, String?, [String: String]) -> Void = { event, captureID, metadata in
+            Task {
+                CaptureDiagnostics.shared.mark(event, captureID: captureID, metadata: metadata)
+            }
+        }
+    ) {
+        self.monitorClient = monitorClient
+        self.diagnostics = diagnostics
+    }
     
-    func start() {
-        if flagsMonitor != nil || fnCaptureID != nil || fnDelayedStartTask != nil || fnRecordingDidStart || fnKeyIsDown || rightOptionDown || lastRightOptionTapTime != nil || isLocked {
+    @discardableResult
+    func start() -> Bool {
+        if globalFlagsMonitor != nil || localFlagsMonitor != nil || fnCaptureID != nil || fnDelayedStartTask != nil || fnRecordingDidStart || fnKeyIsDown || rightOptionDown || lastRightOptionTapTime != nil || isLocked {
             stop(reason: .restartingMonitor)
         } else {
             resetState()
         }
-        
-        flagsMonitor = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
-            Task { @MainActor in
-                self?.handleFlagsChanged(event)
-            }
+
+        let installedGlobalMonitor = monitorClient.installGlobalFlagsMonitor { [weak self] event in
+            self?.handleFlagsChanged(event)
         }
+        let installedLocalMonitor = monitorClient.installLocalFlagsMonitor { [weak self] event in
+            self?.handleFlagsChanged(event)
+            return event
+        }
+
+        guard let installedGlobalMonitor, let installedLocalMonitor else {
+            if let installedGlobalMonitor {
+                monitorClient.removeMonitor(installedGlobalMonitor)
+            }
+            if let installedLocalMonitor {
+                monitorClient.removeMonitor(installedLocalMonitor)
+            }
+            let failure: MonitorStartFailure
+            switch (installedGlobalMonitor != nil, installedLocalMonitor != nil) {
+            case (false, false):
+                failure = .bothMonitorsUnavailable
+            case (false, true):
+                failure = .globalMonitorUnavailable
+            case (true, false):
+                failure = .localMonitorUnavailable
+            case (true, true):
+                preconditionFailure("complete monitor pair must pass the guard")
+            }
+            resetState()
+            logDiagnostics("hotkey.monitor_start_failed", metadata: [
+                "global_installed": String(installedGlobalMonitor != nil),
+                "local_installed": String(installedLocalMonitor != nil),
+                "failure": failure.rawValue
+            ])
+            onMonitorStartFailure?(failure)
+            return false
+        }
+
+        globalFlagsMonitor = installedGlobalMonitor
+        localFlagsMonitor = installedLocalMonitor
 
         logDiagnostics("hotkey.service_started", metadata: [
             "hold_threshold_ms": String(Int(holdThreshold * 1000)),
             "double_tap_threshold_ms": String(Int(doubleTapThreshold * 1000))
         ])
+        return true
     }
     
     private func handleFlagsChanged(_ event: NSEvent) {
@@ -105,7 +160,12 @@ final class HotkeyService {
             return
         }
 
-        fnCaptureID = captureIDFactory?()
+        guard let captureID = captureIDFactory?() else {
+            fnCaptureID = nil
+            logDiagnostics("hotkey.fn.admission_rejected")
+            return
+        }
+        fnCaptureID = captureID
         logDiagnostics("hotkey.fn.press", captureID: fnCaptureID, metadata: [
             "hold_threshold_ms": String(Int(holdThreshold * 1000))
         ])
@@ -117,8 +177,8 @@ final class HotkeyService {
             try? await Task.sleep(for: .milliseconds(Int(threshold * 1000)))
             guard let self, !Task.isCancelled else { return }
             guard !self.isLocked else { return }
+            guard self.fnKeyIsDown, self.fnCaptureID == captureID else { return }
             self.fnDelayedStartTask = nil
-            self.fnRecordingDidStart = true
             if let pressTime = self.fnPressTime {
                 let elapsedMs = Int(Date().timeIntervalSince(pressTime) * 1000)
                 self.logDiagnostics("hotkey.fn.threshold_met", captureID: self.fnCaptureID, metadata: [
@@ -130,7 +190,10 @@ final class HotkeyService {
                     "hold_threshold_ms": String(Int(threshold * 1000))
                 ])
             }
-            self.onKeyDown?()
+            self.fnRecordingDidStart = self.onKeyDown?(captureID) ?? false
+            if !self.fnRecordingDidStart {
+                self.logDiagnostics("hotkey.fn.capture_rejected", captureID: captureID)
+            }
         }
     }
     
@@ -230,17 +293,26 @@ final class HotkeyService {
         
         if let lastTap = lastRightOptionTapTime,
            now.timeIntervalSince(lastTap) < doubleTapThreshold {
+            lastRightOptionTapTime = nil
+            // Cold lock samples before any UI callback. Fn-to-lock keeps the
+            // original gesture's proof and never samples the current field.
+            guard let captureID = fnCaptureID ?? captureIDFactory?() else {
+                logDiagnostics("hotkey.lock.admission_rejected")
+                return
+            }
             fnDelayedStartTask?.cancel()
             fnDelayedStartTask = nil
-            if fnRecordingDidStart {
+            guard onKeyDown?(captureID) == true else {
                 fnRecordingDidStart = false
+                fnCaptureID = nil
+                logDiagnostics("hotkey.lock.capture_rejected", captureID: captureID)
+                return
             }
-            
+            fnRecordingDidStart = false
+            fnCaptureID = captureID
             isLocked = true
-            lastRightOptionTapTime = nil
-            logDiagnostics("hotkey.lock.engaged", metadata: ["double_tap_threshold_ms": String(Int(doubleTapThreshold * 1000))])
+            logDiagnostics("hotkey.lock.engaged", captureID: captureID, metadata: ["double_tap_threshold_ms": String(Int(doubleTapThreshold * 1000))])
             onLockEngaged?()
-            onKeyDown?()
         } else {
             lastRightOptionTapTime = now
             logDiagnostics("hotkey.lock.tap_registered")
@@ -248,22 +320,28 @@ final class HotkeyService {
     }
     
     func stop(reason: HotkeyServiceStopReason = .manualStop) {
-        let hadMonitor = flagsMonitor != nil
+        let hadGlobalMonitor = globalFlagsMonitor != nil
+        let hadLocalMonitor = localFlagsMonitor != nil
         let hadPendingThresholdTask = fnDelayedStartTask != nil
         let recordingActive = fnRecordingDidStart
         let fnWasDown = fnKeyIsDown
         let wasLocked = isLocked
         let captureID = fnCaptureID
 
-        if let flagsMonitor {
-            NSEvent.removeMonitor(flagsMonitor)
+        if let globalFlagsMonitor {
+            monitorClient.removeMonitor(globalFlagsMonitor)
+        }
+        if let localFlagsMonitor {
+            monitorClient.removeMonitor(localFlagsMonitor)
         }
 
         resetState()
 
         logDiagnostics("hotkey.service_stopped", captureID: captureID, metadata: [
             "reason": reason.rawValue,
-            "had_monitor": String(hadMonitor),
+            "had_monitor": String(hadGlobalMonitor || hadLocalMonitor),
+            "had_global_monitor": String(hadGlobalMonitor),
+            "had_local_monitor": String(hadLocalMonitor),
             "had_pending_threshold_task": String(hadPendingThresholdTask),
             "recording_active": String(recordingActive),
             "fn_key_down": String(fnWasDown),
@@ -272,7 +350,8 @@ final class HotkeyService {
     }
 
     private func resetState() {
-        flagsMonitor = nil
+        globalFlagsMonitor = nil
+        localFlagsMonitor = nil
         fnKeyIsDown = false
         fnCaptureID = nil
         fnDelayedStartTask?.cancel()
@@ -285,8 +364,6 @@ final class HotkeyService {
     }
 
     private func logDiagnostics(_ event: String, captureID: String? = nil, metadata: [String: String] = [:]) {
-        Task {
-            await CaptureDiagnostics.shared.mark(event, captureID: captureID, metadata: metadata)
-        }
+        diagnostics(event, captureID, metadata)
     }
 }

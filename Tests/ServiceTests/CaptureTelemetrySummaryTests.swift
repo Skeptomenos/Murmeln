@@ -54,8 +54,9 @@ struct CaptureTelemetrySummaryTests {
                 refinementFinishedAt: 1_900,
                 finalResultReadyAt: 1_900,
                 pasteCommandSentAt: 2_000,
-                pasteCompletedAt: 2_100,
-                pasteSucceeded: true
+                pasteAttemptFinishedAt: 2_100,
+                pasteCommandOutcome: .posted,
+                clipboardDisposition: .restored
             )
         )
 
@@ -65,8 +66,8 @@ struct CaptureTelemetrySummaryTests {
         #expect(metadata["refinement_config_fingerprint"]?.isEmpty == false)
     }
 
-    @Test("Summary metadata includes paste outcome")
-    func summaryIncludesPasteOutcome() {
+    @Test("Summary metadata reports command outcome without delivery claims")
+    func summaryReportsCommandOutcomeWithoutDeliveryClaims() {
         let context = TranscriptionRunContext(
             provider: TranscriptionProvider.whisperKit.rawValue,
             backendKind: .localNative,
@@ -97,12 +98,20 @@ struct CaptureTelemetrySummaryTests {
                 refinementFinishedAt: nil,
                 finalResultReadyAt: 1_500,
                 pasteCommandSentAt: 1_550,
-                pasteCompletedAt: 1_650,
-                pasteSucceeded: true
+                pasteAttemptFinishedAt: 1_650,
+                pasteCommandOutcome: .posted,
+                clipboardDisposition: .restored
             )
         )
 
-        #expect(summary.metadata["paste_succeeded"] == "true")
+        #expect(summary.metadata["paste_command_outcome"] == "posted")
+        #expect(summary.metadata["paste_blocker"] == "not_applicable")
+        #expect(summary.metadata["clipboard_disposition"] == "restored")
+        #expect(summary.metadata["paste_attempt_finished_at"] == "1650")
+        #expect(summary.metadata["stop_to_paste_attempt_finished_ms"] == "0")
+        #expect(summary.metadata["paste_succeeded"] == nil)
+        #expect(summary.metadata["paste_completed_at"] == nil)
+        #expect(summary.metadata["stop_to_paste_complete_ms"] == nil)
     }
 
     @Test("Parallel audit summary exposes selected-result and fanout attribution separately")
@@ -141,8 +150,9 @@ struct CaptureTelemetrySummaryTests {
                 auditVariantFailureCount: 1,
                 finalResultReadyAt: 1_900,
                 pasteCommandSentAt: 2_000,
-                pasteCompletedAt: 2_100,
-                pasteSucceeded: true
+                pasteAttemptFinishedAt: 2_100,
+                pasteCommandOutcome: .posted,
+                clipboardDisposition: .restored
             )
         )
 
@@ -186,8 +196,9 @@ struct CaptureTelemetrySummaryTests {
                 refinementFinishedAt: nil,
                 finalResultReadyAt: 1_500,
                 pasteCommandSentAt: 1_550,
-                pasteCompletedAt: 1_650,
-                pasteSucceeded: false
+                pasteAttemptFinishedAt: 1_650,
+                pasteCommandOutcome: .blocked(.secureInputActive),
+                clipboardDisposition: .transcriptPreserved
             ),
             processing: CaptureProcessingObservations(
                 rawAudioDurationMs: 900,
@@ -207,6 +218,11 @@ struct CaptureTelemetrySummaryTests {
         #expect(summary.metadata["speech_detected"] == "true")
         #expect(summary.metadata["transcription_character_count"] == "0")
         #expect(summary.metadata["completion_reason"] == "empty_transcript_skipped")
+        #expect(summary.metadata["paste_command_outcome"] == "blocked")
+        #expect(summary.metadata["paste_blocker"] == "secure_input_active")
+        #expect(summary.metadata["clipboard_disposition"] == "transcript_preserved")
+        #expect(summary.metadata["paste_command_sent_at"] == "not_applicable")
+        #expect(summary.metadata["app_post_backend_elapsed_ms"] == "not_applicable")
     }
 }
 

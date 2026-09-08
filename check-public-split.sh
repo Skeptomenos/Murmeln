@@ -62,6 +62,14 @@ find "$EXPORT_ROOT" -type f \( \
     -iname 'long_en.txt' \
 \) -print >> "$VIOLATIONS_FILE"
 
+# This public procedure is generic. Historical test identifiers and private
+# evidence pointers belong outside the exported documentation. Do not print
+# matching content because it may itself be private.
+PROCEDURE="$EXPORT_ROOT/docs/agent-dictation-testing.md"
+if [[ -f "$PROCEDURE" ]] && LC_ALL=C grep -Eq '/Users/|_planning/|[[:xdigit:]]{32,}|PID[[:space:]]+[0-9]+' "$PROCEDURE"; then
+    printf '%s\n' "$PROCEDURE" >> "$VIOLATIONS_FILE"
+fi
+
 if [[ -s "$VIOLATIONS_FILE" ]]; then
     echo "❌ check-public-split: private artifacts exist in the generated public export:"
     sed "s#^$EXPORT_ROOT/##" "$VIOLATIONS_FILE" | sort -u

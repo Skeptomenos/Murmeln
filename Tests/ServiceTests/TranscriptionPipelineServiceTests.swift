@@ -264,7 +264,9 @@ struct TranscriptionPipelineServiceTests {
                 transcriptionStartedAt: 3, transcriptionFinishedAt: 4,
                 refinementStartedAt: nil, refinementFinishedAt: nil,
                 finalResultReadyAt: 5, pasteCommandSentAt: 6,
-                pasteCompletedAt: 7, pasteSucceeded: true
+                pasteAttemptFinishedAt: 7,
+                pasteCommandOutcome: .posted,
+                clipboardDisposition: .restored
             )
         )
         #expect(summary.metadata["runtime"] == "whisperkit")

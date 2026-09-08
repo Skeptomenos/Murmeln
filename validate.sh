@@ -14,6 +14,7 @@ stage "swift build" &&
 swift build &&
 stage "swift test" &&
 swift test &&
+bash Tests/DevSigningTests.sh "Murmeln Dev" &&
 stage "xcodebuild Murmeln Dev" &&
 xcodebuild -project Murmeln.xcodeproj -scheme "Murmeln Dev" -configuration "Debug Dev" build -quiet &&
 stage "doc drift checks" &&

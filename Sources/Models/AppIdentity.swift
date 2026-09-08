@@ -1,4 +1,5 @@
 import Foundation
+import Security
 
 enum AppIdentity {
     static let productionBundleIdentifier = "com.mrml.app"
@@ -48,6 +49,35 @@ enum AppIdentity {
         }
 
         return isDevelopmentBuild ? "Murmeln Dev" : productionDisplayName
+    }
+
+    static var version: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown"
+    }
+
+    static var build: String {
+        Bundle.main.object(forInfoDictionaryKey: kCFBundleVersionKey as String) as? String ?? "unknown"
+    }
+
+    /// Best-effort signing identity for correlation, not a permission or validity receipt.
+    /// Cache it so normal paste attempts do not repeatedly inspect the code signature.
+    /// Security may read signing information from disk; this does not prove unchanged
+    /// executable contents if another process replaces the app while it is running.
+    static let codeHash: String? = {
+        var ownCode: SecCode?
+        guard SecCodeCopySelf([], &ownCode) == errSecSuccess, let ownCode else { return nil }
+        var staticCode: SecStaticCode?
+        guard SecCodeCopyStaticCode(ownCode, [], &staticCode) == errSecSuccess,
+              let staticCode else { return nil }
+        var information: CFDictionary?
+        guard SecCodeCopySigningInformation(staticCode, [], &information) == errSecSuccess,
+              let information = information as? [String: Any] else { return nil }
+        return codeHash(signingIdentifier: information[kSecCodeInfoUnique as String] as? Data)
+    }()
+
+    static func codeHash(signingIdentifier: Data?) -> String? {
+        guard let signingIdentifier, signingIdentifier.count == 20 else { return nil }
+        return signingIdentifier.map { String(format: "%02x", $0) }.joined()
     }
 
     static var applicationSupportDirectoryName: String {

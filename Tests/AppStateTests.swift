@@ -83,14 +83,16 @@ struct MockRefinementError: Error, LocalizedError {
 final class MockPipelineService: TranscriptionPipelineProviding, @unchecked Sendable {
     let transcriptionText: String
     let refinementShouldThrow: Bool
+    let mode: TranscriptionPipelineMode
 
-    init(transcriptionText: String, refinementShouldThrow: Bool) {
+    init(transcriptionText: String, refinementShouldThrow: Bool, mode: TranscriptionPipelineMode = .twoCallRefinement) {
         self.transcriptionText = transcriptionText
         self.refinementShouldThrow = refinementShouldThrow
+        self.mode = mode
     }
 
     func pipelineMode(for settings: PipelineSettingsSnapshot) -> TranscriptionPipelineMode {
-        .twoCallRefinement
+        mode
     }
 
     func executeTranscription(request: TranscriptionRequest) async throws -> TranscriptionExecutionResult {
@@ -101,7 +103,7 @@ final class MockPipelineService: TranscriptionPipelineProviding, @unchecked Send
                 provider: "mock",
                 backendKind: .cloud,
                 supportTier: .legacyCompatibility,
-                pipelineMode: .twoCallRefinement,
+                pipelineMode: mode,
                 model: "mock-model",
                 backendConfigFingerprint: "mock",
                 refinementProvider: "mock",
@@ -144,15 +146,54 @@ final class MockOverlay: OverlayPresenting {
 @MainActor
 final class MockPasteService: PasteServicing {
     private(set) var pastedTexts: [String] = []
+    private(set) var recoveryCopyTexts: [String] = []
+    var pasteTiming: PasteTiming
+    var recoveryCopyResults: [Bool]
 
-    func pasteAndRestore(text: String, captureID: String?) async -> PasteTiming {
+    init(
+        pasteTiming: PasteTiming = PasteTiming(
+            commandOutcome: .posted,
+            clipboardDisposition: .restored,
+            commandSentElapsedMs: 0,
+            totalElapsedMs: 0
+        ),
+        recoveryCopyResults: [Bool] = []
+    ) {
+        self.pasteTiming = pasteTiming
+        self.recoveryCopyResults = recoveryCopyResults
+    }
+
+    func pasteAndRestore(text: String, captureID: String?) async throws -> PasteTiming {
         pastedTexts.append(text)
-        return PasteTiming(succeeded: true, commandSentElapsedMs: 0, totalElapsedMs: 0)
+        return pasteTiming
+    }
+
+    func copyToClipboardForRecovery(text: String) -> Bool {
+        recoveryCopyTexts.append(text)
+        guard !recoveryCopyResults.isEmpty else { return false }
+        return recoveryCopyResults.removeFirst()
     }
 }
 
 @MainActor
 final class MockHistoryStore: HistoryStoring {
+    var mutationsSuspended = false
+    var protectedRecoveryID: UUID?
+    var onEntriesChanged: (@MainActor () -> Void)?
+    private var retained: [UUID: HistoryEntry] = [:]
+    func reserveCapacity() -> UUID? { UUID() }
+    func releaseReservation(_ token: UUID) {}
+    func entry(id: UUID) -> HistoryEntry? { retained[id] }
+    func flush() async -> Bool { true }
+    func retain(_ entry: HistoryEntry, reservation: UUID) -> Bool {
+        retained[entry.id] = entry
+        add(original: entry.original, refined: entry.refined, presetName: entry.safePresetName,
+            systemPrompt: entry.safeSystemPrompt, effectiveSystemPrompt: entry.effectiveSystemPrompt,
+            variants: entry.variants, variantPrompts: entry.variantPrompts,
+            effectiveVariantPrompts: entry.effectiveVariantPrompts)
+        onEntriesChanged?()
+        return true
+    }
     struct Entry {
         let original: String
         let refined: String
@@ -180,11 +221,11 @@ final class MockHistoryStore: HistoryStoring {
 enum AppStateTestFixtures {
     /// Writes a 0.5s 16kHz mono WAV loud enough that the real
     /// AudioRecorder.hasAudibleSpeech treats it as speech.
-    static func makeAudibleWAV() throws -> URL {
+    static func makeAudibleWAV(durationSeconds: Double = 0.5) throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("appstate-test-\(UUID().uuidString).wav")
         let sampleRate = 16_000.0
-        let frameCount = AVAudioFrameCount(sampleRate / 2)
+        let frameCount = AVAudioFrameCount(sampleRate * durationSeconds)
         guard let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: sampleRate, channels: 1, interleaved: false),
               let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount) else {
             throw MockRefinementError()
@@ -249,7 +290,45 @@ struct AppStateCaptureFlowTests {
         #expect(history.entries.first?.refined == "raw transcript survives")
         #expect(history.entries.first?.presetName.contains("refinement failed") == true)
         // The failure stays visible in the UI.
-        #expect(appState.lastError == "Refinement failed — pasted the raw transcript.")
+        #expect(appState.lastError == "Refinement failed — raw transcript paste command sent.")
+    }
+
+    @Test("Empty raw transcript after refinement failure does not claim a paste command")
+    func emptyRawTranscriptAfterRefinementFailureDoesNotClaimPasteCommand() async throws {
+        let previousParallel = AppSettings.shared.parallelRefinementEnabled
+        AppSettings.shared.parallelRefinementEnabled = false
+        defer { AppSettings.shared.parallelRefinementEnabled = previousParallel }
+
+        let recorder = MockAudioRecorder()
+        recorder.recordingURL = try AppStateTestFixtures.makeAudibleWAV(durationSeconds: 1.5)
+        let paste = MockPasteService(pasteTiming: PasteTiming(
+            commandOutcome: .notAttempted,
+            clipboardDisposition: .unchanged,
+            commandSentElapsedMs: nil,
+            totalElapsedMs: 0
+        ))
+        let history = MockHistoryStore()
+        var announcements: [String] = []
+        let appState = AppState(
+            audioRecorder: recorder,
+            pipelineService: MockPipelineService(transcriptionText: "", refinementShouldThrow: true),
+            overlay: MockOverlay(),
+            pasteService: paste,
+            historyStore: history,
+            permissionService: MockPermissionService(),
+            accessibilityAnnouncement: { announcements.append($0) }
+        )
+
+        appState.startRecording()
+        #expect(await waitUntil { appState.recordingPhase == .recording })
+        appState.stopAndProcess()
+        #expect(await waitUntil { appState.recordingPhase == .idle && paste.pastedTexts.count == 1 })
+
+        #expect(paste.pastedTexts == [""])
+        #expect(appState.lastError == "Refinement failed — the raw transcript was empty, so no paste command was sent.")
+        #expect(appState.pasteFailurePresentation == nil)
+        #expect(!announcements.contains("Paste command sent"))
+        #expect(!announcements.contains("Text pasted"))
     }
 
     @Test("Cancelling during the permission await leaves no zombie recording (H2/spec-002)")
@@ -314,13 +393,15 @@ struct AppStateCaptureFlowTests {
         recorder.recordingURL = try AppStateTestFixtures.makeAudibleWAV()
         let paste = MockPasteService()
         let history = MockHistoryStore()
+        var announcements: [String] = []
         let appState = AppState(
             audioRecorder: recorder,
             pipelineService: MockPipelineService(transcriptionText: "hello", refinementShouldThrow: false),
             overlay: MockOverlay(),
             pasteService: paste,
             historyStore: history,
-            permissionService: MockPermissionService()
+            permissionService: MockPermissionService(),
+            accessibilityAnnouncement: { announcements.append($0) }
         )
 
         appState.startRecording()
@@ -332,5 +413,293 @@ struct AppStateCaptureFlowTests {
         #expect(paste.pastedTexts == ["refined: hello"])
         #expect(history.entries.first?.refined == "refined: hello")
         #expect(appState.lastError == nil)
+        #expect(announcements.last == "Paste command sent")
+        #expect(!announcements.contains("Text pasted"))
+    }
+
+    @Test("Every paste blocker reaches AppState with its exact recovery message")
+    func pasteBlockersReachAppStateWithExactRecovery() async throws {
+        let previousParallel = AppSettings.shared.parallelRefinementEnabled
+        AppSettings.shared.parallelRefinementEnabled = false
+        defer { AppSettings.shared.parallelRefinementEnabled = previousParallel }
+
+        let blockers: [PasteBlocker] = [
+            .postEventAccessDenied,
+            .secureInputActive,
+            .keyEventCreationFailed,
+            .clipboardWriteFailed,
+            .clipboardChanged,
+            .clipboardSnapshotUnavailable,
+            .cancelled,
+        ]
+
+        for blocker in blockers {
+            let pasteAttemptID = "ABCDEF12-\(blocker.rawValue)"
+            let recorder = MockAudioRecorder()
+            recorder.recordingURL = try AppStateTestFixtures.makeAudibleWAV()
+            let paste = MockPasteService(pasteTiming: PasteTiming(
+                commandOutcome: .blocked(blocker),
+                clipboardDisposition: .transcriptPreserved,
+                commandSentElapsedMs: nil,
+                totalElapsedMs: 0,
+                pasteAttemptID: pasteAttemptID
+            ))
+            let history = MockHistoryStore()
+            var announcements: [String] = []
+            let appState = AppState(
+                audioRecorder: recorder,
+                pipelineService: MockPipelineService(transcriptionText: "hello", refinementShouldThrow: false),
+                overlay: MockOverlay(),
+                pasteService: paste,
+                historyStore: history,
+                permissionService: MockPermissionService(),
+                accessibilityAnnouncement: { announcements.append($0) }
+            )
+
+            appState.startRecording()
+            #expect(await waitUntil { appState.recordingPhase == .recording })
+            appState.stopAndProcess()
+            #expect(await waitUntil { appState.recordingPhase == .idle && history.entries.count == 1 })
+
+            let expected = PasteFailurePresentation(
+                blocker: blocker,
+                clipboardDisposition: .transcriptPreserved,
+                pasteAttemptID: pasteAttemptID
+            )
+            #expect(appState.lastError == expected.message)
+            #expect(appState.pasteFailurePresentation == expected)
+            #expect(announcements.last == expected.message)
+            #expect(history.entries.first?.original == "hello")
+            #expect(history.entries.first?.refined == "refined: hello")
+        }
+    }
+
+    @Test("Posted command keeps its outcome when clipboard restoration fails")
+    func postedCommandWithRestoreFailureWarnsWithoutInventingDelivery() async throws {
+        let previousParallel = AppSettings.shared.parallelRefinementEnabled
+        AppSettings.shared.parallelRefinementEnabled = false
+        defer { AppSettings.shared.parallelRefinementEnabled = previousParallel }
+
+        let recorder = MockAudioRecorder()
+        recorder.recordingURL = try AppStateTestFixtures.makeAudibleWAV()
+        let paste = MockPasteService(pasteTiming: PasteTiming(
+            commandOutcome: .posted,
+            clipboardDisposition: .restoreFailed,
+            commandSentElapsedMs: 1,
+            totalElapsedMs: 2
+        ))
+        let history = MockHistoryStore()
+        var announcements: [String] = []
+        let appState = AppState(
+            audioRecorder: recorder,
+            pipelineService: MockPipelineService(transcriptionText: "hello", refinementShouldThrow: false),
+            overlay: MockOverlay(),
+            pasteService: paste,
+            historyStore: history,
+            permissionService: MockPermissionService(),
+            accessibilityAnnouncement: { announcements.append($0) }
+        )
+
+        appState.startRecording()
+        #expect(await waitUntil { appState.recordingPhase == .recording })
+        appState.stopAndProcess()
+        #expect(await waitUntil { appState.recordingPhase == .idle && history.entries.count == 1 })
+
+        let warning = "Paste command sent, but Murmeln could not restore your previous clipboard contents."
+        #expect(appState.lastError == warning)
+        #expect(appState.pasteFailurePresentation == nil)
+        #expect(Array(announcements.suffix(2)) == ["Paste command sent", warning])
+        #expect(!announcements.contains("Text pasted"))
+    }
+
+    @Test("Blocked command with a newer clipboard write offers truthful History recovery")
+    func blockedCommandWithExternalWriteOffersHistoryRecovery() async throws {
+        let previousParallel = AppSettings.shared.parallelRefinementEnabled
+        AppSettings.shared.parallelRefinementEnabled = false
+        defer { AppSettings.shared.parallelRefinementEnabled = previousParallel }
+
+        let recorder = MockAudioRecorder()
+        recorder.recordingURL = try AppStateTestFixtures.makeAudibleWAV()
+        let paste = MockPasteService(pasteTiming: PasteTiming(
+            commandOutcome: .blocked(.postEventAccessDenied),
+            clipboardDisposition: .externalWritePreserved,
+            commandSentElapsedMs: nil,
+            totalElapsedMs: 1
+        ))
+        let history = MockHistoryStore()
+        var announcements: [String] = []
+        let appState = AppState(
+            audioRecorder: recorder,
+            pipelineService: MockPipelineService(transcriptionText: "hello", refinementShouldThrow: false),
+            overlay: MockOverlay(),
+            pasteService: paste,
+            historyStore: history,
+            permissionService: MockPermissionService(),
+            accessibilityAnnouncement: { announcements.append($0) }
+        )
+
+        appState.startRecording()
+        #expect(await waitUntil { appState.recordingPhase == .recording })
+        appState.stopAndProcess()
+        #expect(await waitUntil { appState.recordingPhase == .idle && history.entries.count == 1 })
+
+        let expected = PasteFailurePresentation(
+            blocker: .postEventAccessDenied,
+            clipboardDisposition: .externalWritePreserved
+        )
+        #expect(appState.lastError == expected.message)
+        #expect(appState.pasteFailurePresentation == expected)
+        #expect(expected.recoveryActions.contains(.openHistory))
+        #expect(!expected.message.contains("Your transcript is on the clipboard"))
+        #expect(announcements.last == expected.message)
+    }
+
+    @Test("Clipboard write failure keeps History recovery and Copy Again retries the exact final text")
+    func clipboardWriteFailureOffersCheckedCopyAgain() async throws {
+        let previousParallel = AppSettings.shared.parallelRefinementEnabled
+        AppSettings.shared.parallelRefinementEnabled = false
+        defer { AppSettings.shared.parallelRefinementEnabled = previousParallel }
+
+        let recorder = MockAudioRecorder()
+        recorder.recordingURL = try AppStateTestFixtures.makeAudibleWAV()
+        let paste = MockPasteService(
+            pasteTiming: PasteTiming(
+                commandOutcome: .blocked(.clipboardWriteFailed),
+                clipboardDisposition: .restored,
+                commandSentElapsedMs: nil,
+                totalElapsedMs: 0,
+            ),
+            recoveryCopyResults: [false, true]
+        )
+        let history = MockHistoryStore()
+        var announcements: [String] = []
+        let appState = AppState(
+            audioRecorder: recorder,
+            pipelineService: MockPipelineService(transcriptionText: "recoverable", refinementShouldThrow: false),
+            overlay: MockOverlay(),
+            pasteService: paste,
+            historyStore: history,
+            permissionService: MockPermissionService(),
+            accessibilityAnnouncement: { announcements.append($0) }
+        )
+
+        appState.startRecording()
+        #expect(await waitUntil { appState.recordingPhase == .recording })
+        appState.stopAndProcess()
+        #expect(await waitUntil { appState.recordingPhase == .idle && history.entries.count == 1 })
+
+        let expected = PasteFailurePresentation(
+            blocker: .clipboardWriteFailed,
+            clipboardDisposition: .restored
+        )
+        #expect(appState.pasteFailurePresentation == expected)
+        #expect(expected.recoveryActions.contains(.openHistory))
+        #expect(expected.recoveryActions.contains(.copyAgain))
+        #expect(history.entries.first?.refined == "refined: recoverable")
+
+        appState.copyFailedPasteAgain()
+        #expect(paste.recoveryCopyTexts == ["refined: recoverable"])
+        #expect(appState.pasteFailurePresentation == expected)
+        #expect(appState.lastError == expected.message)
+
+        appState.copyFailedPasteAgain()
+        #expect(paste.recoveryCopyTexts == ["refined: recoverable", "refined: recoverable"])
+        #expect(appState.pasteFailurePresentation == expected)
+        #expect(appState.hasPasteRecovery)
+        #expect(announcements.last == ClipboardCopyOutcome.copied.message)
+    }
+
+    @Test("Cancelled warm-up preserves a prior clipboard recovery action")
+    func cancelledWarmUpPreservesPasteRecovery() async throws {
+        let previousParallel = AppSettings.shared.parallelRefinementEnabled
+        AppSettings.shared.parallelRefinementEnabled = false
+        defer { AppSettings.shared.parallelRefinementEnabled = previousParallel }
+
+        let recorder = MockAudioRecorder()
+        recorder.recordingURL = try AppStateTestFixtures.makeAudibleWAV()
+        let paste = MockPasteService(pasteTiming: PasteTiming(
+            commandOutcome: .blocked(.clipboardWriteFailed),
+            clipboardDisposition: .restored,
+            commandSentElapsedMs: nil,
+            totalElapsedMs: 0,
+        ))
+        let history = MockHistoryStore()
+        let appState = AppState(
+            audioRecorder: recorder,
+            pipelineService: MockPipelineService(transcriptionText: "recover me", refinementShouldThrow: false),
+            overlay: MockOverlay(),
+            pasteService: paste,
+            historyStore: history,
+            permissionService: MockPermissionService(),
+            accessibilityAnnouncement: { _ in }
+        )
+
+        appState.startRecording()
+        #expect(await waitUntil { appState.recordingPhase == .recording })
+        appState.stopAndProcess()
+        #expect(await waitUntil { appState.recordingPhase == .idle && history.entries.count == 1 })
+
+        let expected = PasteFailurePresentation(
+            blocker: .clipboardWriteFailed,
+            clipboardDisposition: .restored
+        )
+        #expect(appState.pasteFailurePresentation == expected)
+
+        recorder.prepareEngineDelayMs = 150
+        appState.warmUpEngine()
+        #expect(await waitUntil { appState.recordingPhase == .warmingUp })
+        appState.cancelWarmUp()
+        try await Task.sleep(for: .milliseconds(250))
+
+        #expect(appState.recordingPhase == .idle)
+        #expect(appState.pasteFailurePresentation == expected)
+        #expect(appState.lastError == expected.message)
+    }
+
+    @Test("Starting a new recording preserves the prior recovery result")
+    func newRecordingPreservesPasteRecovery() async throws {
+        let previousParallel = AppSettings.shared.parallelRefinementEnabled
+        AppSettings.shared.parallelRefinementEnabled = false
+        defer { AppSettings.shared.parallelRefinementEnabled = previousParallel }
+
+        let recorder = MockAudioRecorder()
+        recorder.recordingURL = try AppStateTestFixtures.makeAudibleWAV()
+        let paste = MockPasteService(pasteTiming: PasteTiming(
+            commandOutcome: .blocked(.clipboardWriteFailed),
+            clipboardDisposition: .restored,
+            commandSentElapsedMs: nil,
+            totalElapsedMs: 0,
+        ))
+        let history = MockHistoryStore()
+        let appState = AppState(
+            audioRecorder: recorder,
+            pipelineService: MockPipelineService(transcriptionText: "first", refinementShouldThrow: false),
+            overlay: MockOverlay(),
+            pasteService: paste,
+            historyStore: history,
+            permissionService: MockPermissionService(),
+            accessibilityAnnouncement: { _ in }
+        )
+
+        appState.startRecording()
+        #expect(await waitUntil { appState.recordingPhase == .recording })
+        appState.stopAndProcess()
+        #expect(await waitUntil { appState.recordingPhase == .idle && history.entries.count == 1 })
+        #expect(appState.pasteFailurePresentation != nil)
+
+        recorder.recordingURL = try AppStateTestFixtures.makeAudibleWAV()
+        paste.pasteTiming = PasteTiming(
+            commandOutcome: .posted,
+            clipboardDisposition: .restored,
+            commandSentElapsedMs: 0,
+            totalElapsedMs: 0
+        )
+        appState.startRecording()
+        #expect(await waitUntil { appState.recordingPhase == .recording })
+
+        #expect(appState.pasteFailurePresentation != nil)
+
+        appState.stopAndProcess()
+        #expect(await waitUntil { appState.recordingPhase == .idle && history.entries.count == 2 })
     }
 }

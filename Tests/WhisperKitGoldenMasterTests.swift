@@ -108,8 +108,9 @@ struct WhisperKitGoldenMasterTests {
             refinementFinishedAt: nil,
             finalResultReadyAt: 2_600_000_000,
             pasteCommandSentAt: 2_700_000_000,
-            pasteCompletedAt: 2_800_000_000,
-            pasteSucceeded: true
+            pasteAttemptFinishedAt: 2_800_000_000,
+            pasteCommandOutcome: .posted,
+            clipboardDisposition: .restored
         )
         let summary = CaptureTelemetrySummary(
             captureID: "golden-capture",

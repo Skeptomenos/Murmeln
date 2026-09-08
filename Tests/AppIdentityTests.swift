@@ -1,8 +1,26 @@
+import Foundation
 import Testing
 @testable import mrml
 
 @Suite("AppIdentity Tests")
 struct AppIdentityTests {
+
+    @Test("Signing identity distinguishes builds that share a version and build number")
+    func signingIdentityDistinguishesBuilds() {
+        let first = Data((0..<20).map(UInt8.init))
+        let second = Data(repeating: 255, count: 20)
+        #expect(AppIdentity.codeHash(signingIdentifier: first) == "000102030405060708090a0b0c0d0e0f10111213")
+        #expect(AppIdentity.codeHash(signingIdentifier: second) == String(repeating: "ff", count: 20))
+        #expect(AppIdentity.codeHash(signingIdentifier: first) != AppIdentity.codeHash(signingIdentifier: second))
+    }
+
+    @Test("Unavailable or unexpected signing data stays unknown")
+    func unavailableSigningIdentity() {
+        #expect(AppIdentity.codeHash(signingIdentifier: nil) == nil)
+        #expect(AppIdentity.codeHash(signingIdentifier: Data()) == nil)
+        #expect(AppIdentity.codeHash(signingIdentifier: Data("not signature".utf8)) == nil)
+        #expect(AppIdentity.codeHash(signingIdentifier: Data(repeating: 0, count: 21)) == nil)
+    }
 
     @Test("Production bundle identity remains stable")
     func productionIdentity() {

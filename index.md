@@ -1,6 +1,6 @@
 # Murmeln Index
 
-> Last updated: 2026-08-08
+> Last updated: 2026-09-08
 
 ## Project
 
@@ -8,20 +8,30 @@
 - **Tech:** Swift 6, SwiftUI, macOS 26+, Apple Silicon
 - **README:** `README.md`
 - **Active roadmap Linear:** `DEV-33` — Murmeln truth pass and improvement roadmap
-- **Active phase Linear:** `DEV-33` — user-priority production, menu-bar, and tail-capture work
+- **Active phase Linear:** `DEV-150` — five final-source native Notion and five TextEdit controls passed; live safety acceptance remains open.
 - **Superseded phase Linear:** `DEV-48` — Phase 7B: Cohere/MLX first-class integration (paused 2026-06-10, superseded by Phase 8)
 - **Last completed phase Linear:** TBD — Phase 8 completed without a dedicated issue; delivery is recorded in PR #217
-- **Active phase plan:** `_planning/plans/2026-08-08-murmeln-production-menu-bar-tail-capture.md`
+- **Active phase plan:** `_planning/plans/2026-08-30-murmeln-secure-input-recovery.md`
 - **Last completed phase plan:** `_planning/plans/2026-07-08-murmeln-phase-8-local-runtime-catalog.md`
-- **Recommended execution branch:** `apps/murmeln/menu-bar-tail-cutoff`
+- **Execution branch:** `codex/murmeln-dev150-resume` in worktree `23be`, continuing PR #241 at `61a2ee32`. Original worktree `2790` remains preserved.
+- **Integration branch:** `apps/murmeln/2.6.2-integration` in worktree `cc92`, combining PR #241 at `0cad7387` and PR #246 at `93c22be1`. Validation and remaining release limits are recorded in the active phase plan.
 - **Phase 8 status (2026-07-17):** Complete. PR #217 merged as `7592218`; the in-process catalog and Python-bridge retirement are on `main`.
-- **Current order:** validate source and gate → keep windows menu-bar-only → diagnose final-buffer loss → promote production → remove Dev bundles. Resume the paused post-Phase 8 plan afterward.
+- **Current order:** Forward-looking reliability and observability. The user stopped historical attribution on September 8. Stable signed Dev is active; preserve it. Current logs distinguish common app-side paste refusals, with remaining gaps for pre-admission cancellation and generic target-inspection failures. Four live safety cases remain deferred; the active plan owns next work.
 
 ## Commands
 
 ```bash
 # Build (debug)
 swift build
+
+# Set up the free local Dev signing identity once; reused on later runs
+bash scripts/setup-dev-signing.sh
+
+# Build and verify Dev without launching it
+bash scripts/build-dev.sh
+
+# Full local gate, including cross-build signing identity
+bash validate.sh
 
 # Build (release via xcodebuild)
 xcodebuild -scheme Murmeln -configuration Release -derivedDataPath build build
@@ -80,11 +90,12 @@ Use a lightweight router-plus-layers model.
 | Router | `index.md` | Points to the currently active planning files | Active file changes |
 | Roadmap | `_planning/plans/2026-03-28-murmeln-plan.md` | Strategy, phases, priorities, directives | Scope or priority changes |
 | Findings | `_planning/plans/2026-03-28-murmeln-findings.md` | Durable discoveries, evidence, and investigation notes | After investigation work |
-| Phase Plan | `_planning/plans/2026-08-08-murmeln-production-menu-bar-tail-capture.md` | Execution-ready plan for the current phase | When the active phase changes |
+| Phase Plan | `_planning/plans/2026-08-30-murmeln-secure-input-recovery.md` | Execution-ready plan for the current phase | When the active phase changes |
 
 External tracker:
 
 - `DEV-33` — umbrella roadmap tracking in Linear
+- `DEV-150` — current behavior specification in Linear and local living plan; scoped prerequisites validated; implementation and acceptance evidence in the active plan
 - Phase 8 — completed in PR #217 (no dedicated Linear issue was created)
 - `DEV-53` — completed: hardening and self-correction-loop adoption
 - `DEV-48` — superseded Phase 7B: Cohere/MLX first-class integration
