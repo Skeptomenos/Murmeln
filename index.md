@@ -1,6 +1,6 @@
 # Murmeln Index
 
-> Last updated: 2026-09-08
+> Last updated: 2026-09-12
 
 ## Project
 
@@ -13,8 +13,9 @@
 - **Last completed phase Linear:** TBD — Phase 8 completed without a dedicated issue; delivery is recorded in PR #217
 - **Active phase plan:** `_planning/plans/2026-08-30-murmeln-secure-input-recovery.md`
 - **Last completed phase plan:** `_planning/plans/2026-07-08-murmeln-phase-8-local-runtime-catalog.md`
-- **Execution branch:** `codex/murmeln-dev150-resume` in worktree `23be`, continuing PR #241 at `61a2ee32`. Original worktree `2790` remains preserved.
-- **Integration branch:** `apps/murmeln/2.6.2-integration` in worktree `cc92`, combining PR #241 at `0cad7387` and PR #246 at `93c22be1`. Validation and remaining release limits are recorded in the active phase plan.
+- **Source integration:** PRs #248 and #249 integrated the combined recovery, History UI, diagnostics, and public export repair. PRs #241 and #246 closed as superseded on September 12 after source comparison. DEV-150 remains In Progress for the unresolved acceptance work.
+- **Retained runtime integration:** PR #256 merged at `c7a42122` with the remaining model, runtime, update, audio, and Settings work from #243. Final reviewed head: `931d954b`. Original #243 closed as superseded; its branch and original worktree remain preserved. See the findings record for validation and cancellation limits.
+- **Historical worktrees:** `codex/murmeln-dev150-resume` (`23be`), the original `2790` checkout, and `apps/murmeln/2.6.2-integration` (`cc92`) remain preserved. They are evidence and recovery pointers, not pending source-integration instructions. Start future changes from current main in a scoped branch.
 - **Phase 8 status (2026-07-17):** Complete. PR #217 merged as `7592218`; the in-process catalog and Python-bridge retirement are on `main`.
 - **Current order:** Forward-looking reliability and observability. The user stopped historical attribution on September 8. Stable signed Dev is active; preserve it. Current logs distinguish common app-side paste refusals, with remaining gaps for pre-admission cancellation and generic target-inspection failures. Four live safety cases remain deferred; the active plan owns next work.
 
