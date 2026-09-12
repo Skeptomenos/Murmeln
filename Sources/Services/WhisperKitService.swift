@@ -196,9 +196,23 @@ final class WhisperKitService: ObservableObject {
     
     // Download task for cancellation
     private var downloadTask: Task<URL, Error>?
+    private var downloadAttemptID: UUID?
+    private var downloadCompletionWaiters: [CheckedContinuation<Void, Never>] = []
+    private var deletionAttemptID: UUID?
+    private var deletionCompletionWaiters: [CheckedContinuation<Void, Never>] = []
     private var downloadGeneration: UInt64 = 0
     private var loadGeneration: UInt64 = 0
     private let modelsDirectoryOverride: URL?
+    typealias ModelUnloader = @MainActor () async -> Void
+    typealias ModelFolderRemover = @MainActor (_ modelFolder: URL) throws -> Void
+    typealias ModelDownloader = @MainActor (
+        _ variant: String,
+        _ downloadBase: URL,
+        _ progress: @escaping @Sendable (Progress) -> Void
+    ) async throws -> URL
+    private let modelUnloader: ModelUnloader?
+    private let modelFolderRemover: ModelFolderRemover
+    private let modelDownloader: ModelDownloader
     
     // Worker actor
     private let worker = WhisperKitWorker()
@@ -220,6 +234,7 @@ final class WhisperKitService: ObservableObject {
         case modelNotFound(String)
         case transcriptionFailed
         case downloadCancelled
+        case downloadInProgress
         
         var errorDescription: String? {
             switch self {
@@ -227,6 +242,7 @@ final class WhisperKitService: ObservableObject {
             case .modelNotFound(let variant): return "Model '\(variant)' not found. Please download it first."
             case .transcriptionFailed: return "Transcription failed"
             case .downloadCancelled: return "Download cancelled"
+            case .downloadInProgress: return "Another WhisperKit model operation is still in progress"
             }
         }
     }
@@ -244,9 +260,30 @@ final class WhisperKitService: ObservableObject {
         
         return modelsDir
     }
+
+    var isModelMutationInProgress: Bool {
+        downloadAttemptID != nil || deletionAttemptID != nil
+    }
     
-    init(modelsDirectory: URL? = nil) {
+    init(
+        modelsDirectory: URL? = nil,
+        modelUnloader: ModelUnloader? = nil,
+        modelFolderRemover: @escaping ModelFolderRemover = { modelFolder in
+            try FileManager.default.removeItem(at: modelFolder)
+        },
+        modelDownloader: @escaping ModelDownloader = { variant, downloadBase, progress in
+            try await WhisperKit.download(
+                variant: variant,
+                downloadBase: downloadBase,
+                useBackgroundSession: false,
+                progressCallback: progress
+            )
+        }
+    ) {
         modelsDirectoryOverride = modelsDirectory
+        self.modelUnloader = modelUnloader
+        self.modelFolderRemover = modelFolderRemover
+        self.modelDownloader = modelDownloader
         Task {
             scanDownloadedModels()
         }
@@ -485,8 +522,14 @@ final class WhisperKitService: ObservableObject {
     
     // Download a model with progress
     func downloadModel(_ variant: String) async throws -> URL {
+        guard !isModelMutationInProgress else {
+            throw ServiceError.downloadInProgress
+        }
+
         downloadGeneration &+= 1
         let generation = downloadGeneration
+        let attemptID = UUID()
+        downloadAttemptID = attemptID
         modelState = .downloading
         isDownloading = true
         downloadProgress = 0
@@ -506,27 +549,15 @@ final class WhisperKitService: ObservableObject {
             // Check for cancellation before starting
             try Task.checkCancellation()
             
-            let modelFolder = try await WhisperKit.download(
-                variant: variant,
-                downloadBase: modelsDirectory,
-                useBackgroundSession: false, // Use foreground session for cancellation support
-                progressCallback: progressCallback
-            )
-            
-            // Check for cancellation after download
-            try Task.checkCancellation()
-            
-            return modelFolder
+            return try await modelDownloader(variant, modelsDirectory, progressCallback)
         }
         
         downloadTask = task
+        defer { finishDownloadAttempt(attemptID) }
         
         do {
             let modelFolder = try await task.value
-            guard generation == downloadGeneration else {
-                throw ServiceError.downloadCancelled
-            }
-            
+
             // Mark as downloaded in AppSettings
             var current = AppSettings.shared.installedWhisperModels
             if !current.contains(variant) {
@@ -534,22 +565,21 @@ final class WhisperKitService: ObservableObject {
                 AppSettings.shared.installedWhisperModels = current
             }
             scanDownloadedModels()
-            
+
             modelState = .unloaded // Ready to load
-            isDownloading = false
-            downloadTask = nil
+            guard generation == downloadGeneration, !Task.isCancelled else {
+                downloadStatus = "Download finished after cancellation"
+                throw ServiceError.downloadCancelled
+            }
             return modelFolder
         } catch {
-            let cancelled = Task.isCancelled
+            let cancelled = generation != downloadGeneration
+                || Task.isCancelled
                 || error is CancellationError
                 || (error as? ServiceError) == .downloadCancelled
-            if generation == downloadGeneration {
-                modelState = cancelled ? .unloaded : .error(error.localizedDescription)
-                isDownloading = false
-                downloadTask = nil
-                if cancelled {
-                    downloadStatus = "Download cancelled"
-                }
+            modelState = cancelled ? .unloaded : .error(error.localizedDescription)
+            if cancelled {
+                downloadStatus = "Download cancelled"
             }
             if cancelled {
                 throw ServiceError.downloadCancelled
@@ -560,19 +590,31 @@ final class WhisperKitService: ObservableObject {
     
     /// Cancel the current download
     func cancelDownload() {
-        guard let downloadTask else { return }
+        guard downloadAttemptID != nil else { return }
         downloadGeneration &+= 1
-        downloadTask.cancel()
-        self.downloadTask = nil
-        isDownloading = false
-        downloadStatus = "Cancelled"
-        modelState = .unloaded
+        // WhisperKit's SDK cancellation can report completion before its cache
+        // writer has stopped. Keep the inner task alive and owned until it
+        // returns; callers observe logical cancellation after that join.
+        downloadStatus = "Cancelling safely…"
     }
 
     /// Delete one concrete WhisperKit variant and reconcile the persisted
     /// installed-model index. Production and Dev identities resolve separate
     /// `modelsDirectory` roots through AppIdentity.
     func deleteModel(_ variant: String) async throws {
+        while deletionAttemptID != nil {
+            await waitForDeletionCompletion()
+        }
+
+        let attemptID = UUID()
+        deletionAttemptID = attemptID
+        defer { finishDeletionAttempt(attemptID) }
+
+        if downloadAttemptID != nil {
+            cancelDownload()
+            await waitForDownloadCompletion()
+        }
+
         if selectedModel == variant {
             await unloadModel()
         }
@@ -581,17 +623,53 @@ final class WhisperKitService: ObservableObject {
             .appendingPathComponent("models/argmaxinc/whisperkit-coreml")
             .appendingPathComponent(variant)
         if FileManager.default.fileExists(atPath: modelFolder.path) {
-            try FileManager.default.removeItem(at: modelFolder)
+            try modelFolderRemover(modelFolder)
         }
 
         AppSettings.shared.installedWhisperModels.removeAll { $0 == variant }
         scanDownloadedModels()
     }
+
+    private func waitForDownloadCompletion() async {
+        guard downloadAttemptID != nil else { return }
+        await withCheckedContinuation { continuation in
+            downloadCompletionWaiters.append(continuation)
+        }
+    }
+
+    private func finishDownloadAttempt(_ attemptID: UUID) {
+        guard downloadAttemptID == attemptID else { return }
+        downloadTask = nil
+        downloadAttemptID = nil
+        isDownloading = false
+        let waiters = downloadCompletionWaiters
+        downloadCompletionWaiters.removeAll()
+        waiters.forEach { $0.resume() }
+    }
+
+    private func waitForDeletionCompletion() async {
+        guard deletionAttemptID != nil else { return }
+        await withCheckedContinuation { continuation in
+            deletionCompletionWaiters.append(continuation)
+        }
+    }
+
+    private func finishDeletionAttempt(_ attemptID: UUID) {
+        guard deletionAttemptID == attemptID else { return }
+        deletionAttemptID = nil
+        let waiters = deletionCompletionWaiters
+        deletionCompletionWaiters.removeAll()
+        waiters.forEach { $0.resume() }
+    }
     
     /// Unload the current model to free memory
     func unloadModel() async {
         loadGeneration &+= 1
-        await worker.unload()
+        if let modelUnloader {
+            await modelUnloader()
+        } else {
+            await worker.unload()
+        }
         modelState = .unloaded
         selectedModel = ""
         print("🔄 Model unloaded")

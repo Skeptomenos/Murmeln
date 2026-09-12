@@ -128,11 +128,15 @@ struct MenuContent: View {
         
             Button(updateService.isChecking ? "Checking..." : "Check for Updates...") {
                 Task {
-                    await updateService.checkForUpdates()
-                    if updateService.updateAvailable {
+                    switch await updateService.checkForUpdates() {
+                    case .updateAvailable:
                         updateService.showUpdateAlert()
-                    } else {
+                    case .upToDate:
                         updateService.showUpToDateAlert()
+                    case .failed:
+                        updateService.showUpdateCheckFailedAlert()
+                    case .disabled:
+                        break
                     }
                 }
             }
@@ -180,14 +184,20 @@ struct MenuContent: View {
 class AppDelegate: NSObject, NSApplicationDelegate {
     private let terminateApplication: @MainActor () -> Void
     private let restartService: RestartService
+    private let runtimeRegistry: TranscriptionRuntimeRegistry
 
     override convenience init() {
-        self.init(terminateApplication: { NSApp.terminate(nil) })
+        self.init(terminateApplication: { NSApp.terminate(nil) }, runtimeRegistry: .shared)
     }
 
-    init(terminateApplication: @escaping @MainActor () -> Void, restartService: RestartService = RestartService()) {
+    init(
+        terminateApplication: @escaping @MainActor () -> Void,
+        restartService: RestartService = RestartService(),
+        runtimeRegistry: TranscriptionRuntimeRegistry = .shared
+    ) {
         self.terminateApplication = terminateApplication
         self.restartService = restartService
+        self.runtimeRegistry = runtimeRegistry
         super.init()
     }
     private var allowLossOnNextQuit = false
@@ -219,22 +229,36 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func prepareToExit() async -> Bool {
-            if restartRequested {
-                guard await restartService.launchReplacement() else {
-                    AppState.shared.lastError = restartService.failureMessage
-                    return false
-                }
+        await selectionLifecycle.cancel()
+        if restartRequested {
+            guard await restartService.launchReplacement() else {
+                AppState.shared.lastError = restartService.failureMessage
+                return false
             }
-            let phase = AppState.shared.diagnosticsRecordingPhaseName
-            let captureID = AppState.shared.diagnosticsActiveCaptureID
-            await CaptureDiagnostics.shared.endSession(reason: "application_terminating",
-                recordingPhase: phase, activeCaptureID: captureID)
-            return true
+        }
+        let phase = AppState.shared.diagnosticsRecordingPhaseName
+        let captureID = AppState.shared.diagnosticsActiveCaptureID
+        await CaptureDiagnostics.shared.endSession(
+            reason: "application_terminating",
+            recordingPhase: phase,
+            activeCaptureID: captureID
+        )
+        return true
     }
     private var cancellables = Set<AnyCancellable>()
     private var recoveryNotice: RecoveryNoticeController?
     private lazy var selectionLifecycle = TranscriptionSelectionLifecycle(
-        runtimeForModel: Self.runtime(for:)
+        runtimeRegistry: runtimeRegistry,
+        onLoadFailure: { modelID, error in
+            appDelegateLogger.error(
+                "Warm-up failed for \(modelID.rawValue, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            )
+        },
+        onMissingModel: { modelID in
+            appDelegateLogger.info(
+                "Catalog model \(modelID.rawValue, privacy: .public) not installed; skipping warm-up (settings pane offers the download)"
+            )
+        }
     )
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -256,8 +280,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         overlay.showAlways()
         
         Task {
-            await UpdateService.shared.checkForUpdates(automatically: true)
-            if UpdateService.shared.updateAvailable {
+            if await UpdateService.shared.checkForUpdates(automatically: true) == .updateAvailable {
                 UpdateService.shared.showUpdateAlert()
             }
         }
@@ -297,56 +320,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Phase 8: eager warm-up of the selected catalog runtime; recording
         // state machine remains untouched.
-        Task { @MainActor in
-            await Self.warmSelectedBackend()
-        }
+        selectionLifecycle.warm(AppSettings.shared.transcriptionSelection)
 
         // Phase 8 / M6: one complete transition owns unload + warm-up for
         // catalog↔catalog and catalog↔legacy changes.
         AppSettings.shared.transcriptionSelectionChanged
             .sink { [weak self] transition in
-                Task { @MainActor in
-                    await self?.selectionLifecycle.apply(transition)
-                }
+                self?.selectionLifecycle.apply(transition)
             }
             .store(in: &cancellables)
-    }
-
-    /// Warm whatever backend the persisted selection points at (app launch).
-    @MainActor
-    private static func warmSelectedBackend() async {
-        switch AppSettings.shared.transcriptionSelection {
-        case .catalog(let modelID):
-            await warmCatalogModel(modelID)
-        case .legacy:
-            break  // cloud/server: nothing to warm
-        }
-    }
-
-    /// Load an installed catalog model into its runtime; not-installed models
-    /// are left for the settings pane's download flow (no silent downloads
-    /// of multi-GB weights at launch).
-    @MainActor
-    private static func warmCatalogModel(_ modelID: TranscriptionModelID) async {
-        guard let runtime = runtime(for: modelID) else { return }
-        guard runtime.isInstalled(modelID) else {
-            appDelegateLogger.info("Catalog model \(modelID.rawValue, privacy: .public) not installed; skipping warm-up (settings pane offers the download)")
-            return
-        }
-        do {
-            try await runtime.load(modelID)
-        } catch {
-            appDelegateLogger.error("Warm-up failed for \(modelID.rawValue, privacy: .public): \(error.localizedDescription, privacy: .public)")
-        }
-    }
-
-    @MainActor
-    private static func runtime(for modelID: TranscriptionModelID) -> (any TranscriptionRuntime)? {
-        guard let entry = ModelCatalog.entry(for: modelID) else { return nil }
-        switch entry.runtime {
-        case .fluidAudio: return FluidAudioRuntime.shared
-        case .whisperKit: return WhisperKitRuntime.shared
-        }
     }
 
     func requestRestart() {

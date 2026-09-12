@@ -4,6 +4,12 @@ import Foundation
 
 @Suite("Transcription Backend Descriptor Tests")
 struct TranscriptionBackendDescriptorTests {
+    @Test("Catalog runtime diagnostic labels preserve the telemetry contract")
+    func catalogRuntimeDiagnosticLabels() {
+        #expect(RuntimeID.fluidAudio.captureDiagnosticsProviderLabel == "fluidAudio")
+        #expect(RuntimeID.whisperKit.captureDiagnosticsProviderLabel == "whisperKitRuntime")
+    }
+
     @Test("WhisperKit is first-class local-native")
     func whisperKitDescriptor() {
         let descriptor = TranscriptionProvider.whisperKit.backendDescriptor
@@ -285,6 +291,38 @@ struct TranscriptionPipelineServiceTests {
         )
 
         #expect(result.runContext.runtimeID == nil)
+    }
+
+    @Test("Catalog path uses the exact runtime injected through the registry")
+    func catalogPathUsesInjectedRegistryRuntime() async throws {
+        let modelID = ModelCatalog.defaultModelID
+        let selectedRuntime = MockRuntime(id: .fluidAudio)
+        selectedRuntime.installedModels = [modelID]
+        selectedRuntime.onTranscribe = { _, _ in "registry transcript" }
+        let otherRuntime = MockRuntime(id: .whisperKit)
+        otherRuntime.installedModels = [modelID]
+        otherRuntime.onTranscribe = { _, _ in "wrong runtime transcript" }
+        let registry = TranscriptionRuntimeRegistry(runtimes: [
+            .fluidAudio: selectedRuntime,
+            .whisperKit: otherRuntime,
+        ])
+        let service = TranscriptionPipelineService(
+            network: MockLegacyTranscriptionNetworking(),
+            whisperKitService: MockWhisperKitService(),
+            runtimeRegistry: registry
+        )
+        var settings = makeSettings(skipRefinement: true)
+        settings.selectedCatalogModelID = modelID.rawValue
+
+        let result = try await service.executeTranscription(
+            request: makeTranscriptionRequest(settings: settings)
+        )
+
+        #expect(result.text == "registry transcript")
+        #expect(selectedRuntime.loadCalls == [modelID])
+        #expect(selectedRuntime.transcribeCalls.count == 1)
+        #expect(otherRuntime.loadCalls.isEmpty)
+        #expect(otherRuntime.transcribeCalls.isEmpty)
     }
 
     @Test("WhisperKit backend fingerprint uses actual normalized decode request")

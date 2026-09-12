@@ -8,7 +8,9 @@ struct TranscriptionPipelineConcurrencyTests {
     func legacyMultipartPathDoesNotForceMainThreadExecution() async throws {
         let network = ThreadCapturingLegacyTranscriptionNetworking()
         let whisper = await MainActor.run { ConcurrencyTestWhisperKitService() }
-        let service = TranscriptionPipelineService(network: network, whisperKitService: whisper)
+        let service = await MainActor.run {
+            TranscriptionPipelineService(network: network, whisperKitService: whisper)
+        }
 
         let settings = PipelineSettingsSnapshot(
             transcriptionProvider: .openAIWhisper,

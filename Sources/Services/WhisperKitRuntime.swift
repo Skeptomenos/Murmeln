@@ -41,6 +41,7 @@ final class WhisperKitRuntime: TranscriptionRuntime {
     private let variantProvider: () -> String
     private var stateObservation: AnyCancellable?
     private var loadedVariant: String?
+    private var loadGeneration: UInt64 = 0
 
     init(
         service: any WhisperKitTranscribing & WhisperKitModelManaging = WhisperKitService.shared,
@@ -122,24 +123,42 @@ final class WhisperKitRuntime: TranscriptionRuntime {
             throw TranscriptionRuntimeError.unsupportedModel(modelID, id)
         }
         let variant = variantProvider()
+        loadGeneration &+= 1
+        loadedVariant = nil
+        stateSubject.send(.notLoaded)
         try await service.deleteModel(variant)
-        if loadedVariant == variant {
-            loadedVariant = nil
-            stateSubject.send(.notLoaded)
-        }
     }
 
     func load(_ modelID: TranscriptionModelID) async throws {
+        guard modelID == .whisperKit else {
+            throw TranscriptionRuntimeError.unsupportedModel(modelID, id)
+        }
+
+        loadGeneration &+= 1
+        let generation = loadGeneration
         let variant = variantProvider()
-        try await service.loadModel(variant)
+        try Task.checkCancellation()
+        do {
+            try await service.loadModel(variant)
+        } catch {
+            if Task.isCancelled || generation != loadGeneration {
+                throw CancellationError()
+            }
+            throw error
+        }
+        try Task.checkCancellation()
+        guard generation == loadGeneration else {
+            throw CancellationError()
+        }
         loadedVariant = variant
         stateSubject.send(state)
     }
 
-    func unload() {
+    func unload() async {
+        loadGeneration &+= 1
         loadedVariant = nil
         stateSubject.send(.notLoaded)
-        Task { await service.unloadModel() }
+        await service.unloadModel()
     }
 
     func transcribe(audioURL: URL, options: TranscriptionOptions) async throws -> String {

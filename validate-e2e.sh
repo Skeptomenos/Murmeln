@@ -3,7 +3,7 @@
 # Downloads (or reuses) real FluidAudio models and transcribes the real
 # fixture corpus. NOT part of Tier 1 (validate.sh): multi-GB model downloads
 # and ~90s Cohere warm-up must not gate every checkbox. Mandatory before
-# Slices 5, 6, and phase closeout (see the active phase plan).
+# Slices 6 through 9 and phase closeout (see the active phase plan).
 #
 # Prereq: a private user-dictated corpus supplied through
 # MURMELN_E2E_FIXTURES_DIR. The private monorepo default is below _planning/;

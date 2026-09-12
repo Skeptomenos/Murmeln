@@ -11,76 +11,94 @@ final class UpdateService: ObservableObject {
     @Published var releaseURL: URL?
     @Published var releaseNotes: String?
     
-    private let repoOwner = "Skeptomenos"
-    private let repoName = "Murmeln"
+    private let selector: ReleaseSelector
+    private let currentVersionProvider: @MainActor () -> String
+    private let dataLoader: @MainActor (URLRequest) async throws -> (Data, URLResponse)
+
+    init(
+        operatingSystemVersion: OperatingSystemVersion = ProcessInfo.processInfo.operatingSystemVersion,
+        currentVersion: @escaping @MainActor () -> String = {
+            Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0"
+        },
+        dataLoader: @escaping @MainActor (URLRequest) async throws -> (Data, URLResponse) = { request in
+            try await URLSession.shared.data(for: request)
+        }
+    ) {
+        selector = ReleaseSelector(currentOSVersion: operatingSystemVersion)
+        currentVersionProvider = currentVersion
+        self.dataLoader = dataLoader
+    }
     
     var currentVersion: String {
-        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0"
+        currentVersionProvider()
     }
     
     var buildNumber: String {
         Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "0"
     }
     
-    func checkForUpdates(automatically: Bool = false) async {
+    @discardableResult
+    func checkForUpdates(automatically: Bool = false) async -> UpdateCheckOutcome {
         guard !automatically || AppIdentity.updateChecksEnabled else {
-            return
+            return .disabled
         }
 
         isChecking = true
         defer { isChecking = false }
-        
-        guard let url = URL(string: "https://api.github.com/repos/\(repoOwner)/\(repoName)/releases/latest") else {
-            return
+        clearSelectedRelease()
+
+        guard let url = URL(
+            string: "https://api.github.com/repos/Skeptomenos/Murmeln/releases?per_page=100"
+        ) else {
+            return .failed
         }
-        
+
         var request = URLRequest(url: url)
-        request.setValue("application/vnd.github.v3+json", forHTTPHeaderField: "Accept")
-        
+        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
+
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
-            
+            let (data, response) = try await dataLoader(request)
+
             guard let httpResponse = response as? HTTPURLResponse,
                   httpResponse.statusCode == 200 else {
-                return
+                return .failed
             }
-            
-            let release = try JSONDecoder().decode(GitHubRelease.self, from: data)
-            
-            let latestVersionClean = release.tagName.replacingOccurrences(of: "v", with: "")
-            latestVersion = latestVersionClean
-            releaseURL = URL(string: release.htmlURL)
+
+            let releases = try JSONDecoder().decode([GitHubRelease].self, from: data)
+            guard let release = selector.selectNewestCompatible(
+                from: releases,
+                currentVersion: currentVersion
+            ) else {
+                return .upToDate
+            }
+            guard let selectedVersion = selector.normalizedVersion(for: release),
+                  let selectedURL = selector.trustedURL(for: release) else {
+                return .failed
+            }
+
+            latestVersion = selectedVersion
+            releaseURL = selectedURL
             releaseNotes = release.body
-            
-            updateAvailable = isNewerVersion(latestVersionClean, than: currentVersion)
-            
+            updateAvailable = true
+
             #if DEBUG
-            if updateAvailable {
-                print("🆕 Update available: \(currentVersion) → \(latestVersionClean)")
-            } else {
-                print("✅ \(AppIdentity.displayName) is up to date (\(currentVersion))")
-            }
+            print("🆕 Update available: \(currentVersion) → \(selectedVersion)")
             #endif
+            return .updateAvailable
         } catch {
             #if DEBUG
             print("⚠️ Failed to check for updates: \(error.localizedDescription)")
             #endif
+            return .failed
         }
     }
-    
-    private func isNewerVersion(_ latest: String, than current: String) -> Bool {
-        let latestParts = latest.split(separator: ".").compactMap { Int($0) }
-        let currentParts = current.split(separator: ".").compactMap { Int($0) }
-        
-        for i in 0..<max(latestParts.count, currentParts.count) {
-            let latestPart = i < latestParts.count ? latestParts[i] : 0
-            let currentPart = i < currentParts.count ? currentParts[i] : 0
-            
-            if latestPart > currentPart { return true }
-            if latestPart < currentPart { return false }
-        }
-        
-        return false
+
+    private func clearSelectedRelease() {
+        updateAvailable = false
+        latestVersion = nil
+        releaseURL = nil
+        releaseNotes = nil
     }
     
     func openReleasePage() {
@@ -123,16 +141,13 @@ final class UpdateService: ObservableObject {
         alert.addButton(withTitle: "OK")
         alert.runModal()
     }
-}
 
-struct GitHubRelease: Codable {
-    let tagName: String
-    let htmlURL: String
-    let body: String?
-    
-    enum CodingKeys: String, CodingKey {
-        case tagName = "tag_name"
-        case htmlURL = "html_url"
-        case body
+    func showUpdateCheckFailedAlert() {
+        let alert = NSAlert()
+        alert.messageText = "Could Not Check for Updates"
+        alert.informativeText = "Check your internet connection and try again."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
     }
 }

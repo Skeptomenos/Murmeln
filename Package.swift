@@ -28,7 +28,8 @@ let package = Package(
             name: "MurmelnTests",
             dependencies: ["mrml"],
             path: "Tests",
-            exclude: ["PublicSplitPrivacyTests.sh", "DevSigningTests.sh"]
+            exclude: ["PublicSplitPrivacyTests.sh", "DevSigningTests.sh"],
+            resources: [.copy("Fixtures")]
         )
     ]
 )

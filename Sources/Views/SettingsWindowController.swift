@@ -15,9 +15,16 @@ final class SettingsWindowController: NSWindowController {
     static let shared = SettingsWindowController()
 
     private let application: any ApplicationPresenting
+    private let route: SettingsRoute
+    private let selectModel: @MainActor (TranscriptionModelID) -> Void
     
     private init() {
         application = NSApplication.shared
+        let route = SettingsRoute()
+        self.route = route
+        selectModel = { modelID in
+            AppSettings.shared.selectedModelID = modelID
+        }
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 760, height: 500),
             styleMask: [.titled, .closable, .resizable, .miniaturizable],
@@ -32,11 +39,20 @@ final class SettingsWindowController: NSWindowController {
         window.isReleasedWhenClosed = false
         super.init(window: window)
         
-        window.contentView = NSHostingView(rootView: SettingsView())
+        window.contentView = NSHostingView(rootView: SettingsView(route: route))
     }
 
-    init(application: any ApplicationPresenting, window: NSWindow? = nil) {
+    init(
+        application: any ApplicationPresenting,
+        window: NSWindow? = nil,
+        route: SettingsRoute = SettingsRoute(),
+        selectModel: @escaping @MainActor (TranscriptionModelID) -> Void = { modelID in
+            AppSettings.shared.selectedModelID = modelID
+        }
+    ) {
         self.application = application
+        self.route = route
+        self.selectModel = selectModel
         super.init(window: window)
     }
     
@@ -52,4 +68,13 @@ final class SettingsWindowController: NSWindowController {
     func hide() {
         window?.close()
     }
+
+    func showRecovery(for modelID: TranscriptionModelID) {
+        guard ModelCatalog.entry(for: modelID) != nil else { return }
+        route.select(.transcription)
+        selectModel(modelID)
+        show()
+    }
 }
+
+extension SettingsWindowController: SettingsRecoveryPresenting {}

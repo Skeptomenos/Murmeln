@@ -38,6 +38,12 @@ protocol OverlayPresenting: AnyObject {
 
 extension OverlayWindowController: OverlayPresenting {}
 
+/// Settings recovery surface used for typed local-model failures.
+@MainActor
+protocol SettingsRecoveryPresenting: AnyObject {
+    func showRecovery(for modelID: TranscriptionModelID)
+}
+
 /// Paste boundary used by AppState.
 protocol PasteServicing: Sendable {
     @MainActor

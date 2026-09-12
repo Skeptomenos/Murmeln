@@ -37,6 +37,7 @@ final class AppState: ObservableObject {
     private let pasteService: any PasteServicing
     private let historyStore: any HistoryStoring
     private let permissionService: any MicrophonePermissionChecking
+    private let settingsRecoveryPresenter: any SettingsRecoveryPresenting
     private let accessibilityAnnouncement: @MainActor (String) -> Void
     private let pipelineSettingsSnapshot: @MainActor () -> PipelineSettingsSnapshot
     @Published private(set) var recoveryEntryID: UUID?
@@ -83,6 +84,7 @@ final class AppState: ObservableObject {
         pasteService: any PasteServicing = PasteService.shared,
         historyStore: any HistoryStoring = HistoryStore.shared,
         permissionService: any MicrophonePermissionChecking = PermissionService.shared,
+        settingsRecoveryPresenter: any SettingsRecoveryPresenting = SettingsWindowController.shared,
         capturePasteTarget: @escaping @MainActor () -> (any PasteTargetChecking)? = { CapturedPasteTarget.capture() },
         pipelineSettingsSnapshot: @escaping @MainActor () -> PipelineSettingsSnapshot = { AppSettings.shared.pipelineSettingsSnapshot() },
         accessibilityAnnouncement: @escaping @MainActor (String) -> Void = { message in
@@ -99,6 +101,7 @@ final class AppState: ObservableObject {
         self.pasteService = pasteService
         self.historyStore = historyStore
         self.permissionService = permissionService
+        self.settingsRecoveryPresenter = settingsRecoveryPresenter
         self.capturePasteTarget = capturePasteTarget
         self.accessibilityAnnouncement = accessibilityAnnouncement
         self.pipelineSettingsSnapshot = pipelineSettingsSnapshot
@@ -1139,13 +1142,30 @@ final class AppState: ObservableObject {
                 print("❌ Capture processing stopped")
                 #endif
                 if let retainedDeliveryID { presentRecovery(entryID: retainedDeliveryID, presentation: nil) }
-                lastError = error is CancellationError ? nil : "Processing failed. Any completed result remains in History."
-                completionOutcome = "failed"
-                completionReason = "processing_error"
-                logDiagnostics("app.processing.failed", captureID: captureID, metadata: [
-                    "reason": "processing_error",
-                    "error": error.localizedDescription
-                ])
+                if let runtimeError = error as? TranscriptionRuntimeError,
+                   case .modelNotInstalled(let modelID) = runtimeError {
+                    let modelName = ModelCatalog.entry(for: modelID)?.displayName ?? modelID.rawValue
+                    lastError = "\(modelName) is not downloaded. Select Download Model in Transcription settings, then try again."
+                    completionOutcome = "failed"
+                    completionReason = "model_not_installed"
+                    settingsRecoveryPresenter.showRecovery(for: modelID)
+                    await CaptureDiagnostics.shared.mark(
+                        "app.model_recovery.requested",
+                        captureID: captureID,
+                        metadata: [
+                            "reason": "model_not_installed",
+                            "model_id": modelID.rawValue
+                        ]
+                    )
+                } else {
+                    lastError = error is CancellationError ? nil : "Processing failed. Any completed result remains in History."
+                    completionOutcome = "failed"
+                    completionReason = "processing_error"
+                    logDiagnostics("app.processing.failed", captureID: captureID, metadata: [
+                        "reason": "processing_error",
+                        "error": error.localizedDescription
+                    ])
+                }
             }
             
             overlay.hide()

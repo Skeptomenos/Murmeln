@@ -180,7 +180,7 @@ struct FluidAudioRuntimeE2ETests {
         try await fluid.load(TranscriptionModelID(rawValue: "parakeet-tdt-0.6b-v3"))
         let fluidText = try await fluid.transcribe(audioURL: clip.audio, options: TranscriptionOptions())
         #expect(!fluidText.isEmpty)
-        fluid.unload()
+        await fluid.unload()
 
         let whisper = WhisperKitService.shared
         // WhisperKit model download is its own heavyweight path. Tier 1.5 must

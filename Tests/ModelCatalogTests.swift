@@ -1,3 +1,4 @@
+import FluidAudio
 import Testing
 @testable import mrml
 
@@ -103,5 +104,41 @@ struct ModelCatalogTests {
             #expect(entry.sourceRepo?.hasPrefix("FluidInference/") == true,
                     "\(entry.id.rawValue) missing FluidInference source repo")
         }
+    }
+
+    @Test("FluidAudio descriptors exhaustively match catalog repositories")
+    func fluidAudioDescriptorsMatchCatalogRepositories() throws {
+        let catalogEntries = ModelCatalog.entries.filter { $0.runtime == .fluidAudio }
+        #expect(FluidAudioModelDescriptor.all.map(\.modelID) == catalogEntries.map(\.id))
+
+        for entry in catalogEntries {
+            let descriptor = try #require(FluidAudioModelDescriptor.descriptor(for: entry.id))
+            #expect(descriptor.repo.remotePath == entry.sourceRepo)
+        }
+    }
+
+    @Test("FluidAudio descriptors declare the exact repository and engine")
+    func fluidAudioDescriptorsDeclareExactRouting() throws {
+        let expected: [(TranscriptionModelID, Repo, FluidAudioEngine)] = [
+            (TranscriptionModelID(rawValue: "parakeet-tdt-0.6b-v3"), .parakeetV3, .parakeetV3),
+            (TranscriptionModelID(rawValue: "parakeet-tdt-0.6b-v2"), .parakeetV2, .parakeetV2),
+            (
+                TranscriptionModelID(rawValue: "cohere-transcribe-03-2026-int8"),
+                .cohereTranscribeCoreml,
+                .cohere
+            ),
+        ]
+
+        for (modelID, repo, engine) in expected {
+            let descriptor = try #require(FluidAudioModelDescriptor.descriptor(for: modelID))
+            #expect(descriptor.repo == repo)
+            #expect(descriptor.engine == engine)
+        }
+    }
+
+    @Test("Unknown models have no FluidAudio descriptor")
+    func unknownModelHasNoFluidAudioDescriptor() {
+        let unknown = TranscriptionModelID(rawValue: "does-not-exist")
+        #expect(FluidAudioModelDescriptor.descriptor(for: unknown) == nil)
     }
 }

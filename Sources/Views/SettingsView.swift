@@ -168,12 +168,13 @@ struct ValidatedURLField: View {
     }
 }
 
+@MainActor
 struct SettingsView: View {
     @AppStorage("windowAppearance") private var appearance: WindowAppearance = .dark
     @ObservedObject private var settings = AppSettings.shared
     @ObservedObject private var ollamaService = OllamaService.shared
     @ObservedObject private var whisperKitService = WhisperKitService.shared
-    @State private var selectedPage: SettingsPage = .transcription
+    @State private var route: SettingsRoute
     @State private var showingWhisperKitSetup = false
 
     @State private var transcriptionModels: [ModelInfo] = []
@@ -185,12 +186,19 @@ struct SettingsView: View {
     @State private var newPresetDescription = ""
     @State private var newDictionaryWord = ""
 
+    init(route: SettingsRoute = SettingsRoute()) {
+        _route = State(initialValue: route)
+    }
+
     var body: some View {
         SettingsShell(
-            selectedPage: $selectedPage,
+            selectedPage: Binding(
+                get: { route.selectedPage },
+                set: { route.select($0) }
+            ),
             appearance: $appearance
         ) {
-            switch selectedPage {
+            switch route.selectedPage {
             case .transcription:
                 TranscriptionSettingsSection(
                     settings: settings,

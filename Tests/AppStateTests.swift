@@ -84,11 +84,18 @@ final class MockPipelineService: TranscriptionPipelineProviding, @unchecked Send
     let transcriptionText: String
     let refinementShouldThrow: Bool
     let mode: TranscriptionPipelineMode
+    let transcriptionError: TranscriptionRuntimeError?
 
-    init(transcriptionText: String, refinementShouldThrow: Bool, mode: TranscriptionPipelineMode = .twoCallRefinement) {
+    init(
+        transcriptionText: String,
+        refinementShouldThrow: Bool,
+        mode: TranscriptionPipelineMode = .twoCallRefinement,
+        transcriptionError: TranscriptionRuntimeError? = nil
+    ) {
         self.transcriptionText = transcriptionText
         self.refinementShouldThrow = refinementShouldThrow
         self.mode = mode
+        self.transcriptionError = transcriptionError
     }
 
     func pipelineMode(for settings: PipelineSettingsSnapshot) -> TranscriptionPipelineMode {
@@ -96,6 +103,9 @@ final class MockPipelineService: TranscriptionPipelineProviding, @unchecked Send
     }
 
     func executeTranscription(request: TranscriptionRequest) async throws -> TranscriptionExecutionResult {
+        if let transcriptionError {
+            throw transcriptionError
+        }
         let now = DispatchTime.now().uptimeNanoseconds
         return TranscriptionExecutionResult(
             text: transcriptionText,
@@ -216,6 +226,15 @@ final class MockHistoryStore: HistoryStoring {
     }
 }
 
+@MainActor
+final class MockSettingsRecoveryPresenter: SettingsRecoveryPresenting {
+    private(set) var modelIDs: [TranscriptionModelID] = []
+
+    func showRecovery(for modelID: TranscriptionModelID) {
+        modelIDs.append(modelID)
+    }
+}
+
 // MARK: - Fixtures & helpers
 
 enum AppStateTestFixtures {
@@ -256,6 +275,86 @@ func waitUntil(timeoutMs: Int = 8_000, _ condition: () -> Bool) async -> Bool {
 @MainActor
 @Suite("AppState Capture Flow Tests", .serialized)
 struct AppStateCaptureFlowTests {
+
+    @Test("A missing model opens recovery once and stops before paste or History")
+    func modelNotInstalledOpensRecoveryExactlyOnce() async throws {
+        let modelID = TranscriptionModelID(rawValue: "cohere-transcribe-03-2026-int8")
+        let recorder = MockAudioRecorder()
+        let recordingURL = try AppStateTestFixtures.makeAudibleWAV()
+        recorder.recordingURL = recordingURL
+        let paste = MockPasteService()
+        let history = MockHistoryStore()
+        let overlay = MockOverlay()
+        let recovery = MockSettingsRecoveryPresenter()
+        let appState = AppState(
+            audioRecorder: recorder,
+            pipelineService: MockPipelineService(
+                transcriptionText: "must not exist",
+                refinementShouldThrow: false,
+                transcriptionError: .modelNotInstalled(modelID)
+            ),
+            overlay: overlay,
+            pasteService: paste,
+            historyStore: history,
+            permissionService: MockPermissionService(),
+            settingsRecoveryPresenter: recovery
+        )
+
+        appState.startRecording()
+        #expect(await waitUntil { appState.recordingPhase == .recording })
+        appState.stopAndProcess()
+        #expect(await waitUntil {
+            appState.recordingPhase == .idle && appState.diagnosticsActiveCaptureID == nil
+        })
+
+        #expect(recovery.modelIDs == [modelID])
+        #expect(paste.pastedTexts.isEmpty)
+        #expect(history.entries.isEmpty)
+        #expect(appState.pasteFailurePresentation == nil)
+        #expect(appState.lastError?.contains("Cohere Transcribe") == true)
+        #expect(appState.lastError?.contains("Download Model") == true)
+        #expect(overlay.hideCalls == 1)
+        #expect(!FileManager.default.fileExists(atPath: recordingURL.path))
+    }
+
+    @Test("A generic runtime failure does not open Settings")
+    func genericRuntimeFailureDoesNotOpenSettings() async throws {
+        let recorder = MockAudioRecorder()
+        recorder.recordingURL = try AppStateTestFixtures.makeAudibleWAV()
+        let paste = MockPasteService()
+        let history = MockHistoryStore()
+        let recovery = MockSettingsRecoveryPresenter()
+        let failure = TranscriptionRuntimeError.runtimeFailure(
+            .fluidAudio,
+            .load,
+            "synthetic load failure"
+        )
+        let appState = AppState(
+            audioRecorder: recorder,
+            pipelineService: MockPipelineService(
+                transcriptionText: "must not exist",
+                refinementShouldThrow: false,
+                transcriptionError: failure
+            ),
+            overlay: MockOverlay(),
+            pasteService: paste,
+            historyStore: history,
+            permissionService: MockPermissionService(),
+            settingsRecoveryPresenter: recovery
+        )
+
+        appState.startRecording()
+        #expect(await waitUntil { appState.recordingPhase == .recording })
+        appState.stopAndProcess()
+        #expect(await waitUntil {
+            appState.recordingPhase == .idle && appState.diagnosticsActiveCaptureID == nil
+        })
+
+        #expect(recovery.modelIDs.isEmpty)
+        #expect(paste.pastedTexts.isEmpty)
+        #expect(history.entries.isEmpty)
+        #expect(appState.lastError == "Processing failed. Any completed result remains in History.")
+    }
 
     @Test("Refinement failure degrades to the raw transcript instead of losing it")
     func refinementFailureDegradesToRaw() async throws {

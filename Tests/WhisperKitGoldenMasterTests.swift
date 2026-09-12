@@ -152,7 +152,7 @@ struct WhisperKitGoldenMasterTests {
 
     // MARK: Fixture plumbing
 
-    private static let fixturesDir = URL(fileURLWithPath: #filePath)
+    private static let sourceFixturesDir = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent()
         .appendingPathComponent("Fixtures/golden")
 
@@ -161,18 +161,24 @@ struct WhisperKitGoldenMasterTests {
     }
 
     private func compare(_ snapshot: GoldenSnapshot, against name: String) throws {
-        let url = Self.fixturesDir.appendingPathComponent("whisperkit-\(name).json")
+        let fixtureName = "whisperkit-\(name)"
 
         if recordMode {
+            let url = Self.sourceFixturesDir.appendingPathComponent("\(fixtureName).json")
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             try FileManager.default.createDirectory(
-                at: Self.fixturesDir, withIntermediateDirectories: true)
+                at: Self.sourceFixturesDir, withIntermediateDirectories: true)
             try encoder.encode(snapshot).write(to: url)
             Issue.record("Recorded golden fixture \(url.lastPathComponent) — rerun without MURMELN_RECORD_GOLDEN")
             return
         }
 
+        let url = try #require(Bundle.module.url(
+            forResource: fixtureName,
+            withExtension: "json",
+            subdirectory: "Fixtures/golden"
+        ))
         let golden = try JSONDecoder().decode(GoldenSnapshot.self, from: Data(contentsOf: url))
 
         #expect(snapshot.text == golden.text)

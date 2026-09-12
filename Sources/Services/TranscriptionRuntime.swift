@@ -70,7 +70,7 @@ protocol TranscriptionRuntime: AnyObject, Sendable {
     func load(_ modelID: TranscriptionModelID) async throws
 
     /// Release the loaded model. `state` returns to `.notLoaded`.
-    func unload()
+    func unload() async
 
     /// Transcribe a complete audio file. Requires `state == .ready`.
     func transcribe(audioURL: URL, options: TranscriptionOptions) async throws -> String
@@ -87,31 +87,110 @@ extension TranscriptionRuntime {
 /// from remaining resident when the user returns to a cloud/server provider.
 @MainActor
 final class TranscriptionSelectionLifecycle {
-    typealias RuntimeResolver = @MainActor (TranscriptionModelID) -> (any TranscriptionRuntime)?
+    typealias LoadFailureHandler = @MainActor (TranscriptionModelID, Error) -> Void
+    typealias MissingModelHandler = @MainActor (TranscriptionModelID) -> Void
 
-    private let runtimeForModel: RuntimeResolver
+    private let runtimeRegistry: TranscriptionRuntimeRegistry
+    private let onLoadFailure: LoadFailureHandler
+    private let onMissingModel: MissingModelHandler
+    private var selectionTask: Task<Void, Never>?
+    private var operationGeneration: UInt = 0
 
-    init(runtimeForModel: @escaping RuntimeResolver) {
-        self.runtimeForModel = runtimeForModel
+    init(
+        runtimeRegistry: TranscriptionRuntimeRegistry,
+        onLoadFailure: @escaping LoadFailureHandler = { _, _ in },
+        onMissingModel: @escaping MissingModelHandler = { _ in }
+    ) {
+        self.runtimeRegistry = runtimeRegistry
+        self.onLoadFailure = onLoadFailure
+        self.onMissingModel = onMissingModel
     }
 
-    func apply(_ transition: AppSettings.TranscriptionSelectionTransition) async {
+    /// Start launch warm-up through the same task owner used for later model
+    /// changes. A selection submitted while this runs replaces it.
+    func warm(_ selection: AppSettings.TranscriptionSelection) {
+        replace(previous: nil, current: selection)
+    }
+
+    func apply(_ transition: AppSettings.TranscriptionSelectionTransition) {
         guard transition.previous != transition.current else { return }
+        replace(previous: transition.previous, current: transition.current)
+    }
 
-        if case .catalog(let previousID) = transition.previous {
-            runtimeForModel(previousID)?.unload()
+    /// Cancel and join the complete task chain before the app exits. Joining is
+    /// required because a runtime can finish an await after it observes
+    /// cancellation; that late completion must be cleaned up before return.
+    func cancel() async {
+        operationGeneration &+= 1
+        let cancellationGeneration = operationGeneration
+        let task = selectionTask
+        task?.cancel()
+        await task?.value
+        if operationGeneration == cancellationGeneration {
+            selectionTask = nil
         }
+    }
 
-        guard case .catalog(let currentID) = transition.current,
-              let runtime = runtimeForModel(currentID),
-              runtime.isInstalled(currentID)
-        else { return }
+    /// Await the current owned operation. This is intentionally internal so
+    /// deterministic lifecycle tests need no sleeps or polling for completion.
+    func waitUntilIdle() async {
+        await selectionTask?.value
+    }
+
+    private func replace(
+        previous: AppSettings.TranscriptionSelection?,
+        current: AppSettings.TranscriptionSelection
+    ) {
+        operationGeneration &+= 1
+        let supersededTask = selectionTask
+        supersededTask?.cancel()
+
+        selectionTask = Task { @MainActor [weak self] in
+            await supersededTask?.value
+            guard let self, !Task.isCancelled else { return }
+            await self.perform(previous: previous, current: current)
+        }
+    }
+
+    private func perform(
+        previous: AppSettings.TranscriptionSelection?,
+        current: AppSettings.TranscriptionSelection
+    ) async {
+        var currentRuntime: (any TranscriptionRuntime)?
 
         do {
+            try Task.checkCancellation()
+
+            if case .catalog(let previousID) = previous {
+                await runtimeRegistry.runtime(forModel: previousID)?.unload()
+            }
+
+            try Task.checkCancellation()
+            guard case .catalog(let currentID) = current,
+                  let runtime = runtimeRegistry.runtime(forModel: currentID)
+            else { return }
+
+            currentRuntime = runtime
+            guard runtime.isInstalled(currentID) else {
+                onMissingModel(currentID)
+                return
+            }
+
             try await runtime.load(currentID)
+            try Task.checkCancellation()
+        } catch is CancellationError {
+            // A runtime also uses CancellationError when a newer external
+            // owner invalidates this load generation. Only this lifecycle's
+            // own task cancellation authorizes cleanup of the shared runtime.
+            if Task.isCancelled {
+                await currentRuntime?.unload()
+            }
         } catch {
             // Runtime state carries the failure for the settings UI. AppDelegate
-            // logs the localized description through its normal lifecycle path.
+            // also records the localized description through its lifecycle log.
+            if case .catalog(let currentID) = current {
+                onLoadFailure(currentID, error)
+            }
         }
     }
 }

@@ -9,6 +9,17 @@ protocol LegacyTranscriptionNetworking: Sendable {
 
 extension NetworkService: LegacyTranscriptionNetworking {}
 
+extension RuntimeID {
+    var captureDiagnosticsProviderLabel: String {
+        switch self {
+        case .fluidAudio:
+            "fluidAudio"
+        case .whisperKit:
+            "whisperKitRuntime"
+        }
+    }
+}
+
 protocol WhisperKitTranscribing: AnyObject, Sendable {
     @MainActor
     var modelState: WhisperKitService.ModelState { get }
@@ -612,30 +623,31 @@ final class TranscriptionPipelineService: @unchecked Sendable {
     private let legacyLocalWhisperServerBackend: LegacyLocalWhisperServerBackend
     private let legacyCloudAudioInputBackend: LegacyCloudAudioInputBackend
     private let textRefinementBackend: TextRefinementBackend
-    /// Phase 8: catalog-model lane, keyed by RuntimeID (built lazily on the
-    /// main actor because runtimes are MainActor singletons).
-    private let makeCatalogBackend: @Sendable (RuntimeID) async -> RuntimeTranscriptionBackend
+    private let runtimeRegistry: TranscriptionRuntimeRegistry
+
+    @MainActor
+    convenience init(
+        network: LegacyTranscriptionNetworking,
+        whisperKitService: WhisperKitTranscribing
+    ) {
+        self.init(
+            network: network,
+            whisperKitService: whisperKitService,
+            runtimeRegistry: .shared
+        )
+    }
 
     init(
         network: LegacyTranscriptionNetworking,
         whisperKitService: WhisperKitTranscribing,
-        makeCatalogBackend: @escaping @Sendable (RuntimeID) async -> RuntimeTranscriptionBackend = { runtimeID in
-            await MainActor.run {
-                switch runtimeID {
-                case .fluidAudio:
-                    return RuntimeTranscriptionBackend.runtime(FluidAudioRuntime.shared, providerLabel: "fluidAudio")
-                case .whisperKit:
-                    return RuntimeTranscriptionBackend.runtime(WhisperKitRuntime.shared, providerLabel: "whisperKitRuntime")
-                }
-            }
-        }
+        runtimeRegistry: TranscriptionRuntimeRegistry
     ) {
         whisperKitBackend = RuntimeTranscriptionBackend.whisperKit(whisperKitService)
         legacyCloudMultipartBackend = LegacyCloudMultipartTranscriptionBackend(network: network)
         legacyLocalWhisperServerBackend = LegacyLocalWhisperServerBackend(network: network)
         legacyCloudAudioInputBackend = LegacyCloudAudioInputBackend(network: network)
         textRefinementBackend = TextRefinementBackend(network: network)
-        self.makeCatalogBackend = makeCatalogBackend
+        self.runtimeRegistry = runtimeRegistry
     }
 
     func pipelineMode(for settings: PipelineSettingsSnapshot) -> TranscriptionPipelineMode {
@@ -725,7 +737,11 @@ final class TranscriptionPipelineService: @unchecked Sendable {
         entry: CatalogEntry
     ) async throws -> TranscriptionExecutionResult {
         let mode: TranscriptionPipelineMode = request.settings.skipRefinement ? .transcribeOnly : .twoCallRefinement
-        let backend = await makeCatalogBackend(entry.runtime)
+        let runtime = await runtimeRegistry.runtime(for: entry.runtime)
+        let backend = RuntimeTranscriptionBackend.runtime(
+            runtime,
+            providerLabel: entry.runtime.captureDiagnosticsProviderLabel
+        )
         let execution = try await backend.transcribe(request: request)
 
         let resolvedLanguage = AppSettings.resolvedLanguageCode(

@@ -1,3 +1,4 @@
+import FluidAudio
 import Testing
 @testable import mrml
 
@@ -54,6 +55,69 @@ struct AudioChunkingTests {
         )
 
         #expect(ranges == [0..<560_000, 400_000..<747_200])
+    }
+
+    @MainActor
+    @Test("Cancelling Cohere long form after chunk one prevents chunk two")
+    func cohereLongFormCancellationStopsBeforeNextChunk() async {
+        var startedChunks = 0
+
+        let transcription = Task {
+            try await CohereLongFormChunking.transcribe(
+                samples: Array(repeating: 0, count: 6),
+                sampleRate: 1,
+                maxChunkSeconds: 3
+            ) { _ in
+                startedChunks += 1
+                if startedChunks == 1 {
+                    withUnsafeCurrentTask { task in
+                        task?.cancel()
+                    }
+                    return "first chunk"
+                }
+                Issue.record("A chunk started after the transcription task was cancelled")
+                return "obsolete chunk"
+            }
+        }
+
+        await #expect(throws: CancellationError.self) {
+            try await transcription.value
+        }
+        #expect(startedChunks == 1)
+    }
+
+    @MainActor
+    @Test("Cancelling a FluidAudio load prevents late readiness")
+    func fluidAudioLoadCancellationPreventsLateReadiness() async {
+        let modelID = TranscriptionModelID(rawValue: "parakeet-tdt-0.6b-v3")
+        var loadStarted = false
+        var loadContinuation: CheckedContinuation<Void, Never>?
+        let runtime = FluidAudioRuntime(
+            installationCheck: { $0 == modelID },
+            modelLoader: { _, _ in
+                loadStarted = true
+                await withCheckedContinuation { continuation in
+                    loadContinuation = continuation
+                }
+                return .parakeet(AsrManager(config: .default))
+            }
+        )
+
+        let load = Task {
+            try await runtime.load(modelID)
+        }
+        while !loadStarted {
+            await Task.yield()
+        }
+
+        load.cancel()
+        loadContinuation?.resume()
+
+        await #expect(throws: CancellationError.self) {
+            try await load.value
+        }
+        #expect(runtime.state == .notLoaded)
+        #expect(!runtime.hasResidentEngine)
     }
 
     @Test("Cohere stitcher preserves the captured chunk-boundary phrase")

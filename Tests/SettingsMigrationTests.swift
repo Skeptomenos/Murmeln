@@ -166,12 +166,18 @@ struct SettingsMigrationTests {
     @MainActor
     @Test("Migrated Cohere selection without weights on disk yields the actionable not-installed error, never a silent swap")
     func migratedCohereWithoutWeightsIsActionable() async throws {
+        let migration = try #require(AppSettings.catalogMigration(
+            providerRaw: "Cohere MLX (On-Device)",
+            whisperKitLanguagesJSON: nil,
+            cohereLanguageRaw: "German"
+        ))
         // The retired runtime's model cache is not reusable by FluidAudio: a
         // migrated user's first dictation must surface modelNotInstalled.
         let runtime = MockRuntime(id: .fluidAudio)
         runtime.installedModels = []  // nothing on disk
 
-        let modelID = TranscriptionModelID(rawValue: "cohere-transcribe-03-2026-int8")
+        let modelID = TranscriptionModelID(rawValue: migration.selectedModelID)
+        #expect(modelID.rawValue == "cohere-transcribe-03-2026-int8")
         await #expect(throws: TranscriptionRuntimeError.modelNotInstalled(modelID)) {
             try await runtime.load(modelID)
         }
@@ -261,10 +267,16 @@ struct ModelSwitchTests {
         runtime.installedModels = [catalogID]
         try await runtime.load(catalogID)
 
-        let lifecycle = TranscriptionSelectionLifecycle { _ in runtime }
-        await lifecycle.apply(
+        let lifecycle = TranscriptionSelectionLifecycle(
+            runtimeRegistry: TranscriptionRuntimeRegistry(runtimes: [
+                .fluidAudio: runtime,
+                .whisperKit: MockRuntime(id: .whisperKit),
+            ])
+        )
+        lifecycle.apply(
             .init(previous: .catalog(catalogID), current: .legacy(.openAIWhisper))
         )
+        await lifecycle.waitUntilIdle()
 
         #expect(runtime.unloadCalls == 1)
         #expect(runtime.state == .notLoaded)

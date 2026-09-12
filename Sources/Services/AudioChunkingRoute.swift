@@ -19,6 +19,35 @@ enum AudioChunkingRoute: Equatable, Sendable {
 enum CohereLongFormChunking {
     static let overlapSeconds = 10
 
+    @MainActor
+    static func transcribe(
+        samples: [Float],
+        sampleRate: Int,
+        maxChunkSeconds: Int,
+        decode: @MainActor ([Float]) async throws -> String
+    ) async throws -> String {
+        try Task.checkCancellation()
+        let ranges = ranges(
+            sampleCount: samples.count,
+            sampleRate: sampleRate,
+            maxChunkSeconds: maxChunkSeconds
+        )
+        try Task.checkCancellation()
+
+        var transcript = ""
+        for range in ranges {
+            try Task.checkCancellation()
+            let chunkSamples = Array(samples[range])
+            try Task.checkCancellation()
+
+            let decodedText = try await decode(chunkSamples)
+            try Task.checkCancellation()
+            transcript = merge(prefix: transcript, suffix: decodedText)
+            try Task.checkCancellation()
+        }
+        return transcript
+    }
+
     static func ranges(
         sampleCount: Int,
         sampleRate: Int,

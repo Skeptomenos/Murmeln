@@ -38,7 +38,6 @@
 		APP024 /* WhisperKitSetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC024 /* WhisperKitSetupView.swift */; };
 		APP025 /* TranscriptionPipelineModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC025 /* TranscriptionPipelineModels.swift */; };
 		APP026 /* TranscriptionPipelineService.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC026 /* TranscriptionPipelineService.swift */; };
-		APP027 /* BackendSettingsSections.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC027 /* BackendSettingsSections.swift */; };
 		APP029 /* AppStateDependencies.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC030 /* AppStateDependencies.swift */; };
 		APP030 /* ModelCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC031 /* ModelCatalog.swift */; };
 		APP031 /* TranscriptionRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC032 /* TranscriptionRuntime.swift */; };
@@ -59,10 +58,27 @@
 		APP046 /* CaptureDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC047 /* CaptureDiagnostics.swift */; };
 		APP047 /* CaptureDiagnosticsDependencies.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC048 /* CaptureDiagnosticsDependencies.swift */; };
 		APP048 /* PasteDiagnosticCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC049 /* PasteDiagnosticCommand.swift */; };
+		370CB5A60ED24EDA8CD6181A /* GitHubRelease.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19B949304D2947558F2CC9CE /* GitHubRelease.swift */; };
+		5106434DB49D4444B0CBE621 /* ReleaseCompatibility.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C98BB5B53634DFBAB12644C /* ReleaseCompatibility.swift */; };
+		143BDC33B76D4925A94D6285 /* UpdateCheckOutcome.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5C50EA14AEB41D984729CE5 /* UpdateCheckOutcome.swift */; };
+		0934CF9F17E24459B1B86017 /* ReleaseSelector.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5E49BBE38D746F790FCDD0F /* ReleaseSelector.swift */; };
+		A57FF42B458C4006AC44A6C8 /* WhisperKitModelOption.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF96B1AD93504624A407196D /* WhisperKitModelOption.swift */; };
+		D169D92493494FFA930D8D64 /* WhisperKitSelectionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8A4EF3F724E4B69B257DB8E /* WhisperKitSelectionController.swift */; };
+		5DF212BF720B4032B932B61E /* SettingsRoute.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6131A055EBCF415283D0EC0A /* SettingsRoute.swift */; };
 		DVP001 /* DevDeliveryDiagnostic.swift in Sources */ = {isa = PBXBuildFile; fileRef = DVR001 /* DevDeliveryDiagnostic.swift */; };
 		DVP002 /* DevDeliveryDiagnosticTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = DVR002 /* DevDeliveryDiagnosticTarget.swift */; };
 		DVP003 /* DevDeliveryDiagnosticRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = DVR003 /* DevDeliveryDiagnosticRunner.swift */; };
 		DVP004 /* HotkeyMonitorClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = DVR004 /* HotkeyMonitorClient.swift */; };
+		APP055 /* TranscriptionRuntimeRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC056 /* TranscriptionRuntimeRegistry.swift */; };
+		APP056 /* FluidAudioModelDescriptor.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC057 /* FluidAudioModelDescriptor.swift */; };
+		APP057 /* FluidAudioEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC058 /* FluidAudioEngine.swift */; };
+		APP069 /* KeychainSecurityNoticeBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC070 /* KeychainSecurityNoticeBanner.swift */; };
+		APP070 /* CatalogModelSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC071 /* CatalogModelSection.swift */; };
+		APP071 /* CatalogModelStatusLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC072 /* CatalogModelStatusLabel.swift */; };
+		APP072 /* TranscriptionSettingsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC073 /* TranscriptionSettingsSection.swift */; };
+		APP073 /* WhisperKitSettingsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC074 /* WhisperKitSettingsSection.swift */; };
+		APP074 /* RefinementSettingsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC075 /* RefinementSettingsSection.swift */; };
+		APP075 /* OllamaManagementSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC076 /* OllamaManagementSection.swift */; };
 		RES001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F2B02ABB2F0409FC00DD12FC /* Assets.xcassets */; };
 		PKG004 /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = PKG005 /* WhisperKit */; };
 		PKG007 /* FluidAudio in Frameworks */ = {isa = PBXBuildFile; productRef = PKG008 /* FluidAudio */; };
@@ -113,10 +129,27 @@
 		SRC047 /* CaptureDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureDiagnostics.swift; sourceTree = "<group>"; };
 		SRC048 /* CaptureDiagnosticsDependencies.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureDiagnosticsDependencies.swift; sourceTree = "<group>"; };
 		SRC049 /* PasteDiagnosticCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasteDiagnosticCommand.swift; sourceTree = "<group>"; };
+		19B949304D2947558F2CC9CE /* GitHubRelease.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitHubRelease.swift; sourceTree = "<group>"; };
+		8C98BB5B53634DFBAB12644C /* ReleaseCompatibility.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReleaseCompatibility.swift; sourceTree = "<group>"; };
+		B5C50EA14AEB41D984729CE5 /* UpdateCheckOutcome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateCheckOutcome.swift; sourceTree = "<group>"; };
+		B5E49BBE38D746F790FCDD0F /* ReleaseSelector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReleaseSelector.swift; sourceTree = "<group>"; };
+		CF96B1AD93504624A407196D /* WhisperKitModelOption.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperKitModelOption.swift; sourceTree = "<group>"; };
+		E8A4EF3F724E4B69B257DB8E /* WhisperKitSelectionController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperKitSelectionController.swift; sourceTree = "<group>"; };
+		6131A055EBCF415283D0EC0A /* SettingsRoute.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsRoute.swift; sourceTree = "<group>"; };
 		DVR001 /* DevDeliveryDiagnostic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevDeliveryDiagnostic.swift; sourceTree = "<group>"; };
 		DVR002 /* DevDeliveryDiagnosticTarget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevDeliveryDiagnosticTarget.swift; sourceTree = "<group>"; };
 		DVR003 /* DevDeliveryDiagnosticRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevDeliveryDiagnosticRunner.swift; sourceTree = "<group>"; };
 		DVR004 /* HotkeyMonitorClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotkeyMonitorClient.swift; sourceTree = "<group>"; };
+		SRC056 /* TranscriptionRuntimeRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionRuntimeRegistry.swift; sourceTree = "<group>"; };
+		SRC057 /* FluidAudioModelDescriptor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FluidAudioModelDescriptor.swift; sourceTree = "<group>"; };
+		SRC058 /* FluidAudioEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FluidAudioEngine.swift; sourceTree = "<group>"; };
+		SRC070 /* KeychainSecurityNoticeBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainSecurityNoticeBanner.swift; sourceTree = "<group>"; };
+		SRC071 /* CatalogModelSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogModelSection.swift; sourceTree = "<group>"; };
+		SRC072 /* CatalogModelStatusLabel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogModelStatusLabel.swift; sourceTree = "<group>"; };
+		SRC073 /* TranscriptionSettingsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionSettingsSection.swift; sourceTree = "<group>"; };
+		SRC074 /* WhisperKitSettingsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperKitSettingsSection.swift; sourceTree = "<group>"; };
+		SRC075 /* RefinementSettingsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RefinementSettingsSection.swift; sourceTree = "<group>"; };
+		SRC076 /* OllamaManagementSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OllamaManagementSection.swift; sourceTree = "<group>"; };
 		SRC022 /* AppIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIdentity.swift; sourceTree = "<group>"; };
 		SRC005 /* AudioService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioService.swift; sourceTree = "<group>"; };
 		SRC006 /* NetworkService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkService.swift; sourceTree = "<group>"; };
@@ -138,7 +171,6 @@
 		SRC024 /* WhisperKitSetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperKitSetupView.swift; sourceTree = "<group>"; };
 		SRC025 /* TranscriptionPipelineModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionPipelineModels.swift; sourceTree = "<group>"; };
 		SRC026 /* TranscriptionPipelineService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionPipelineService.swift; sourceTree = "<group>"; };
-		SRC027 /* BackendSettingsSections.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackendSettingsSections.swift; sourceTree = "<group>"; };
 		3D4B676055D491D8845C1E7C /* HistoryStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/Models/HistoryStorage.swift"; sourceTree = SOURCE_ROOT; };
 		16C49767305ADF20F5375216 /* HistoryPersistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/Services/HistoryPersistence.swift"; sourceTree = SOURCE_ROOT; };
 		AAB4935933E628DB7110CBC3 /* ClipboardCopyOutcome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Sources/Models/ClipboardCopyOutcome.swift"; sourceTree = SOURCE_ROOT; };
@@ -217,6 +249,10 @@
 				SRC039 /* PasteTiming.swift */,
 				SRC042 /* PasteFailurePresentation.swift */,
 				SRC046 /* PasteOperationalRecord.swift */,
+				19B949304D2947558F2CC9CE /* GitHubRelease.swift */,
+				8C98BB5B53634DFBAB12644C /* ReleaseCompatibility.swift */,
+				B5C50EA14AEB41D984729CE5 /* UpdateCheckOutcome.swift */,
+				CF96B1AD93504624A407196D /* WhisperKitModelOption.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -250,10 +286,14 @@
 				SRC023 /* WhisperKitService.swift */,
 				SRC026 /* TranscriptionPipelineService.swift */,
 				SRC032 /* TranscriptionRuntime.swift */,
+				SRC056 /* TranscriptionRuntimeRegistry.swift */,
 				SRC033 /* WhisperKitRuntime.swift */,
 				SRC034 /* FluidAudioRuntime.swift */,
+				SRC057 /* FluidAudioModelDescriptor.swift */,
+				SRC058 /* FluidAudioEngine.swift */,
 				SRC035 /* AudioChunkingRoute.swift */,
 				SRC037 /* CatalogDownloadManager.swift */,
+				B5E49BBE38D746F790FCDD0F /* ReleaseSelector.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -268,8 +308,16 @@
 				UIR91 /* SettingsPresentation.swift */,
 				UIR90 /* HistoryPresentation.swift */,
 				SRC024 /* WhisperKitSetupView.swift */,
-				SRC027 /* BackendSettingsSections.swift */,
+				SRC070 /* KeychainSecurityNoticeBanner.swift */,
+				SRC071 /* CatalogModelSection.swift */,
+				SRC072 /* CatalogModelStatusLabel.swift */,
+				SRC073 /* TranscriptionSettingsSection.swift */,
+				SRC074 /* WhisperKitSettingsSection.swift */,
+				SRC075 /* RefinementSettingsSection.swift */,
+				SRC076 /* OllamaManagementSection.swift */,
 				SRC036 /* RuntimeStatusModel.swift */,
+				E8A4EF3F724E4B69B257DB8E /* WhisperKitSelectionController.swift */,
+				6131A055EBCF415283D0EC0A /* SettingsRoute.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -379,8 +427,11 @@
 				APP029 /* AppStateDependencies.swift in Sources */,
 				APP030 /* ModelCatalog.swift in Sources */,
 				APP031 /* TranscriptionRuntime.swift in Sources */,
+				APP055 /* TranscriptionRuntimeRegistry.swift in Sources */,
 				APP032 /* WhisperKitRuntime.swift in Sources */,
 				APP033 /* FluidAudioRuntime.swift in Sources */,
+				APP056 /* FluidAudioModelDescriptor.swift in Sources */,
+				APP057 /* FluidAudioEngine.swift in Sources */,
 				APP034 /* AudioChunkingRoute.swift in Sources */,
 				APP035 /* RuntimeStatusModel.swift in Sources */,
 				APP036 /* CatalogDownloadManager.swift in Sources */,
@@ -396,6 +447,13 @@
 				APP046 /* CaptureDiagnostics.swift in Sources */,
 				APP047 /* CaptureDiagnosticsDependencies.swift in Sources */,
 				APP048 /* PasteDiagnosticCommand.swift in Sources */,
+				370CB5A60ED24EDA8CD6181A /* GitHubRelease.swift in Sources */,
+				5106434DB49D4444B0CBE621 /* ReleaseCompatibility.swift in Sources */,
+				143BDC33B76D4925A94D6285 /* UpdateCheckOutcome.swift in Sources */,
+				0934CF9F17E24459B1B86017 /* ReleaseSelector.swift in Sources */,
+				A57FF42B458C4006AC44A6C8 /* WhisperKitModelOption.swift in Sources */,
+				D169D92493494FFA930D8D64 /* WhisperKitSelectionController.swift in Sources */,
+				5DF212BF720B4032B932B61E /* SettingsRoute.swift in Sources */,
 				DVP001 /* DevDeliveryDiagnostic.swift in Sources */,
 				DVP002 /* DevDeliveryDiagnosticTarget.swift in Sources */,
 				CPT001 /* CapturedPasteTarget.swift in Sources */,
@@ -425,7 +483,13 @@
 				APP024 /* WhisperKitSetupView.swift in Sources */,
 				APP025 /* TranscriptionPipelineModels.swift in Sources */,
 				APP026 /* TranscriptionPipelineService.swift in Sources */,
-				APP027 /* BackendSettingsSections.swift in Sources */,
+				APP069 /* KeychainSecurityNoticeBanner.swift in Sources */,
+				APP070 /* CatalogModelSection.swift in Sources */,
+				APP071 /* CatalogModelStatusLabel.swift in Sources */,
+				APP072 /* TranscriptionSettingsSection.swift in Sources */,
+				APP073 /* WhisperKitSettingsSection.swift in Sources */,
+				APP074 /* RefinementSettingsSection.swift in Sources */,
+				APP075 /* OllamaManagementSection.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

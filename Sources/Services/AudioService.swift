@@ -68,6 +68,7 @@ actor AudioRecorder {
         case noInput
         case formatError
         case converterError
+        case tapInstallationFailed(Error)
         case engineStartFailed(Error)
         case notWarmedUp
         
@@ -76,6 +77,7 @@ actor AudioRecorder {
             case .noInput: return "No audio input available. Check microphone permissions."
             case .formatError: return "Audio format error."
             case .converterError: return "Audio converter error."
+            case .tapInstallationFailed(let error): return "Audio tap installation failed: \(error.localizedDescription)"
             case .engineStartFailed(let error): return "Audio engine failed: \(error.localizedDescription)"
             case .notWarmedUp: return "Audio engine not warmed up. Call prepareEngine() first."
             }
@@ -121,25 +123,22 @@ actor AudioRecorder {
         let quality: AudioQuality = highQuality ? .high : .optimized
         let targetSampleRate = quality.sampleRate
         
-        let outputFormat = AVAudioFormat(
-            commonFormat: .pcmFormatFloat32,
-            sampleRate: targetSampleRate,
-            channels: 1,
-            interleaved: false
-        )!
-        
-        let tapFormat = AVAudioFormat(
-            commonFormat: .pcmFormatFloat32,
-            sampleRate: inputFormat.sampleRate,
-            channels: 1,
-            interleaved: false
-        )!
-        
-        // Cache formats for beginCapture()
-        self.cachedHighQuality = highQuality
-        self.cachedOutputFormat = outputFormat
-        self.cachedTapFormat = tapFormat
-        self.audioEngine = engine
+        let formats = try Self.requireCaptureFormats(
+            outputFormat: AVAudioFormat(
+                commonFormat: .pcmFormatFloat32,
+                sampleRate: targetSampleRate,
+                channels: 1,
+                interleaved: false
+            ),
+            tapFormat: AVAudioFormat(
+                commonFormat: .pcmFormatFloat32,
+                sampleRate: inputFormat.sampleRate,
+                channels: 1,
+                interleaved: false
+            )
+        )
+        let outputFormat = formats.outputFormat
+        let tapFormat = formats.tapFormat
         
         // Set up converter if needed
         let needsConversion = inputFormat.sampleRate != targetSampleRate
@@ -148,31 +147,13 @@ actor AudioRecorder {
             guard let converter = AVAudioConverter(from: tapFormat, to: outputFormat) else {
                 throw AudioError.converterError
             }
-            self.converter = converter
             tapConverter = converter
         }
 
-        let preRollMaxFrames = Int(outputFormat.sampleRate * preRollDurationSeconds)
-        tapState.withLock { state in
-            state.isWriting = false
-            state.lastBufferTime = Date()
-            state.converter = tapConverter
-            state.outputFormat = outputFormat
-            state.inputFormat = inputFormat
-            state.preRollBuffers.removeAll(keepingCapacity: true)
-            state.preRollFrameCount = 0
-            state.preRollMaxFrames = preRollMaxFrames
-            state.pendingPreRollFlush = false
-        }
-        
-        let stream = AsyncStream<Float> { continuation in
-            self.levelContinuation = continuation
-        }
-        
         // Install a single persistent tap. All TapState access happens inside
         // one withLock so the actor side can never observe (or corrupt)
         // half-updated pre-roll/file state.
-        node.installTap(onBus: 0, bufferSize: 1024, format: tapFormat) { [weak self, tapState] buffer, _ in
+        let processBuffer: @Sendable (AVAudioPCMBuffer) -> Void = { [weak self, tapState] buffer in
             let result = Self.processTapBuffer(buffer, tapState: tapState)
 
             if let self {
@@ -187,6 +168,48 @@ actor AudioRecorder {
                 }
                 Task { await self.sendLevel(result.level) }
             }
+        }
+
+        try Self.installCaptureTap {
+            if #available(macOS 27.0, *) {
+                try node.installAudioTap(
+                    onBus: 0,
+                    bufferSize: 1024,
+                    format: tapFormat
+                ) { readOnlyBuffer, _ in
+                    processBuffer(Self.copyTapBuffer(readOnlyBuffer))
+                }
+            } else {
+                Self.installLegacyTap(
+                    on: node,
+                    format: tapFormat,
+                    processBuffer: processBuffer
+                )
+            }
+        }
+
+        // Cache formats and engine ownership only after tap installation succeeds.
+        self.cachedHighQuality = highQuality
+        self.cachedOutputFormat = outputFormat
+        self.cachedTapFormat = tapFormat
+        self.audioEngine = engine
+        self.converter = tapConverter
+
+        let preRollMaxFrames = Int(outputFormat.sampleRate * preRollDurationSeconds)
+        tapState.withLock { state in
+            state.isWriting = false
+            state.lastBufferTime = Date()
+            state.converter = tapConverter
+            state.outputFormat = outputFormat
+            state.inputFormat = inputFormat
+            state.preRollBuffers.removeAll(keepingCapacity: true)
+            state.preRollFrameCount = 0
+            state.preRollMaxFrames = preRollMaxFrames
+            state.pendingPreRollFlush = false
+        }
+
+        let stream = AsyncStream<Float> { continuation in
+            self.levelContinuation = continuation
         }
         
         engine.prepare()
@@ -470,6 +493,41 @@ actor AudioRecorder {
             sum += channelData[i] * channelData[i]
         }
         return sqrt(sum / Float(frameLength))
+    }
+
+    static func requireCaptureFormats(
+        outputFormat: AVAudioFormat?,
+        tapFormat: AVAudioFormat?
+    ) throws -> (outputFormat: AVAudioFormat, tapFormat: AVAudioFormat) {
+        guard let outputFormat, let tapFormat else {
+            throw AudioError.formatError
+        }
+
+        return (outputFormat, tapFormat)
+    }
+
+    static func installCaptureTap(_ installation: () throws -> Void) throws {
+        do {
+            try installation()
+        } catch {
+            throw AudioError.tapInstallationFailed(error)
+        }
+    }
+
+    @available(macOS, introduced: 26.0, deprecated: 27.0)
+    private static func installLegacyTap(
+        on node: AVAudioNode,
+        format: AVAudioFormat,
+        processBuffer: @escaping @Sendable (AVAudioPCMBuffer) -> Void
+    ) {
+        node.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
+            processBuffer(buffer)
+        }
+    }
+
+    @available(macOS 27.0, *)
+    static func copyTapBuffer(_ source: AVReadOnlyAudioPCMBuffer) -> AVAudioPCMBuffer {
+        AVAudioPCMBuffer(copying: source)
     }
 
     static func copyBuffer(_ source: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {

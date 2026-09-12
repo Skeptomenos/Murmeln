@@ -109,6 +109,49 @@ struct TapStateConcurrencyTests {
 
 @Suite("AudioService Tests")
 struct AudioServiceTests {
+    @Test("Invalid capture formats map to the typed format error")
+    func invalidCaptureFormatsMapToFormatError() {
+        do {
+            _ = try AudioRecorder.requireCaptureFormats(
+                outputFormat: nil,
+                tapFormat: nil
+            )
+            Issue.record("Expected invalid capture formats to throw")
+        } catch let error as AudioRecorder.AudioError {
+            guard case .formatError = error else {
+                Issue.record("Expected AudioError.formatError, got \(error)")
+                return
+            }
+        } catch {
+            Issue.record("Expected AudioError.formatError, got \(error)")
+        }
+    }
+
+    @Test("Tap installation failures map to the typed audio error")
+    func tapInstallationFailureMapsToAudioError() {
+        let underlyingError = NSError(
+            domain: "AudioServiceTests.tap-installation",
+            code: 42
+        )
+
+        do {
+            try AudioRecorder.installCaptureTap {
+                throw underlyingError
+            }
+            Issue.record("Expected tap installation to throw")
+        } catch let error as AudioRecorder.AudioError {
+            guard case .tapInstallationFailed(let capturedError) = error else {
+                Issue.record("Expected AudioError.tapInstallationFailed, got \(error)")
+                return
+            }
+
+            #expect((capturedError as NSError).domain == underlyingError.domain)
+            #expect((capturedError as NSError).code == underlyingError.code)
+        } catch {
+            Issue.record("Expected AudioError.tapInstallationFailed, got \(error)")
+        }
+    }
+
     @Test("Converter flush emits trailing frames")
     func converterFlushEmitsTrailingFrames() {
         let inputFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 48_000, channels: 1, interleaved: false)!
@@ -244,6 +287,36 @@ struct AudioServiceTests {
         #expect(abs(originalData[0] - copiedData[0]) < 0.0001)
         #expect(abs(originalData[64] - copiedData[64]) < 0.0001)
         #expect(abs(originalData[128] - copiedData[128]) < 0.0001)
+    }
+
+    @available(macOS 27.0, *)
+    @Test("macOS 27 read-only tap buffers are copied before processing")
+    func readOnlyTapBufferIsCopiedBeforeProcessing() {
+        let format = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: 16_000,
+            channels: 1,
+            interleaved: false
+        )!
+        let original = makeConstantBuffer(
+            format: format,
+            frameCount: 128,
+            value: 0.25
+        )
+        let readOnlyBuffer = AVReadOnlyAudioPCMBuffer(copying: original)
+        let copied = AudioRecorder.copyTapBuffer(readOnlyBuffer)
+
+        #expect(copied.frameLength == original.frameLength)
+        #expect(copied.format.sampleRate == original.format.sampleRate)
+        #expect(copied.format.channelCount == original.format.channelCount)
+
+        guard let copiedData = copied.floatChannelData?[0] else {
+            Issue.record("Copied tap buffer has no float channel data")
+            return
+        }
+        #expect(abs(copiedData[0] - 0.25) < 0.0001)
+        #expect(abs(copiedData[64] - 0.25) < 0.0001)
+        #expect(abs(copiedData[127] - 0.25) < 0.0001)
     }
 
     @Test("Pre-roll flush writes buffered audio without post-threshold callback")

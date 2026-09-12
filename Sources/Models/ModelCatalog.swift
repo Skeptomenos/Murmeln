@@ -9,7 +9,7 @@ struct TranscriptionModelID: RawRepresentable, Hashable, Codable, Sendable {
 }
 
 /// Which inference engine serves a catalog entry.
-enum RuntimeID: String, Codable, Sendable {
+enum RuntimeID: String, CaseIterable, Codable, Sendable {
     case whisperKit = "whisperkit"
     case fluidAudio = "fluidaudio"
     // Future: case mlxAudio (Granite, Qwen3-ASR 1.7B), case appleSpeech

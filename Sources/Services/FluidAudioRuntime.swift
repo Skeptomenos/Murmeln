@@ -75,33 +75,8 @@ final class FluidAudioRuntime: TranscriptionRuntime {
     /// The per-model cache directory under `modelsDirectory`, matching
     /// FluidAudio's own `defaultModelsDirectory(for:)` layout
     /// (`…/FluidAudio/Models/<repo.folderName>`).
-    private func cacheDirectory(for served: ServedModel) -> URL {
-        modelsDirectory.appendingPathComponent(Self.repo(for: served).folderName)
-    }
-
-    // MARK: Catalog mapping
-
-    private enum ServedModel {
-        case parakeet(AsrModelVersion)
-        case cohere
-    }
-
-    private static func servedModel(for modelID: TranscriptionModelID) -> ServedModel? {
-        switch modelID.rawValue {
-        case "parakeet-tdt-0.6b-v3": return .parakeet(.v3)
-        case "parakeet-tdt-0.6b-v2": return .parakeet(.v2)
-        case "cohere-transcribe-03-2026-int8": return .cohere
-        default: return nil
-        }
-    }
-
-    private static func repo(for served: ServedModel) -> Repo {
-        switch served {
-        case .parakeet(.v3): return .parakeetV3
-        case .parakeet(.v2): return .parakeetV2
-        case .parakeet: return .parakeetV3
-        case .cohere: return .cohereTranscribeCoreml
-        }
+    private func cacheDirectory(for descriptor: FluidAudioModelDescriptor) -> URL {
+        modelsDirectory.appendingPathComponent(descriptor.repo.folderName)
     }
 
     // MARK: TranscriptionRuntime
@@ -110,16 +85,19 @@ final class FluidAudioRuntime: TranscriptionRuntime {
         if let installationCheck {
             return installationCheck(modelID)
         }
-        guard let served = Self.servedModel(for: modelID) else { return false }
+        guard let descriptor = FluidAudioModelDescriptor.descriptor(for: modelID) else {
+            return false
+        }
         // Slice 5c/P2.5: verify the runtime's actual required files, not just a
         // non-empty folder — a partial/interrupted download must read as "not
         // installed" so the UI offers a download instead of failing at load.
-        switch served {
-        case .parakeet(let version):
+        switch descriptor.engine {
+        case .parakeetV3, .parakeetV2:
+            guard let version = descriptor.engine.parakeetVersion else { return false }
             return AsrModels.modelsExist(
-                at: cacheDirectory(for: served), version: version)
+                at: cacheDirectory(for: descriptor), version: version)
         case .cohere:
-            let repoDir = cacheDirectory(for: served)
+            let repoDir = cacheDirectory(for: descriptor)
             return ModelNames.CohereTranscribe.requiredModels.allSatisfy { file in
                 FileManager.default.fileExists(atPath: repoDir.appendingPathComponent(file).path)
             }
@@ -130,13 +108,14 @@ final class FluidAudioRuntime: TranscriptionRuntime {
         _ modelID: TranscriptionModelID,
         progress: @escaping @MainActor (Double) -> Void
     ) async throws {
-        guard let served = Self.servedModel(for: modelID) else {
+        guard let descriptor = FluidAudioModelDescriptor.descriptor(for: modelID) else {
             throw TranscriptionRuntimeError.unsupportedModel(modelID, id)
         }
+        try Task.checkCancellation()
         progress(0)
         do {
             try await ModelHub.download(
-                Self.repo(for: served),
+                descriptor.repo,
                 to: modelsDirectory,
                 progressHandler: { update in
                     Task { @MainActor in
@@ -147,6 +126,7 @@ final class FluidAudioRuntime: TranscriptionRuntime {
                     }
                 }
             )
+            try Task.checkCancellation()
             finishDownloadProgress(progress: progress)
         } catch {
             if Task.isCancelled || error is CancellationError {
@@ -162,7 +142,7 @@ final class FluidAudioRuntime: TranscriptionRuntime {
     }
 
     func delete(_ modelID: TranscriptionModelID) async throws {
-        guard let served = Self.servedModel(for: modelID) else {
+        guard let descriptor = FluidAudioModelDescriptor.descriptor(for: modelID) else {
             throw TranscriptionRuntimeError.unsupportedModel(modelID, id)
         }
 
@@ -172,11 +152,10 @@ final class FluidAudioRuntime: TranscriptionRuntime {
         default: false
         }
         if shouldInvalidateLoad {
-            loadGeneration += 1
-            unload(publish: true)
+            await unload()
         }
 
-        let directory = cacheDirectory(for: served)
+        let directory = cacheDirectory(for: descriptor)
         if FileManager.default.fileExists(atPath: directory.path) {
             try FileManager.default.removeItem(at: directory)
         }
@@ -204,7 +183,8 @@ final class FluidAudioRuntime: TranscriptionRuntime {
     /// dictation path can't silently pull multi-GB weights or hit the network
     /// (downloads go solely through `download(_:progress:)`).
     func load(_ modelID: TranscriptionModelID) async throws {
-        guard let served = Self.servedModel(for: modelID) else {
+        try Task.checkCancellation()
+        guard let descriptor = FluidAudioModelDescriptor.descriptor(for: modelID) else {
             throw TranscriptionRuntimeError.unsupportedModel(modelID, id)
         }
         guard isInstalled(modelID) else {
@@ -226,15 +206,17 @@ final class FluidAudioRuntime: TranscriptionRuntime {
         ])
 
         do {
+            try Task.checkCancellation()
             let loadedEngine: LoadedEngine
             if let modelLoader {
-                loadedEngine = try await modelLoader(modelID, cacheDirectory(for: served))
+                loadedEngine = try await modelLoader(modelID, cacheDirectory(for: descriptor))
             } else {
-                loadedEngine = try await loadEngine(for: served)
+                loadedEngine = try await loadEngine(for: descriptor)
             }
+            try Task.checkCancellation()
             guard generation == loadGeneration else {
                 logger.info("Discarding stale FluidAudio load (gen \(generation) != \(self.loadGeneration))")
-                return
+                throw CancellationError()
             }
             switch loadedEngine {
             case .parakeet(let manager):
@@ -249,7 +231,7 @@ final class FluidAudioRuntime: TranscriptionRuntime {
             ])
             logger.info("Loaded \(modelID.rawValue, privacy: .public) in \(elapsedMs) ms")
         } catch {
-            if Self.shouldPreserveCancellation(error) {
+            if Task.isCancelled || Self.shouldPreserveCancellation(error) {
                 if generation == loadGeneration {
                     state = .notLoaded
                 }
@@ -269,23 +251,26 @@ final class FluidAudioRuntime: TranscriptionRuntime {
         }
     }
 
-    func unload() {
+    func unload() async {
         // Relinquish ownership of any in-flight load before clearing the
         // resident engine. A late completion must not republish `.ready`.
         loadGeneration += 1
         unload(publish: true)
     }
 
-    private func loadEngine(for served: ServedModel) async throws -> LoadedEngine {
-        switch served {
-        case .parakeet(let version):
+    private func loadEngine(for descriptor: FluidAudioModelDescriptor) async throws -> LoadedEngine {
+        switch descriptor.engine {
+        case .parakeetV3, .parakeetV2:
+            guard let version = descriptor.engine.parakeetVersion else {
+                throw TranscriptionRuntimeError.unsupportedModel(descriptor.modelID, id)
+            }
             let models = try await AsrModels.load(
-                from: cacheDirectory(for: served), version: version)
+                from: cacheDirectory(for: descriptor), version: version)
             let manager = AsrManager(config: .default)
             try await manager.loadModels(models)
             return .parakeet(manager)
         case .cohere:
-            let repoDir = cacheDirectory(for: served)
+            let repoDir = cacheDirectory(for: descriptor)
             // F4: the multi-minute CoreML specialization lives here — logged
             // start/complete with elapsed so a long first load is visible.
             let models = try await CoherePipeline.loadModels(
@@ -325,22 +310,28 @@ final class FluidAudioRuntime: TranscriptionRuntime {
     }
 
     func transcribe(audioURL: URL, options: TranscriptionOptions) async throws -> String {
-        guard case .ready(let modelID) = state, let served = Self.servedModel(for: modelID) else {
+        guard case .ready(let modelID) = state,
+              let descriptor = FluidAudioModelDescriptor.descriptor(for: modelID) else {
             throw TranscriptionRuntimeError.runtimeNotReady(id)
         }
 
         do {
+            try Task.checkCancellation()
             let samples = try audioConverter.resampleAudioFile(path: audioURL.path)
+            try Task.checkCancellation()
 
-            switch served {
-            case .parakeet:
+            switch descriptor.engine {
+            case .parakeetV3, .parakeetV2:
                 guard let manager = parakeetManager else {
                     throw TranscriptionRuntimeError.runtimeNotReady(id)
                 }
                 // Fresh decoder state per capture — push-to-talk utterances are
                 // independent; no cross-capture context carryover.
+                try Task.checkCancellation()
                 var decoderState = try TdtDecoderState(decoderLayers: currentParakeetVersion?.decoderLayers ?? 2)
+                try Task.checkCancellation()
                 let result = try await manager.transcribe(samples, decoderState: &decoderState)
+                try Task.checkCancellation()
                 return result.text
 
             case .cohere:
@@ -361,25 +352,21 @@ final class FluidAudioRuntime: TranscriptionRuntime {
                     maxUtteranceSeconds: Double(maxSeconds)
                 ) {
                 case .singleCall:
+                    try Task.checkCancellation()
                     let result = try await coherePipeline.transcribe(
                         audio: samples, models: models, language: language)
+                    try Task.checkCancellation()
                     return result.text
                 case .longForm:
-                    let ranges = CohereLongFormChunking.ranges(
-                        sampleCount: samples.count,
+                    return try await CohereLongFormChunking.transcribe(
+                        samples: samples,
                         sampleRate: CohereAsrConfig.sampleRate,
                         maxChunkSeconds: maxSeconds
-                    )
-                    var transcript = ""
-                    for range in ranges {
+                    ) { samples in
                         let result = try await coherePipeline.transcribe(
-                            audio: Array(samples[range]), models: models, language: language)
-                        transcript = CohereLongFormChunking.merge(
-                            prefix: transcript,
-                            suffix: result.text
-                        )
+                            audio: samples, models: models, language: language)
+                        return result.text
                     }
-                    return transcript
                 }
             }
         } catch {
@@ -400,9 +387,9 @@ final class FluidAudioRuntime: TranscriptionRuntime {
 
     private var currentParakeetVersion: AsrModelVersion? {
         guard case .ready(let modelID) = state,
-              case .parakeet(let version) = Self.servedModel(for: modelID) else {
+              let descriptor = FluidAudioModelDescriptor.descriptor(for: modelID) else {
             return nil
         }
-        return version
+        return descriptor.engine.parakeetVersion
     }
 }

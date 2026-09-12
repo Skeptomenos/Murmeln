@@ -82,7 +82,7 @@ final class MockRuntime: TranscriptionRuntime {
         state = .ready(modelID)
     }
 
-    func unload() {
+    func unload() async {
         unloadCalls += 1
         state = .notLoaded
     }
