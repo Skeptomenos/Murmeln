@@ -74,20 +74,18 @@ actor WhisperKitWorker {
         print("🔄 WhisperKit model unloaded")
     }
     
-    func transcribe(audioPath: String, decodingOptions: DecodingOptions, generation: UInt64) async throws -> [TranscriptionResult] {
-        guard generation == self.generation else { throw CancellationError() }
-        guard let whisperKit else {
-            throw WhisperKitService.ServiceError.modelNotLoaded
-        }
+    func transcribe(
+        audioPath: String, expectedVariant: String, decodingOptions: DecodingOptions, generation: UInt64
+    ) async throws -> [TranscriptionResult] {
+        let whisperKit = try admittedEngine(expectedVariant: expectedVariant, generation: generation)
         
         return try await whisperKit.transcribe(audioPath: audioPath, decodeOptions: decodingOptions)
     }
 
-    func inspectVADChunkDiagnostics(audioPath: String, decodingOptions: DecodingOptions, generation: UInt64) async throws -> WhisperKitVADChunkDiagnostics? {
-        guard generation == self.generation else { throw CancellationError() }
-        guard let whisperKit else {
-            throw WhisperKitService.ServiceError.modelNotLoaded
-        }
+    func inspectVADChunkDiagnostics(
+        audioPath: String, expectedVariant: String, decodingOptions: DecodingOptions, generation: UInt64
+    ) async throws -> WhisperKitVADChunkDiagnostics? {
+        let whisperKit = try admittedEngine(expectedVariant: expectedVariant, generation: generation)
 
         guard decodingOptions.chunkingStrategy == .vad else {
             return nil
@@ -99,6 +97,7 @@ actor WhisperKitWorker {
         )
         let maxChunkLength = whisperKit.featureExtractor.windowSamples ?? Constants.defaultWindowSamples
         let chunker = VADAudioChunker(vad: whisperKit.voiceActivityDetector ?? EnergyVAD())
+        try Task.checkCancellation()
         let chunks = try await chunker.chunkAll(
             audioArray: audioArray,
             maxChunkLength: maxChunkLength,
@@ -113,6 +112,15 @@ actor WhisperKitWorker {
         )
     }
     
+    private func admittedEngine(expectedVariant: String, generation: UInt64) throws -> WhisperKit {
+        try Task.checkCancellation()
+        guard generation == self.generation, loadedVariant == expectedVariant else {
+            throw CancellationError()
+        }
+        guard let whisperKit else { throw WhisperKitService.ServiceError.modelNotLoaded }
+        return whisperKit
+    }
+
     func isLoaded(variant: String) -> Bool {
         return whisperKit != nil && loadedVariant == variant
     }
@@ -352,16 +360,23 @@ final class WhisperKitService: ObservableObject {
     }
 
     @MainActor
-    func inspectVADChunkDiagnostics(audioURL: URL, preparedDecoding: WhisperKitPreparedDecoding) async throws -> WhisperKitVADChunkDiagnostics? {
+    func inspectVADChunkDiagnostics(
+        audioURL: URL, expectedVariant: String, preparedDecoding: WhisperKitPreparedDecoding
+    ) async throws -> WhisperKitVADChunkDiagnostics? {
         guard Self.captureDiagnosticsInspectionEnabled else {
             return nil
         }
 
-        return try await worker.inspectVADChunkDiagnostics(
+        let generation = try admissionGeneration(expectedVariant: expectedVariant)
+        let diagnostics = try await worker.inspectVADChunkDiagnostics(
             audioPath: audioURL.path,
+            expectedVariant: expectedVariant,
             decodingOptions: preparedDecoding.options,
-            generation: loadGeneration
+            generation: generation
         )
+        try Task.checkCancellation()
+        guard generation == loadGeneration else { throw CancellationError() }
+        return diagnostics
     }
 
     @MainActor
@@ -790,37 +805,45 @@ final class WhisperKitService: ObservableObject {
     }
 
     // Transcribe audio file
-    func transcribe(audioURL: URL) async throws -> String {
+    func transcribe(audioURL: URL, expectedVariant: String) async throws -> String {
         let preparedDecoding = prepareDecoding(settings: AppSettings.shared.pipelineSettingsSnapshot())
-        return try await transcribe(audioURL: audioURL, preparedDecoding: preparedDecoding)
+        return try await transcribe(audioURL: audioURL, expectedVariant: expectedVariant, preparedDecoding: preparedDecoding)
     }
 
-    func transcribe(audioURL: URL, languageCode: String?) async throws -> String {
+    func transcribe(audioURL: URL, expectedVariant: String, languageCode: String?) async throws -> String {
         let preparedDecoding = Self.prepareDecoding(
             settings: AppSettings.shared.pipelineSettingsSnapshot(),
             languageCode: languageCode
         )
-        return try await transcribe(audioURL: audioURL, preparedDecoding: preparedDecoding)
+        return try await transcribe(audioURL: audioURL, expectedVariant: expectedVariant, preparedDecoding: preparedDecoding)
     }
 
-    func transcribe(audioURL: URL, preparedDecoding: WhisperKitPreparedDecoding) async throws -> String {
-        let output = try await transcribeOutput(audioURL: audioURL, preparedDecoding: preparedDecoding)
+    func transcribe(
+        audioURL: URL, expectedVariant: String, preparedDecoding: WhisperKitPreparedDecoding
+    ) async throws -> String {
+        let output = try await transcribeOutput(audioURL: audioURL, expectedVariant: expectedVariant, preparedDecoding: preparedDecoding)
         return output.text
     }
 
-    func transcribeOutput(audioURL: URL, preparedDecoding: WhisperKitPreparedDecoding) async throws -> WhisperKitTranscriptionOutput {
-        guard modelState == .ready else {
-            throw ServiceError.modelNotLoaded
-        }
-
-        let generation = loadGeneration
+    func transcribeOutput(
+        audioURL: URL, expectedVariant: String, preparedDecoding: WhisperKitPreparedDecoding
+    ) async throws -> WhisperKitTranscriptionOutput {
+        let generation = try admissionGeneration(expectedVariant: expectedVariant)
         let results = try await worker.transcribe(audioPath: audioURL.path,
+            expectedVariant: expectedVariant,
             decodingOptions: preparedDecoding.options, generation: generation)
         try Task.checkCancellation()
         guard generation == loadGeneration else { throw CancellationError() }
         let segments = results.flatMap(\.segments)
         let text = results.map { $0.text }.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
         return WhisperKitTranscriptionOutput(text: text, segments: segments)
+    }
+
+    private func admissionGeneration(expectedVariant: String) throws -> UInt64 {
+        try Task.checkCancellation()
+        guard modelState == .ready else { throw ServiceError.modelNotLoaded }
+        guard selectedModel == expectedVariant else { throw CancellationError() }
+        return loadGeneration
     }
 
     nonisolated static func summarizeDecodedSegmentCoverage(

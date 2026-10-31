@@ -388,6 +388,7 @@ struct TranscriptionPipelineServiceTests {
             transcriptionAPIKey: "transcription-key",
             transcriptionBaseURL: "https://example.test/v1",
             transcriptionModel: transcriptionModel,
+            whisperKitModel: transcriptionProvider == .whisperKit ? transcriptionModel : "openai_whisper-small",
             refinementProvider: .openAI,
             refinementAPIKey: "refinement-key",
             refinementBaseURL: "https://example.test/v1",
@@ -468,16 +469,16 @@ private final class MockWhisperKitService: WhisperKitTranscribing {
         return prepared
     }
 
-    func transcribe(audioURL: URL) async throws -> String {
+    func transcribe(audioURL: URL, expectedVariant: String) async throws -> String {
         transcribeCalls += 1
         return transcribeResult
     }
 
-    func transcribe(audioURL: URL, languageCode: String?) async throws -> String {
-        try await transcribe(audioURL: audioURL)
+    func transcribe(audioURL: URL, expectedVariant: String, languageCode: String?) async throws -> String {
+        try await transcribe(audioURL: audioURL, expectedVariant: expectedVariant)
     }
 
-    func transcribe(audioURL: URL, preparedDecoding: WhisperKitPreparedDecoding) async throws -> String {
+    func transcribe(audioURL: URL, expectedVariant: String, preparedDecoding: WhisperKitPreparedDecoding) async throws -> String {
         transcribeCalls += 1
         lastPreparedDecoding = preparedDecoding
         return transcribeResult

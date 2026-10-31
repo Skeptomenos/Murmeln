@@ -16,6 +16,7 @@ struct CaptureTelemetrySummaryTests {
             transcriptionAPIKey: "transcription-key",
             transcriptionBaseURL: "https://example.test/v1",
             transcriptionModel: "whisper-1",
+            whisperKitModel: "openai_whisper-small",
             refinementProvider: .openAI,
             refinementAPIKey: "refinement-key",
             refinementBaseURL: "https://example.test/v1",
@@ -250,6 +251,6 @@ private final class SummaryTestWhisperKitService: WhisperKitTranscribing {
     var selectedModel: String = "openai_whisper-small"
 
     func loadModel(_ variant: String) async throws {}
-    func transcribe(audioURL: URL) async throws -> String { "whisper" }
-    func transcribe(audioURL: URL, languageCode: String?) async throws -> String { "whisper" }
+    func transcribe(audioURL: URL, expectedVariant: String) async throws -> String { "whisper" }
+    func transcribe(audioURL: URL, expectedVariant: String, languageCode: String?) async throws -> String { "whisper" }
 }

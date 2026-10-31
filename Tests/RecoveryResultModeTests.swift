@@ -81,6 +81,7 @@ struct RecoveryResultModeTests {
     private func settings(parallel: Bool) -> PipelineSettingsSnapshot {
         PipelineSettingsSnapshot(transcriptionProvider: .openAIWhisper, transcriptionAPIKey: "",
             transcriptionBaseURL: "https://example.test", transcriptionModel: "fixture",
+            whisperKitModel: "openai_whisper-small",
             refinementProvider: .openAI, refinementAPIKey: "", refinementBaseURL: "https://example.test",
             refinementModel: "fixture", skipRefinement: false, parallelRefinementEnabled: parallel,
             whisperKitProfile: .balanced, whisperKitTemperature: 0, whisperKitPromptPrefill: false,

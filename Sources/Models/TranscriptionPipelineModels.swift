@@ -126,6 +126,7 @@ struct PipelineSettingsSnapshot {
     let transcriptionAPIKey: String
     let transcriptionBaseURL: String
     let transcriptionModel: String
+    let whisperKitModel: String
     /// Phase 8: catalog model ID when a catalog model is selected (empty for
     /// legacy providers) + the user's language preference ("auto" or a code).
     var selectedCatalogModelID: String = ""
@@ -156,6 +157,7 @@ extension AppSettings {
             transcriptionAPIKey: transcriptionAPIKey,
             transcriptionBaseURL: transcriptionBaseURL,
             transcriptionModel: transcriptionProvider == .whisperKit ? whisperKitModel : transcriptionModel,
+            whisperKitModel: whisperKitModel,
             selectedCatalogModelID: selectedModelIDRaw,
             preferredLanguage: preferredLanguage,
             refinementProvider: refinementProvider,

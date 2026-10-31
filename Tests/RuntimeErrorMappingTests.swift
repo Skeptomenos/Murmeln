@@ -48,6 +48,19 @@ struct RuntimeErrorMappingTests {
         await #expect(throws: TranscriptionRuntimeError.runtimeNotReady(.fluidAudio)) {
             _ = try await runtime.transcribe(
                 audioURL: URL(fileURLWithPath: "/tmp/none.wav"),
+                expectedModel: .fluidAudio(TranscriptionModelID(rawValue: "parakeet-tdt-0.6b-v3")),
+                options: TranscriptionOptions())
+        }
+    }
+
+    @MainActor
+    @Test("WhisperKitRuntime transcribe before load preserves the typed not-ready error")
+    func whisperKitTranscribeBeforeLoad() async {
+        let runtime = WhisperKitRuntime(service: WhisperKitService(), variantProvider: { "unused" })
+        await #expect(throws: TranscriptionRuntimeError.runtimeNotReady(.whisperKit)) {
+            _ = try await runtime.transcribe(
+                audioURL: URL(fileURLWithPath: "/unused"),
+                expectedModel: .whisperKit(variant: "openai_whisper-small"),
                 options: TranscriptionOptions())
         }
     }

@@ -80,7 +80,7 @@ struct AudioPreparationOwnershipTests {
             modelLoader: { model, _ in .parakeet(model == first ? firstManager : secondManager) },
             audioPreparation: { _ in await gate.hold() })
         try await runtime.load(first)
-        let task = Task { try await runtime.transcribe(audioURL: URL(fileURLWithPath: "/unused"), options: .init()) }
+        let task = Task { try await runtime.transcribe(audioURL: URL(fileURLWithPath: "/unused"), expectedModel: .fluidAudio(first), options: .init()) }
         try #require(await waitUntil { gate.pending != nil })
         if action == 0 { await runtime.unload() }
         if action == 1 { try await runtime.load(second) }

@@ -20,6 +20,7 @@
 - **Current order:** Forward-looking reliability and observability. The user stopped historical attribution on September 8. Stable signed Dev is active; preserve it. Current logs distinguish common app-side paste refusals, with remaining gaps for pre-admission cancellation and generic target-inspection failures. Four live safety cases remain deferred; the active plan owns next work.
 
 - **Review hardening:** `_planning/plans/2026-10-31-review-hardening.md` — October 31 fixes tracked by DEV-431. Separate from DEV-150 acceptance.
+- **Engineering follow-ups:** `_planning/artifacts/2026-10-31-engineering-followups.md` tracks DEV-433 model admission, DEV-434 optimized tests, and DEV-435 public export validation.
 
 ## Commands
 

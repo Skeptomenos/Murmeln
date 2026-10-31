@@ -87,7 +87,7 @@ final class MockRuntime: TranscriptionRuntime {
         state = .notLoaded
     }
 
-    func transcribe(audioURL: URL, options: TranscriptionOptions) async throws -> String {
+    func transcribe(audioURL: URL, expectedModel: TranscriptionModelIdentity, options: TranscriptionOptions) async throws -> String {
         transcribeCalls.append((audioURL, options))
         guard case .ready = state else {
             throw TranscriptionRuntimeError.runtimeNotReady(id)

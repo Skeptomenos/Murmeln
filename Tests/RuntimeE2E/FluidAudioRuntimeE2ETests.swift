@@ -108,8 +108,10 @@ struct FluidAudioRuntimeE2ETests {
     func parakeetV3English() async throws {
         let clip = try fixture("short_en")
         let runtime = FluidAudioRuntime()
-        try await runtime.load(TranscriptionModelID(rawValue: "parakeet-tdt-0.6b-v3"))
-        let text = try await runtime.transcribe(audioURL: clip.audio, options: TranscriptionOptions())
+        let modelID = TranscriptionModelID(rawValue: "parakeet-tdt-0.6b-v3")
+        try await runtime.load(modelID)
+        let text = try await runtime.transcribe(
+            audioURL: clip.audio, expectedModel: .fluidAudio(modelID), options: TranscriptionOptions())
         #expect(!text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         assertKeywordCoverage(text, reference: clip.reference, label: "parakeet-v3/short_en")
         assertFinalReferenceWordsPreserved(text, reference: clip.reference, label: "parakeet-v3/short_en")
@@ -119,8 +121,10 @@ struct FluidAudioRuntimeE2ETests {
     func parakeetV3German() async throws {
         let clip = try fixture("short_de")
         let runtime = FluidAudioRuntime()
-        try await runtime.load(TranscriptionModelID(rawValue: "parakeet-tdt-0.6b-v3"))
-        let text = try await runtime.transcribe(audioURL: clip.audio, options: TranscriptionOptions())
+        let modelID = TranscriptionModelID(rawValue: "parakeet-tdt-0.6b-v3")
+        try await runtime.load(modelID)
+        let text = try await runtime.transcribe(
+            audioURL: clip.audio, expectedModel: .fluidAudio(modelID), options: TranscriptionOptions())
         assertKeywordCoverage(text, reference: clip.reference, label: "parakeet-v3/short_de")
         assertFinalReferenceWordsPreserved(text, reference: clip.reference, label: "parakeet-v3/short_de")
     }
@@ -129,8 +133,10 @@ struct FluidAudioRuntimeE2ETests {
     func parakeetV2English() async throws {
         let clip = try fixture("short_en")
         let runtime = FluidAudioRuntime()
-        try await runtime.load(TranscriptionModelID(rawValue: "parakeet-tdt-0.6b-v2"))
-        let text = try await runtime.transcribe(audioURL: clip.audio, options: TranscriptionOptions())
+        let modelID = TranscriptionModelID(rawValue: "parakeet-tdt-0.6b-v2")
+        try await runtime.load(modelID)
+        let text = try await runtime.transcribe(
+            audioURL: clip.audio, expectedModel: .fluidAudio(modelID), options: TranscriptionOptions())
         assertKeywordCoverage(text, reference: clip.reference, label: "parakeet-v2/short_en")
     }
 
@@ -141,19 +147,20 @@ struct FluidAudioRuntimeE2ETests {
         let long = try fixture("long_en")
 
         let runtime = FluidAudioRuntime()
-        try await runtime.load(TranscriptionModelID(rawValue: "cohere-transcribe-03-2026-int8"))
+        let modelID = TranscriptionModelID(rawValue: "cohere-transcribe-03-2026-int8")
+        try await runtime.load(modelID)
 
         let enText = try await runtime.transcribe(
-            audioURL: en.audio, options: TranscriptionOptions(languageCode: "en"))
+            audioURL: en.audio, expectedModel: .fluidAudio(modelID), options: TranscriptionOptions(languageCode: "en"))
         assertKeywordCoverage(enText, reference: en.reference, label: "cohere/short_en")
 
         let deText = try await runtime.transcribe(
-            audioURL: de.audio, options: TranscriptionOptions(languageCode: "de"))
+            audioURL: de.audio, expectedModel: .fluidAudio(modelID), options: TranscriptionOptions(languageCode: "de"))
         assertKeywordCoverage(deText, reference: de.reference, label: "cohere/short_de")
 
         // >35s: exercises Murmeln's locally owned long-form chunk/stitch path.
         let longText = try await runtime.transcribe(
-            audioURL: long.audio, options: TranscriptionOptions(languageCode: "en"))
+            audioURL: long.audio, expectedModel: .fluidAudio(modelID), options: TranscriptionOptions(languageCode: "en"))
         assertKeywordCoverage(longText, reference: long.reference, label: "cohere/long_en")
         assertLongFormBoundaryPreserved(longText)
     }
@@ -162,10 +169,11 @@ struct FluidAudioRuntimeE2ETests {
     func cohereBoundaryRegression() async throws {
         let clip = try fixture("long_en_boundary_repro")
         let runtime = FluidAudioRuntime()
-        try await runtime.load(TranscriptionModelID(rawValue: "cohere-transcribe-03-2026-int8"))
+        let modelID = TranscriptionModelID(rawValue: "cohere-transcribe-03-2026-int8")
+        try await runtime.load(modelID)
 
         let text = try await runtime.transcribe(
-            audioURL: clip.audio, options: TranscriptionOptions(languageCode: "en"))
+            audioURL: clip.audio, expectedModel: .fluidAudio(modelID), options: TranscriptionOptions(languageCode: "en"))
 
         assertKeywordCoverage(text, reference: clip.reference, label: "cohere/long_en_boundary_repro")
         assertLongFormBoundaryPreserved(text)
@@ -177,8 +185,10 @@ struct FluidAudioRuntimeE2ETests {
         // FluidAudio first, then WhisperKit through its existing service.
         let clip = try fixture("short_en")
         let fluid = FluidAudioRuntime()
-        try await fluid.load(TranscriptionModelID(rawValue: "parakeet-tdt-0.6b-v3"))
-        let fluidText = try await fluid.transcribe(audioURL: clip.audio, options: TranscriptionOptions())
+        let modelID = TranscriptionModelID(rawValue: "parakeet-tdt-0.6b-v3")
+        try await fluid.load(modelID)
+        let fluidText = try await fluid.transcribe(
+            audioURL: clip.audio, expectedModel: .fluidAudio(modelID), options: TranscriptionOptions())
         #expect(!fluidText.isEmpty)
         await fluid.unload()
 
@@ -195,7 +205,7 @@ struct FluidAudioRuntimeE2ETests {
         let message: Comment = "WhisperKit variant '\(variant)' is required for Tier 1.5 coexistence. Download it in the production-context model store before running validate-e2e.sh."
         try #require(whisper.isModelDownloaded(variant), message)
         try await whisper.loadModel(variant)
-        let wkText = try await whisper.transcribe(audioURL: clip.audio)
+        let wkText = try await whisper.transcribe(audioURL: clip.audio, expectedVariant: variant)
         #expect(!wkText.isEmpty)
     }
 }

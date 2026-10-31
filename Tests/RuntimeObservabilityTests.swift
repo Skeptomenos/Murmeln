@@ -589,6 +589,7 @@ struct RuntimeObservabilityTests {
 
         _ = try await runtime.transcribe(
             audioURL: FileManager.default.temporaryDirectory.appendingPathComponent("speech.wav"),
+            expectedModel: .whisperKit(variant: "openai_whisper-small"),
             options: TranscriptionOptions(languageCode: "de")
         )
 
@@ -935,7 +936,7 @@ struct RuntimeObservabilityTests {
         }
 
         func unload() async {}
-        func transcribe(audioURL: URL, options: TranscriptionOptions) async throws -> String { "" }
+        func transcribe(audioURL: URL, expectedModel: TranscriptionModelIdentity, options: TranscriptionOptions) async throws -> String { "" }
 
         private struct ProbeFailure: Error {}
     }
@@ -1043,8 +1044,8 @@ struct RuntimeObservabilityTests {
             loadContinuation = nil
         }
 
-        func transcribe(audioURL: URL) async throws -> String { "" }
-        func transcribe(audioURL: URL, languageCode: String?) async throws -> String { "" }
+        func transcribe(audioURL: URL, expectedVariant: String) async throws -> String { "" }
+        func transcribe(audioURL: URL, expectedVariant: String, languageCode: String?) async throws -> String { "" }
     }
 
     private final class ProgressingWhisperKitService:
@@ -1082,8 +1083,8 @@ struct RuntimeObservabilityTests {
             selectedModel = variant
             modelState = .ready
         }
-        func transcribe(audioURL: URL) async throws -> String { "" }
-        func transcribe(audioURL: URL, languageCode: String?) async throws -> String {
+        func transcribe(audioURL: URL, expectedVariant: String) async throws -> String { "" }
+        func transcribe(audioURL: URL, expectedVariant: String, languageCode: String?) async throws -> String {
             transcriptionLanguageCodes.append(languageCode)
             return ""
         }

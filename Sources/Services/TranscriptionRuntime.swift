@@ -11,6 +11,18 @@ enum RuntimeState: Equatable, Sendable {
     case failed(String)
 }
 
+enum TranscriptionModelIdentity: Equatable, Sendable {
+    case fluidAudio(TranscriptionModelID)
+    case whisperKit(variant: String)
+
+    var catalogModelID: TranscriptionModelID {
+        switch self {
+        case .fluidAudio(let modelID): modelID
+        case .whisperKit: .whisperKit
+        }
+    }
+}
+
 /// Per-request options resolved by the pipeline from settings + catalog
 /// capabilities (a hint is passed only when the entry's languageMode
 /// requires or accepts one).
@@ -72,8 +84,9 @@ protocol TranscriptionRuntime: AnyObject, Sendable {
     /// Release the loaded model. `state` returns to `.notLoaded`.
     func unload() async
 
-    /// Transcribe a complete audio file. Requires `state == .ready`.
-    func transcribe(audioURL: URL, options: TranscriptionOptions) async throws -> String
+    func transcribe(
+        audioURL: URL, expectedModel: TranscriptionModelIdentity, options: TranscriptionOptions
+    ) async throws -> String
 }
 
 extension TranscriptionRuntime {

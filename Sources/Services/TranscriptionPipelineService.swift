@@ -31,22 +31,28 @@ protocol WhisperKitTranscribing: AnyObject, Sendable {
     func loadModel(_ variant: String) async throws
 
     @MainActor
-    func transcribe(audioURL: URL) async throws -> String
+    func transcribe(audioURL: URL, expectedVariant: String) async throws -> String
 
     @MainActor
-    func transcribe(audioURL: URL, languageCode: String?) async throws -> String
+    func transcribe(audioURL: URL, expectedVariant: String, languageCode: String?) async throws -> String
 
     @MainActor
     func prepareDecoding(settings: PipelineSettingsSnapshot) -> WhisperKitPreparedDecoding
 
     @MainActor
-    func transcribe(audioURL: URL, preparedDecoding: WhisperKitPreparedDecoding) async throws -> String
+    func transcribe(
+        audioURL: URL, expectedVariant: String, preparedDecoding: WhisperKitPreparedDecoding
+    ) async throws -> String
 
     @MainActor
-    func transcribeOutput(audioURL: URL, preparedDecoding: WhisperKitPreparedDecoding) async throws -> WhisperKitTranscriptionOutput
+    func transcribeOutput(
+        audioURL: URL, expectedVariant: String, preparedDecoding: WhisperKitPreparedDecoding
+    ) async throws -> WhisperKitTranscriptionOutput
 
     @MainActor
-    func inspectVADChunkDiagnostics(audioURL: URL, preparedDecoding: WhisperKitPreparedDecoding) async throws -> WhisperKitVADChunkDiagnostics?
+    func inspectVADChunkDiagnostics(
+        audioURL: URL, expectedVariant: String, preparedDecoding: WhisperKitPreparedDecoding
+    ) async throws -> WhisperKitVADChunkDiagnostics?
 }
 
 extension WhisperKitTranscribing {
@@ -56,17 +62,25 @@ extension WhisperKitTranscribing {
     }
 
     @MainActor
-    func transcribe(audioURL: URL, preparedDecoding: WhisperKitPreparedDecoding) async throws -> String {
-        try await transcribe(audioURL: audioURL)
+    func transcribe(
+        audioURL: URL, expectedVariant: String, preparedDecoding: WhisperKitPreparedDecoding
+    ) async throws -> String {
+        try await transcribe(audioURL: audioURL, expectedVariant: expectedVariant)
     }
 
     @MainActor
-    func transcribeOutput(audioURL: URL, preparedDecoding: WhisperKitPreparedDecoding) async throws -> WhisperKitTranscriptionOutput {
-        WhisperKitTranscriptionOutput(text: try await transcribe(audioURL: audioURL, preparedDecoding: preparedDecoding), segments: [])
+    func transcribeOutput(
+        audioURL: URL, expectedVariant: String, preparedDecoding: WhisperKitPreparedDecoding
+    ) async throws -> WhisperKitTranscriptionOutput {
+        WhisperKitTranscriptionOutput(
+            text: try await transcribe(audioURL: audioURL, expectedVariant: expectedVariant, preparedDecoding: preparedDecoding),
+            segments: [])
     }
 
     @MainActor
-    func inspectVADChunkDiagnostics(audioURL: URL, preparedDecoding: WhisperKitPreparedDecoding) async throws -> WhisperKitVADChunkDiagnostics? {
+    func inspectVADChunkDiagnostics(
+        audioURL: URL, expectedVariant: String, preparedDecoding: WhisperKitPreparedDecoding
+    ) async throws -> WhisperKitVADChunkDiagnostics? {
         nil
     }
 }
@@ -115,7 +129,7 @@ struct RuntimeTranscriptionBackend: TranscriptionBackendAdapter {
             runtime: nil,
             providerLabel: TranscriptionProvider.whisperKit.rawValue,
             runtimeLabel: RuntimeID.whisperKit.rawValue,
-            resolveModelID: { TranscriptionModelID(rawValue: $0.settings.transcriptionModel) },
+            resolveModelID: { TranscriptionModelID(rawValue: $0.settings.whisperKitModel) },
             resolveLanguageCode: { _ in nil },
             resolveQuantization: { _ in nil }
         )
@@ -163,7 +177,12 @@ struct RuntimeTranscriptionBackend: TranscriptionBackendAdapter {
     ) async throws -> TranscriptionBackendExecution {
         let modelID = resolveModelID(request)
         let model = modelID.rawValue
-        let runtimeName = await runtime.id.rawValue
+        let runtimeID = await runtime.id
+        let expectedModel: TranscriptionModelIdentity = switch runtimeID {
+        case .fluidAudio: .fluidAudio(modelID)
+        case .whisperKit: .whisperKit(variant: request.settings.whisperKitModel)
+        }
+        let runtimeName = runtimeID.rawValue
         let quantization = resolveQuantization(request)
 
         var baseMetadata: [String: String] {
@@ -217,7 +236,8 @@ struct RuntimeTranscriptionBackend: TranscriptionBackendAdapter {
 
         do {
             let options = TranscriptionOptions(languageCode: resolveLanguageCode(request))
-            let text = try await runtime.transcribe(audioURL: request.audioURL, options: options)
+            let text = try await runtime.transcribe(
+                audioURL: request.audioURL, expectedModel: expectedModel, options: options)
             let transcriptionFinish = DispatchTime.now().uptimeNanoseconds
             var completedMetadata = startedMetadata
             completedMetadata["elapsed_ms"] = String((transcriptionFinish - transcriptionStart) / 1_000_000)
@@ -251,7 +271,7 @@ struct RuntimeTranscriptionBackend: TranscriptionBackendAdapter {
         service whisperKitService: WhisperKitTranscribing,
         request: TranscriptionRequest
     ) async throws -> TranscriptionBackendExecution {
-        let model = request.settings.transcriptionModel
+        let model = request.settings.whisperKitModel
         let currentState = await whisperKitService.modelState
         let currentModel = await whisperKitService.selectedModel
         let isWarm = currentState == .ready && currentModel == model
@@ -320,6 +340,7 @@ struct RuntimeTranscriptionBackend: TranscriptionBackendAdapter {
         do {
             if let chunkDiagnostics = try await whisperKitService.inspectVADChunkDiagnostics(
                 audioURL: request.audioURL,
+                expectedVariant: model,
                 preparedDecoding: preparedDecoding
             ) {
                 var chunkMetadata = chunkDiagnostics.diagnosticsMetadata
@@ -331,6 +352,7 @@ struct RuntimeTranscriptionBackend: TranscriptionBackendAdapter {
                 logCaptureDiagnostics("app.backend_transcription.vad_chunks", captureID: request.captureID, metadata: chunkMetadata)
             }
         } catch {
+            if error is CancellationError || Task.isCancelled { throw CancellationError() }
             logCaptureDiagnostics("app.backend_transcription.vad_chunks_failed", captureID: request.captureID, metadata: [
                 "provider": TranscriptionProvider.whisperKit.rawValue,
                 "backend_kind": TranscriptionBackendKind.localNative.rawValue,
@@ -352,7 +374,8 @@ struct RuntimeTranscriptionBackend: TranscriptionBackendAdapter {
         ])
 
         do {
-            let output = try await whisperKitService.transcribeOutput(audioURL: request.audioURL, preparedDecoding: preparedDecoding)
+            let output = try await whisperKitService.transcribeOutput(
+                audioURL: request.audioURL, expectedVariant: model, preparedDecoding: preparedDecoding)
             let transcriptionFinish = DispatchTime.now().uptimeNanoseconds
             let segmentCoverage = WhisperKitService.summarizeDecodedSegmentCoverage(
                 output.segments,

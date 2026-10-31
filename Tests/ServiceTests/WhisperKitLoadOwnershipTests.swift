@@ -45,7 +45,7 @@ struct WhisperKitLoadOwnershipTests {
         #expect(await worker.isLoaded(variant: "B"))
         #expect(await worker.currentVariant == "B")
         await #expect(throws: CancellationError.self) {
-            _ = try await worker.transcribe(audioPath: "unused", decodingOptions: DecodingOptions(), generation: 1)
+            _ = try await worker.transcribe(audioPath: "unused", expectedVariant: "A", decodingOptions: DecodingOptions(), generation: 1)
         }
     }
 

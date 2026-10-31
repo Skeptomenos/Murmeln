@@ -143,13 +143,19 @@ final class WhisperKitRuntime: TranscriptionRuntime {
         await service.unloadModel()
     }
 
-    func transcribe(audioURL: URL, options: TranscriptionOptions) async throws -> String {
-        let modelID = TranscriptionModelID.whisperKit
-        guard isReady(modelID) else {
+    func transcribe(
+        audioURL: URL, expectedModel: TranscriptionModelIdentity, options: TranscriptionOptions
+    ) async throws -> String {
+        try Task.checkCancellation()
+        guard case .whisperKit(let variant) = expectedModel else {
+            throw TranscriptionRuntimeError.unsupportedModel(expectedModel.catalogModelID, id)
+        }
+        guard service.modelState == .ready else {
             throw TranscriptionRuntimeError.runtimeNotReady(id)
         }
         return try await service.transcribe(
             audioURL: audioURL,
+            expectedVariant: variant,
             languageCode: options.languageCode
         )
     }

@@ -205,7 +205,7 @@ struct TranscriptionSelectionLifecycleTests {
             state = .notLoaded
         }
 
-        func transcribe(audioURL: URL, options: TranscriptionOptions) async throws -> String {
+        func transcribe(audioURL: URL, expectedModel: TranscriptionModelIdentity, options: TranscriptionOptions) async throws -> String {
             ""
         }
 

@@ -312,11 +312,18 @@ final class FluidAudioRuntime: TranscriptionRuntime {
         return .runtimeFailure(id, operation, error.localizedDescription)
     }
 
-    func transcribe(audioURL: URL, options: TranscriptionOptions) async throws -> String {
-        guard case .ready(let modelID) = state,
+    func transcribe(
+        audioURL: URL, expectedModel: TranscriptionModelIdentity, options: TranscriptionOptions
+    ) async throws -> String {
+        try Task.checkCancellation()
+        guard case .fluidAudio(let modelID) = expectedModel,
               let descriptor = FluidAudioModelDescriptor.descriptor(for: modelID) else {
+            throw TranscriptionRuntimeError.unsupportedModel(expectedModel.catalogModelID, id)
+        }
+        guard case .ready = state else {
             throw TranscriptionRuntimeError.runtimeNotReady(id)
         }
+        guard state == .ready(modelID) else { throw CancellationError() }
 
         let generation = loadGeneration
         do {

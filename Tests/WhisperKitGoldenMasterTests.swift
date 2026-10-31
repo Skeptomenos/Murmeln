@@ -135,6 +135,7 @@ struct WhisperKitGoldenMasterTests {
             transcriptionAPIKey: "",
             transcriptionBaseURL: "",
             transcriptionModel: "openai_whisper-small",
+            whisperKitModel: "openai_whisper-small",
             refinementProvider: .openAI,
             refinementAPIKey: "refinement-key",
             refinementBaseURL: "https://example.test/v1",
@@ -208,15 +209,15 @@ private final class GoldenMockWhisperKitService: WhisperKitTranscribing {
         modelState = .ready
     }
 
-    func transcribe(audioURL: URL) async throws -> String {
+    func transcribe(audioURL: URL, expectedVariant: String) async throws -> String {
         transcribeResult
     }
 
-    func transcribe(audioURL: URL, languageCode: String?) async throws -> String {
+    func transcribe(audioURL: URL, expectedVariant: String, languageCode: String?) async throws -> String {
         transcribeResult
     }
 
-    func transcribe(audioURL: URL, preparedDecoding: WhisperKitPreparedDecoding) async throws -> String {
+    func transcribe(audioURL: URL, expectedVariant: String, preparedDecoding: WhisperKitPreparedDecoding) async throws -> String {
         transcribeResult
     }
 }
