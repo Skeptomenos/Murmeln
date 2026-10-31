@@ -7,12 +7,25 @@ actor RecoveryDiskWriter {
     var suspended = false
     var waiting = false
     private var continuation: CheckedContinuation<Void, Never>?
+    private var waitingContinuation: CheckedContinuation<Void, Never>?
     init(_ outcomes: [Bool] = []) { self.outcomes = outcomes }
     func setOutcomes(_ values: [Bool]) { outcomes = values }
     func suspendNext() { suspended = true }
+    func waitUntilWaiting() async {
+        if waiting { return }
+        await withCheckedContinuation { waitingContinuation = $0 }
+    }
     func release() { suspended = false; continuation?.resume(); continuation = nil }
     func write(_ data: Data, to url: URL) async throws {
-        if suspended { waiting = true; await withCheckedContinuation { continuation = $0 }; waiting = false }
+        if suspended {
+            await withCheckedContinuation {
+                continuation = $0
+                waiting = true
+                waitingContinuation?.resume()
+                waitingContinuation = nil
+            }
+            waiting = false
+        }
         let succeeds = outcomes.isEmpty ? true : outcomes.removeFirst()
         guard succeeds else { throw CocoaError(.fileWriteNoPermission) }
         try data.write(to: url, options: .atomic)
@@ -72,7 +85,7 @@ struct HistoryRecoveryPersistenceTests {
         await writer.suspendNext()
         let store = try makeStore(url, writer: writer)
         let a = try add("A", to: store)
-        for _ in 0..<100 { await Task.yield() }
+        await writer.waitUntilWaiting()
         #expect(await writer.waiting)
         store.protectedRecoveryID = a.id
         store.remove(entry: a)

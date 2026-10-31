@@ -325,7 +325,6 @@ actor AudioRecorder {
         return stream
     }
 
-    #if DEBUG
     /// Deterministic input seam for the real stop/finalization path. The
     /// production tap and tests both call processTapBuffer(_:tapState:).
     func prepareCaptureForTesting(
@@ -382,8 +381,6 @@ actor AudioRecorder {
     nonisolated func processInputBufferForTesting(_ buffer: AVAudioPCMBuffer) {
         _ = Self.processTapBuffer(buffer, tapState: tapState)
     }
-
-    #endif
     
     private func sendLevel(_ level: Float) {
         levelContinuation?.yield(level)
