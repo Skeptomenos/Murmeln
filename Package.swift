@@ -10,6 +10,8 @@ let package = Package(
         .executable(name: "mrml", targets: ["mrml"])
     ],
     dependencies: [
+        // Newer Collections releases require stdlib APIs absent from our Xcode 27 beta.
+        .package(url: "https://github.com/apple/swift-collections.git", exact: "1.4.1"),
         .package(url: "https://github.com/argmaxinc/WhisperKit.git", from: "0.16.0"),
         // Pinned exact: 0.15.5 shipped a breaking ModelHub change the day
         // before Phase 8 started — versions are not interchangeable.

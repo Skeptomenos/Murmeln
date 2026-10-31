@@ -1079,6 +1079,7 @@ struct RuntimeObservabilityTests {
         func unloadModel() async {}
         func loadModel(_ variant: String) async throws {
             loadedVariants.append(variant)
+            selectedModel = variant
             modelState = .ready
         }
         func transcribe(audioURL: URL) async throws -> String { "" }

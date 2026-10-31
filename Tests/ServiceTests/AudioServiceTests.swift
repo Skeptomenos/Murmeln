@@ -38,7 +38,6 @@ struct TapStateConcurrencyTests {
             for _ in 0..<iterations {
                 let buffer = Self.makeBuffer(format: format, frames: 256)
                 tapState.withLock { state in
-                    state.lastBufferTime = Date()
                     if state.isWriting, let file = state.audioFile {
                         if state.pendingPreRollFlush {
                             _ = try? AudioRecorder.flushPreRollBuffers(

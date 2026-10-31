@@ -390,6 +390,7 @@
 			);
 			mainGroup = ROOT01;
 			packageReferences = (
+				PKG010 /* XCRemoteSwiftPackageReference "swift-collections" */,
 				PKG006 /* XCRemoteSwiftPackageReference "WhisperKit" */,
 				PKG009 /* XCRemoteSwiftPackageReference "FluidAudio" */,
 			);
@@ -737,6 +738,14 @@
 			requirement = {
 				kind = exactVersion;
 				version = 0.15.5;
+			};
+		};
+		PKG010 /* XCRemoteSwiftPackageReference "swift-collections" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/apple/swift-collections.git";
+			requirement = {
+				kind = exactVersion;
+				version = 1.4.1;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */

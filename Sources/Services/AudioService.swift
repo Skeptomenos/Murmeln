@@ -28,7 +28,6 @@ actor AudioRecorder {
     final class TapState: @unchecked Sendable {
         struct State {
             var isWriting = false
-            var lastBufferTime = Date()
             var audioFile: AVAudioFile?
             var converter: AVAudioConverter?
             var outputFormat: AVAudioFormat?
@@ -58,9 +57,7 @@ actor AudioRecorder {
     
     // Warm-up state
     private var isWarmedUp = false
-    private var cachedHighQuality = false
     private var cachedOutputFormat: AVAudioFormat?
-    private var cachedTapFormat: AVAudioFormat?
     private var activeCaptureID: String?
     private let preRollDurationSeconds: Double = 0.35
     
@@ -189,16 +186,13 @@ actor AudioRecorder {
         }
 
         // Cache formats and engine ownership only after tap installation succeeds.
-        self.cachedHighQuality = highQuality
         self.cachedOutputFormat = outputFormat
-        self.cachedTapFormat = tapFormat
         self.audioEngine = engine
         self.converter = tapConverter
 
         let preRollMaxFrames = Int(outputFormat.sampleRate * preRollDurationSeconds)
         tapState.withLock { state in
             state.isWriting = false
-            state.lastBufferTime = Date()
             state.converter = tapConverter
             state.outputFormat = outputFormat
             state.inputFormat = inputFormat
@@ -303,7 +297,6 @@ actor AudioRecorder {
         levelContinuation = nil
         converter = nil
         cachedOutputFormat = nil
-        cachedTapFormat = nil
         isWarmedUp = false
         activeCaptureID = nil
         
@@ -369,12 +362,10 @@ actor AudioRecorder {
         tempFileURL = fileURL
         converter = tapConverter
         cachedOutputFormat = outputFormat
-        cachedTapFormat = inputFormat
         isWarmedUp = true
 
         tapState.withLock { state in
             state.isWriting = true
-            state.lastBufferTime = Date()
             state.audioFile = file
             state.converter = tapConverter
             state.outputFormat = outputFormat
@@ -405,7 +396,6 @@ actor AudioRecorder {
         let level = calculateRMS(buffer: buffer)
 
         let firstCaptureBuffer = tapState.withLock { state -> (frameCount: Int, elapsedMs: UInt64, hadPendingPreRollFlush: Bool)? in
-            state.lastBufferTime = Date()
 
             var firstCaptureBuffer: (Int, UInt64, Bool)?
 
@@ -660,7 +650,6 @@ actor AudioRecorder {
         levelContinuation = nil
         converter = nil
         cachedOutputFormat = nil
-        cachedTapFormat = nil
         isWarmedUp = false
         
         tapState.withLock { state in
@@ -846,6 +835,8 @@ actor AudioRecorder {
                 if foundEnd { break }
             }
             
+            if startFrame == 0 && endFrame == totalFrames { return audioURL }
+
             // Validate trim boundaries
             let trimmedFrameCount = endFrame - startFrame
             if startFrame >= endFrame || trimmedFrameCount < AVAudioFramePosition(sampleRate * 0.3) {

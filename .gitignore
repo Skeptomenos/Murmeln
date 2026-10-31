@@ -7,7 +7,7 @@ xcuserdata/
 
 # Swift Package Manager
 .swiftpm/
-Package.resolved
+# Application dependency locks are committed for reproducible builds.
 
 # macOS
 .DS_Store

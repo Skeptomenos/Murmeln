@@ -41,7 +41,8 @@ final class FluidAudioRuntime: TranscriptionRuntime {
         parakeetManager != nil || cohereModels != nil
     }
     private let coherePipeline = CoherePipeline()
-    private let audioConverter = AudioConverter()
+    typealias AudioPreparation = @Sendable (URL) async throws -> [Float]
+    private let prepareAudio: AudioPreparation
 
     /// Slice 5c/F2: monotonic load token. A `load()` that finishes after a
     /// newer `load()` began discards its result instead of clobbering state —
@@ -59,11 +60,13 @@ final class FluidAudioRuntime: TranscriptionRuntime {
         modelsDirectory: URL = FluidAudioRuntime.defaultModelsDirectory,
         initialState: RuntimeState = .notLoaded,
         installationCheck: ((TranscriptionModelID) -> Bool)? = nil,
-        modelLoader: ModelLoader? = nil
+        modelLoader: ModelLoader? = nil,
+        audioPreparation: @escaping AudioPreparation = FluidAudioPreparationWorker.prepareFile
     ) {
         self.modelsDirectory = modelsDirectory
         self.installationCheck = installationCheck
         self.modelLoader = modelLoader
+        self.prepareAudio = audioPreparation
         state = initialState
     }
 
@@ -315,10 +318,11 @@ final class FluidAudioRuntime: TranscriptionRuntime {
             throw TranscriptionRuntimeError.runtimeNotReady(id)
         }
 
+        let generation = loadGeneration
         do {
-            try Task.checkCancellation()
-            let samples = try audioConverter.resampleAudioFile(path: audioURL.path)
-            try Task.checkCancellation()
+            try checkTranscriptionOwnership(generation, modelID: modelID)
+            let samples = try await prepareAudio(audioURL)
+            try checkTranscriptionOwnership(generation, modelID: modelID)
 
             switch descriptor.engine {
             case .parakeetV3, .parakeetV2:
@@ -327,11 +331,11 @@ final class FluidAudioRuntime: TranscriptionRuntime {
                 }
                 // Fresh decoder state per capture — push-to-talk utterances are
                 // independent; no cross-capture context carryover.
-                try Task.checkCancellation()
-                var decoderState = try TdtDecoderState(decoderLayers: currentParakeetVersion?.decoderLayers ?? 2)
-                try Task.checkCancellation()
+                try checkTranscriptionOwnership(generation, modelID: modelID)
+                var decoderState = try TdtDecoderState(decoderLayers: descriptor.engine.parakeetVersion?.decoderLayers ?? 2)
+                try checkTranscriptionOwnership(generation, modelID: modelID)
                 let result = try await manager.transcribe(samples, decoderState: &decoderState)
-                try Task.checkCancellation()
+                try checkTranscriptionOwnership(generation, modelID: modelID)
                 return result.text
 
             case .cohere:
@@ -352,25 +356,29 @@ final class FluidAudioRuntime: TranscriptionRuntime {
                     maxUtteranceSeconds: Double(maxSeconds)
                 ) {
                 case .singleCall:
-                    try Task.checkCancellation()
+                    try checkTranscriptionOwnership(generation, modelID: modelID)
                     let result = try await coherePipeline.transcribe(
                         audio: samples, models: models, language: language)
-                    try Task.checkCancellation()
+                    try checkTranscriptionOwnership(generation, modelID: modelID)
                     return result.text
                 case .longForm:
-                    return try await CohereLongFormChunking.transcribe(
+                    let text = try await CohereLongFormChunking.transcribe(
                         samples: samples,
                         sampleRate: CohereAsrConfig.sampleRate,
                         maxChunkSeconds: maxSeconds
                     ) { samples in
+                        try checkTranscriptionOwnership(generation, modelID: modelID)
                         let result = try await coherePipeline.transcribe(
                             audio: samples, models: models, language: language)
+                        try checkTranscriptionOwnership(generation, modelID: modelID)
                         return result.text
                     }
+                    try checkTranscriptionOwnership(generation, modelID: modelID)
+                    return text
                 }
             }
         } catch {
-            if Self.shouldPreserveCancellation(error) {
+            if Task.isCancelled || generation != loadGeneration || Self.shouldPreserveCancellation(error) {
                 throw CancellationError()
             }
             throw mapError(error, modelID: modelID, operation: .transcribe)
@@ -385,11 +393,35 @@ final class FluidAudioRuntime: TranscriptionRuntime {
         ModelCatalog.entry(for: modelID)?.maxUtteranceSeconds
     }
 
-    private var currentParakeetVersion: AsrModelVersion? {
-        guard case .ready(let modelID) = state,
-              let descriptor = FluidAudioModelDescriptor.descriptor(for: modelID) else {
-            return nil
+    private func checkTranscriptionOwnership(_ generation: Int, modelID: TranscriptionModelID) throws {
+        try Task.checkCancellation()
+        guard generation == loadGeneration, state == .ready(modelID) else {
+            throw CancellationError()
         }
-        return descriptor.engine.parakeetVersion
+    }
+}
+
+/// One serial preparation lane bounds file reads/resampling across runtimes.
+/// The SDK conversion is synchronous and cannot be interrupted internally;
+/// cancellation is checked before/after it, and the caller waits for it to end.
+actor FluidAudioPreparationWorker {
+    static let shared = FluidAudioPreparationWorker()
+    nonisolated static func prepareFile(_ url: URL) async throws -> [Float] {
+        try await shared.prepare(url)
+    }
+
+    private let readAudio: @Sendable (URL) throws -> [Float]
+
+    init(readAudio: @escaping @Sendable (URL) throws -> [Float] = {
+        try AudioConverter().resampleAudioFile($0)
+    }) {
+        self.readAudio = readAudio
+    }
+
+    func prepare(_ url: URL) throws -> [Float] {
+        try Task.checkCancellation()
+        let samples = try readAudio(url)
+        try Task.checkCancellation()
+        return samples
     }
 }

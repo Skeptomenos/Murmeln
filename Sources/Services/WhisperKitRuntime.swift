@@ -26,10 +26,6 @@ extension WhisperKitService: WhisperKitModelManaging {
     }
 }
 
-/// Slice 2: TranscriptionRuntime facade over the existing WhisperKitService
-/// (wrapped, not modified). The catalog's `whisperkit` entry delegates the
-/// concrete Whisper variant to the existing `whisperKitModel` setting, so
-/// `load` resolves the variant at call time via `variantProvider`.
 @MainActor
 final class WhisperKitRuntime: TranscriptionRuntime {
     static let shared = WhisperKitRuntime()
@@ -37,11 +33,9 @@ final class WhisperKitRuntime: TranscriptionRuntime {
     let id: RuntimeID = .whisperKit
 
     private let service: any WhisperKitTranscribing & WhisperKitModelManaging
-    /// Resolves the concrete Whisper variant (e.g. "openai_whisper-small").
     private let variantProvider: () -> String
     private var stateObservation: AnyCancellable?
-    private var loadedVariant: String?
-    private var loadGeneration: UInt64 = 0
+    private var invalidationGeneration: UInt64 = 0
 
     init(
         service: any WhisperKitTranscribing & WhisperKitModelManaging = WhisperKitService.shared,
@@ -49,18 +43,9 @@ final class WhisperKitRuntime: TranscriptionRuntime {
     ) {
         self.service = service
         self.variantProvider = variantProvider
-        // Slice 5c/F1: re-emit the concrete service's @Published modelState as
-        // our RuntimeState so catalog rows observing `stateChanged` repaint on
-        // WhisperKit transitions the same way they do for FluidAudio.
         stateObservation = service.modelStateChanged
             .sink { [weak self] modelState in
                 guard let self else { return }
-                switch modelState {
-                case .unloaded, .error:
-                    loadedVariant = nil
-                case .ready, .loading, .downloading:
-                    break
-                }
                 stateSubject.send(runtimeState(from: modelState))
             }
     }
@@ -71,7 +56,7 @@ final class WhisperKitRuntime: TranscriptionRuntime {
     private func runtimeState(from modelState: WhisperKitService.ModelState) -> RuntimeState {
         switch modelState {
         case .ready:
-            guard loadedVariant == variantProvider() else { return .notLoaded }
+            guard service.selectedModel == variantProvider() else { return .notLoaded }
             return .ready(.whisperKit)
         case .loading, .downloading:
             return .loading(.whisperKit)
@@ -97,7 +82,7 @@ final class WhisperKitRuntime: TranscriptionRuntime {
         guard modelID == .whisperKit,
               case .ready = service.modelState
         else { return false }
-        return loadedVariant == variantProvider()
+        return service.selectedModel == variantProvider()
     }
 
     func download(
@@ -123,8 +108,7 @@ final class WhisperKitRuntime: TranscriptionRuntime {
             throw TranscriptionRuntimeError.unsupportedModel(modelID, id)
         }
         let variant = variantProvider()
-        loadGeneration &+= 1
-        loadedVariant = nil
+        invalidationGeneration &+= 1
         stateSubject.send(.notLoaded)
         try await service.deleteModel(variant)
     }
@@ -134,29 +118,27 @@ final class WhisperKitRuntime: TranscriptionRuntime {
             throw TranscriptionRuntimeError.unsupportedModel(modelID, id)
         }
 
-        loadGeneration &+= 1
-        let generation = loadGeneration
+        let generation = invalidationGeneration
         let variant = variantProvider()
         try Task.checkCancellation()
         do {
             try await service.loadModel(variant)
         } catch {
-            if Task.isCancelled || generation != loadGeneration {
+            if Task.isCancelled || generation != invalidationGeneration {
                 throw CancellationError()
             }
             throw error
         }
         try Task.checkCancellation()
-        guard generation == loadGeneration else {
+        guard generation == invalidationGeneration,
+              service.modelState == .ready, service.selectedModel == variant else {
             throw CancellationError()
         }
-        loadedVariant = variant
         stateSubject.send(state)
     }
 
     func unload() async {
-        loadGeneration &+= 1
-        loadedVariant = nil
+        invalidationGeneration &+= 1
         stateSubject.send(.notLoaded)
         await service.unloadModel()
     }

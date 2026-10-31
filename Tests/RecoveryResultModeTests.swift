@@ -36,6 +36,48 @@ struct RecoveryResultModeTests {
         #expect(paste.pastedTexts.isEmpty)
     }
 
+    @Test("Blank refinement retains raw text through delivery and recovery",
+          arguments: ["", " \n\t"], [false, true])
+    func blankRefinement(blank: String, parallel: Bool) async throws {
+        for blocked in [false, true] {
+            let raw = "  Keep every original word.\n"
+            let audio = MockAudioRecorder()
+            audio.recordingURL = try AppStateTestFixtures.makeAudibleWAV()
+            let paste = MockPasteService(pasteTiming: PasteTiming(
+                commandOutcome: blocked ? .blocked(.secureInputActive) : .posted,
+                clipboardDisposition: blocked ? .unchanged : .restored,
+                commandSentElapsedMs: blocked ? nil : 0, totalElapsedMs: 0),
+                recoveryCopyResults: [true])
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at: url) }
+            let defaults = try #require(UserDefaults(suiteName: UUID().uuidString))
+            let history = HistoryStore(fileURL: url, legacyDefaults: defaults)
+            let app = AppState(audioRecorder: audio,
+                pipelineService: MockPipelineService(transcriptionText: raw,
+                    refinementShouldThrow: false, refinementText: blank),
+                overlay: MockOverlay(), pasteService: paste, historyStore: history,
+                permissionService: MockPermissionService(),
+                pipelineSettingsSnapshot: { settings(parallel: parallel) },
+                accessibilityAnnouncement: { _ in })
+            app.startRecording()
+            #expect(await waitUntil { app.recordingPhase == .recording })
+            app.stopAndProcess()
+            #expect(await waitUntil { app.recordingPhase == .idle && !paste.pastedTexts.isEmpty })
+            #expect(paste.pastedTexts == [raw])
+            let entry = try #require(history.entries.first)
+            #expect(entry.original == raw && entry.refined == raw)
+            #expect(entry.safePresetName.contains("refinement failed"))
+            #expect(await history.flush())
+            let reloaded = HistoryStore(fileURL: url, legacyDefaults: defaults)
+            #expect(reloaded.entries.first?.refined == raw)
+            if blocked {
+                #expect(app.recoveryEntryID == entry.id)
+                app.copyFailedPasteAgain()
+                #expect(paste.recoveryCopyTexts == [raw])
+            }
+        }
+    }
+
     private func settings(parallel: Bool) -> PipelineSettingsSnapshot {
         PipelineSettingsSnapshot(transcriptionProvider: .openAIWhisper, transcriptionAPIKey: "",
             transcriptionBaseURL: "https://example.test", transcriptionModel: "fixture",

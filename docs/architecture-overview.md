@@ -57,6 +57,8 @@ The catalog currently ships Parakeet v3 multilingual (default), Parakeet v2 Engl
 
 `CatalogDownloadManager` owns model-keyed download activity for the app lifetime. Downloads continue across picker changes, distinct models may download concurrently, and callbacks from cancelled attempts cannot overwrite a retry. The Settings UI reads that shared state and exposes cancel, retry, delete, and re-download operations.
 
+FluidAudio file reading and resampling run on a serial preparation actor. Transcription awaits that work through cancellation, then rechecks model ownership before inference and before returning text. The synchronous SDK conversion finishes before cancellation returns; no reader outlives the recording owner.
+
 ## Component responsibilities
 
 ### AppState
@@ -76,6 +78,7 @@ The catalog currently ships Parakeet v3 multilingual (default), Parakeet v2 Engl
 
 - `HotkeyService` detects Fn hold/release and Right Option lock-mode gestures.
 - `AudioRecorder` owns the two-phase engine warm-up/capture flow, audio levels, temporary files, trimming, and speech checks.
+- Unchanged padded trim boundaries reuse the original WAV; changed boundaries create a separate trimmed file.
 - The recording state machine and warm-up contract are preserved across runtime changes.
 
 ### PasteService and HistoryStore

@@ -90,15 +90,6 @@ struct HistoryEntry: Codable, Identifiable, Equatable, Hashable, Sendable {
         return formatter.string(from: timestamp)
     }
     
-    var menuPreview: String {
-        let text = displayText.replacingOccurrences(of: "\n", with: " ")
-        let maxLength = 60
-        if text.count <= maxLength {
-            return "\(formattedTime) · \(text)"
-        }
-        return "\(formattedTime) · \(String(text.prefix(maxLength - 3)))..."
-    }
-
     func promptProvenance(for variantName: String) -> PromptProvenance {
         let basePrompt = normalizedPrompt(
             variantPrompts?[variantName] ?? (variantName == safePresetName ? systemPrompt : nil)

@@ -83,17 +83,20 @@ struct MockRefinementError: Error, LocalizedError {
 final class MockPipelineService: TranscriptionPipelineProviding, @unchecked Sendable {
     let transcriptionText: String
     let refinementShouldThrow: Bool
+    let refinementText: String?
     let mode: TranscriptionPipelineMode
     let transcriptionError: TranscriptionRuntimeError?
 
     init(
         transcriptionText: String,
         refinementShouldThrow: Bool,
+        refinementText: String? = nil,
         mode: TranscriptionPipelineMode = .twoCallRefinement,
         transcriptionError: TranscriptionRuntimeError? = nil
     ) {
         self.transcriptionText = transcriptionText
         self.refinementShouldThrow = refinementShouldThrow
+        self.refinementText = refinementText
         self.mode = mode
         self.transcriptionError = transcriptionError
     }
@@ -136,7 +139,7 @@ final class MockPipelineService: TranscriptionPipelineProviding, @unchecked Send
         }
         let now = DispatchTime.now().uptimeNanoseconds
         return RefinementExecutionResult(
-            text: "refined: \(request.text)",
+            text: refinementText ?? "refined: \(request.text)",
             timing: StageTiming(startedAt: now, finishedAt: now)
         )
     }

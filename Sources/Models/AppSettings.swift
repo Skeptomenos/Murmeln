@@ -374,12 +374,6 @@ final class AppSettings: ObservableObject {
         presetOverrides[preset.id] ?? preset.prompt
     }
     
-    func updatePromptForPreset(_ preset: PromptPreset, prompt: String) {
-        presetOverrides[preset.id] = prompt
-        savePresetOverrides()
-        objectWillChange.send()
-    }
-    
     func resetPresetToDefault(_ preset: PromptPreset) {
         presetOverrides.removeValue(forKey: preset.id)
         savePresetOverrides()

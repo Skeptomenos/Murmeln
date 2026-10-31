@@ -24,57 +24,20 @@ struct OllamaServiceTests {
         #expect(count == 3)
     }
     
-    // MARK: - Model Name Parsing Tests
-    
-    @Test("Model name prefix extraction works correctly")
-    func modelNamePrefixExtraction() {
-        let fullName = "gemma2:2b"
-        let prefix = fullName.split(separator: ":").first.map(String.init) ?? fullName
-        
-        #expect(prefix == "gemma2")
+    @MainActor
+    @Test("Installation checks preserve complete names and tags")
+    func completeNames() {
+        let service = OllamaService()
+        service.installedModels = ["gemma2:9b", "gemma20:2b", "phi3:latest", "host:11434/team/model:latest"]
+        #expect(!service.isModelInstalled("gemma2:2b"))
+        #expect(!service.isModelInstalled("gemma2"))
+        #expect(service.isModelInstalled("gemma2:9b"))
+        #expect(service.isModelInstalled(" phi3 "))
+        #expect(service.isModelInstalled("host:11434/team/model"))
+        #expect(!service.isModelInstalled("team/model"))
+        #expect(!service.isModelInstalled(""))
     }
-    
-    @Test("Model name without tag returns full name")
-    func modelNameWithoutTag() {
-        let fullName = "gemma2"
-        let prefix = fullName.split(separator: ":").first.map(String.init) ?? fullName
-        
-        #expect(prefix == "gemma2")
-    }
-    
-    @Test("Model installed check logic works")
-    func modelInstalledCheckLogic() {
-        let installedModels = ["gemma2:2b", "phi3:mini", "llama3:8b"]
-        let modelToCheck = "gemma2:2b"
-        
-        let prefix = modelToCheck.split(separator: ":").first.map(String.init) ?? modelToCheck
-        let isInstalled = installedModels.contains { $0.hasPrefix(prefix) }
-        
-        #expect(isInstalled == true)
-    }
-    
-    @Test("Model not installed check logic works")
-    func modelNotInstalledCheckLogic() {
-        let installedModels = ["gemma2:2b", "phi3:mini"]
-        let modelToCheck = "llama3:8b"
-        
-        let prefix = modelToCheck.split(separator: ":").first.map(String.init) ?? modelToCheck
-        let isInstalled = installedModels.contains { $0.hasPrefix(prefix) }
-        
-        #expect(isInstalled == false)
-    }
-    
-    @Test("Different tag of same model family is detected as installed")
-    func differentTagSameFamily() {
-        let installedModels = ["gemma2:7b"]
-        let modelToCheck = "gemma2:2b"
-        
-        let prefix = modelToCheck.split(separator: ":").first.map(String.init) ?? modelToCheck
-        let isInstalled = installedModels.contains { $0.hasPrefix(prefix) }
-        
-        #expect(isInstalled == true)
-    }
-    
+
     // MARK: - OllamaTagsResponse Parsing Tests
     
     @Test("OllamaTagsResponse decodes correctly")

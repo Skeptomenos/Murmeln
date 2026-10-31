@@ -19,6 +19,8 @@
 - **Phase 8 status (2026-07-17):** Complete. PR #217 merged as `7592218`; the in-process catalog and Python-bridge retirement are on `main`.
 - **Current order:** Forward-looking reliability and observability. The user stopped historical attribution on September 8. Stable signed Dev is active; preserve it. Current logs distinguish common app-side paste refusals, with remaining gaps for pre-admission cancellation and generic target-inspection failures. Four live safety cases remain deferred; the active plan owns next work.
 
+- **Review hardening:** `_planning/plans/2026-10-31-review-hardening.md` — October 31 fixes tracked by DEV-431. Separate from DEV-150 acceptance.
+
 ## Commands
 
 ```bash

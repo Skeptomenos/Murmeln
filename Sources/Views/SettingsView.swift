@@ -177,10 +177,8 @@ struct SettingsView: View {
     @State private var route: SettingsRoute
     @State private var showingWhisperKitSetup = false
 
-    @State private var transcriptionModels: [ModelInfo] = []
-    @State private var refinementModels: [ModelInfo] = []
-    @State private var isLoadingTranscriptionModels = false
-    @State private var isLoadingRefinementModels = false
+    @StateObject private var transcriptionDiscovery = ModelDiscoveryRequestController()
+    @StateObject private var refinementDiscovery = ModelDiscoveryRequestController()
     @State private var showingAddPreset = false
     @State private var newPresetName = ""
     @State private var newPresetDescription = ""
@@ -204,16 +202,16 @@ struct SettingsView: View {
                     settings: settings,
                     whisperKitService: whisperKitService,
                     showingWhisperKitSetup: $showingWhisperKitSetup,
-                    transcriptionModels: $transcriptionModels,
-                    isLoadingTranscriptionModels: $isLoadingTranscriptionModels,
+                    transcriptionModels: $transcriptionDiscovery.models,
+                    isLoadingTranscriptionModels: $transcriptionDiscovery.isLoading,
                     loadTranscriptionModels: loadTranscriptionModels
                 )
             case .refinement:
                 RefinementSettingsSection(
                     settings: settings,
                     ollamaService: ollamaService,
-                    refinementModels: $refinementModels,
-                    isLoadingRefinementModels: $isLoadingRefinementModels,
+                    refinementModels: $refinementDiscovery.models,
+                    isLoadingRefinementModels: $refinementDiscovery.isLoading,
                     loadRefinementModels: loadRefinementModels
                 )
             case .prompt:
@@ -223,6 +221,16 @@ struct SettingsView: View {
             }
         }
         .windowAppearance(appearance)
+        .onChange(of: transcriptionDiscoveryKey) { _, _ in
+            transcriptionDiscovery.invalidate(for: transcriptionDiscoveryKey)
+        }
+        .onChange(of: refinementDiscoveryKey) { _, _ in
+            refinementDiscovery.invalidate(for: refinementDiscoveryKey)
+        }
+        .onDisappear {
+            transcriptionDiscovery.cancel()
+            refinementDiscovery.cancel()
+        }
     }
 
     private var newPresetNameIsAvailable: Bool {
@@ -486,39 +494,43 @@ struct SettingsView: View {
         }
     }
 
+    private var transcriptionDiscoveryKey: [String] {
+        [settings.transcriptionProviderRaw, settings.transcriptionBaseURL, settings.transcriptionAPIKey]
+    }
+
+    private var refinementDiscoveryKey: [String] {
+        [settings.refinementProviderRaw, settings.refinementBaseURL, settings.refinementAPIKey]
+    }
+
     private func loadTranscriptionModels() {
-        isLoadingTranscriptionModels = true
-        Task {
-            let models = await ModelDiscoveryService.shared.fetchTranscriptionModels(
-                provider: settings.transcriptionProvider,
-                apiKey: settings.transcriptionAPIKey,
-                baseURL: settings.transcriptionBaseURL
-            )
-            await MainActor.run {
-                transcriptionModels = models
+        let provider = settings.transcriptionProvider
+        let key = settings.transcriptionAPIKey
+        let baseURL = settings.transcriptionBaseURL
+        transcriptionDiscovery.load(request: transcriptionDiscoveryKey,
+            currentRequest: { transcriptionDiscoveryKey },
+            fetch: {
+                await ModelDiscoveryService.shared.fetchTranscriptionModels(
+                    provider: provider, apiKey: key, baseURL: baseURL)
+            }, applySelection: { models in
                 if !models.isEmpty && !models.contains(where: { $0.id == settings.transcriptionModel }) {
                     settings.transcriptionModel = models.first?.id ?? ""
                 }
-                isLoadingTranscriptionModels = false
-            }
-        }
+            })
     }
-    
+
     private func loadRefinementModels() {
-        isLoadingRefinementModels = true
-        Task {
-            let models = await ModelDiscoveryService.shared.fetchModels(
-                provider: settings.refinementProvider,
-                apiKey: settings.refinementAPIKey,
-                baseURL: settings.refinementBaseURL
-            )
-            await MainActor.run {
-                refinementModels = models
+        let provider = settings.refinementProvider
+        let key = settings.refinementAPIKey
+        let baseURL = settings.refinementBaseURL
+        refinementDiscovery.load(request: refinementDiscoveryKey,
+            currentRequest: { refinementDiscoveryKey },
+            fetch: {
+                await ModelDiscoveryService.shared.fetchModels(
+                    provider: provider, apiKey: key, baseURL: baseURL)
+            }, applySelection: { models in
                 if !models.isEmpty && !models.contains(where: { $0.id == settings.refinementModel }) {
                     settings.refinementModel = models.first?.id ?? ""
                 }
-                isLoadingRefinementModels = false
-            }
-        }
+            })
     }
 }

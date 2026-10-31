@@ -963,6 +963,13 @@ final class AppState: ObservableObject {
                         }
                     }
 
+                    if !refinementFailed && finalResult.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        degradeToRawTranscript(NSError(
+                            domain: "Murmeln.Refinement", code: 1,
+                            userInfo: [NSLocalizedDescriptionKey: "Refinement returned empty text."]
+                        ))
+                    }
+
                     if !refinementFailed {
                         let refinementElapsedMs = aggregateRefinementTiming?.elapsedMs ?? 0
                         logDiagnostics("app.refinement.completed", captureID: captureID, metadata: [

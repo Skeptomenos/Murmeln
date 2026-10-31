@@ -1,13 +1,35 @@
 import Foundation
+import os
 @preconcurrency import WhisperKit
 import CoreML
 import SwiftUI
 
-private actor WhisperKitWorker {
+actor WhisperKitWorker {
     private var whisperKit: WhisperKit?
     private var loadedVariant: String?
     
-    func loadModel(_ variant: String, modelsDirectory: URL) async throws {
+    typealias EngineLoader = @Sendable (String, URL) async throws -> WhisperKit
+    private let engineLoader: EngineLoader
+    private var generation: UInt64 = 0
+
+    init(engineLoader: @escaping EngineLoader = WhisperKitWorker.makeEngine) {
+        self.engineLoader = engineLoader
+    }
+
+    func loadModel(_ variant: String, modelsDirectory: URL, generation: UInt64) async throws {
+        try Task.checkCancellation()
+        guard generation > self.generation else { throw CancellationError() }
+        self.generation = generation
+        whisperKit = nil
+        loadedVariant = nil
+        let candidate = try await engineLoader(variant, modelsDirectory)
+        try Task.checkCancellation()
+        guard generation == self.generation else { throw CancellationError() }
+        whisperKit = candidate
+        loadedVariant = variant
+    }
+
+    private static func makeEngine(_ variant: String, modelsDirectory: URL) async throws -> WhisperKit {
         // WhisperKit downloads to: <downloadBase>/models/argmaxinc/whisperkit-coreml/<variant>/
         // We need to provide the full path to the model folder for loading
         let modelFolder = modelsDirectory
@@ -41,18 +63,19 @@ private actor WhisperKitWorker {
             load: true,
             download: false
         )
-        whisperKit = try await WhisperKit(config)
-        loadedVariant = variant
-        print("✅ WhisperKit model loaded successfully")
+        return try await WhisperKit(config)
     }
     
-    func unload() {
+    func unload(generation: UInt64) {
+        guard generation >= self.generation else { return }
+        self.generation = generation
         whisperKit = nil
         loadedVariant = nil
         print("🔄 WhisperKit model unloaded")
     }
     
-    func transcribe(audioPath: String, decodingOptions: DecodingOptions) async throws -> [TranscriptionResult] {
+    func transcribe(audioPath: String, decodingOptions: DecodingOptions, generation: UInt64) async throws -> [TranscriptionResult] {
+        guard generation == self.generation else { throw CancellationError() }
         guard let whisperKit else {
             throw WhisperKitService.ServiceError.modelNotLoaded
         }
@@ -60,7 +83,8 @@ private actor WhisperKitWorker {
         return try await whisperKit.transcribe(audioPath: audioPath, decodeOptions: decodingOptions)
     }
 
-    func inspectVADChunkDiagnostics(audioPath: String, decodingOptions: DecodingOptions) async throws -> WhisperKitVADChunkDiagnostics? {
+    func inspectVADChunkDiagnostics(audioPath: String, decodingOptions: DecodingOptions, generation: UInt64) async throws -> WhisperKitVADChunkDiagnostics? {
+        guard generation == self.generation else { throw CancellationError() }
         guard let whisperKit else {
             throw WhisperKitService.ServiceError.modelNotLoaded
         }
@@ -179,6 +203,36 @@ struct WhisperKitDecodedSegmentCoverageDiagnostics: Sendable, Equatable {
     }
 }
 
+private final class WhisperKitSharedLoad: Sendable {
+    let variant: String
+    let generation: UInt64
+    let task: Task<Void, Error>
+    private let waiters: OSAllocatedUnfairLock<Set<UUID>>
+
+    init(variant: String, generation: UInt64, task: Task<Void, Error>, firstWaiter: UUID) {
+        self.variant = variant
+        self.generation = generation
+        self.task = task
+        waiters = OSAllocatedUnfairLock(initialState: [firstWaiter])
+    }
+
+    func join(_ waiter: UUID) -> Bool {
+        waiters.withLock { waiters in
+            guard !waiters.isEmpty, !task.isCancelled else { return false }
+            waiters.insert(waiter)
+            return true
+        }
+    }
+
+    func leave(_ waiter: UUID) {
+        let lastWaiter = waiters.withLock { waiters in
+            guard waiters.remove(waiter) != nil else { return false }
+            return waiters.isEmpty
+        }
+        if lastWaiter { task.cancel() }
+    }
+}
+
 @MainActor
 final class WhisperKitService: ObservableObject {
     static let shared = WhisperKitService()
@@ -202,6 +256,7 @@ final class WhisperKitService: ObservableObject {
     private var deletionCompletionWaiters: [CheckedContinuation<Void, Never>] = []
     private var downloadGeneration: UInt64 = 0
     private var loadGeneration: UInt64 = 0
+    private var activeLoad: WhisperKitSharedLoad?
     private let modelsDirectoryOverride: URL?
     typealias ModelUnloader = @MainActor () async -> Void
     typealias ModelFolderRemover = @MainActor (_ modelFolder: URL) throws -> Void
@@ -215,7 +270,7 @@ final class WhisperKitService: ObservableObject {
     private let modelDownloader: ModelDownloader
     
     // Worker actor
-    private let worker = WhisperKitWorker()
+    private let worker: WhisperKitWorker
 
     private static var captureDiagnosticsInspectionEnabled: Bool {
         AppIdentity.isDevelopmentBuild || ProcessInfo.processInfo.environment["MURMELN_CAPTURE_DIAGNOSTICS"] == "1"
@@ -267,6 +322,7 @@ final class WhisperKitService: ObservableObject {
     
     init(
         modelsDirectory: URL? = nil,
+        worker: WhisperKitWorker = WhisperKitWorker(),
         modelUnloader: ModelUnloader? = nil,
         modelFolderRemover: @escaping ModelFolderRemover = { modelFolder in
             try FileManager.default.removeItem(at: modelFolder)
@@ -280,6 +336,7 @@ final class WhisperKitService: ObservableObject {
             )
         }
     ) {
+        self.worker = worker
         modelsDirectoryOverride = modelsDirectory
         self.modelUnloader = modelUnloader
         self.modelFolderRemover = modelFolderRemover
@@ -302,7 +359,8 @@ final class WhisperKitService: ObservableObject {
 
         return try await worker.inspectVADChunkDiagnostics(
             audioPath: audioURL.path,
-            decodingOptions: preparedDecoding.options
+            decodingOptions: preparedDecoding.options,
+            generation: loadGeneration
         )
     }
 
@@ -662,54 +720,75 @@ final class WhisperKitService: ObservableObject {
         waiters.forEach { $0.resume() }
     }
     
-    /// Unload the current model to free memory
     func unloadModel() async {
-        loadGeneration &+= 1
-        if let modelUnloader {
-            await modelUnloader()
-        } else {
-            await worker.unload()
-        }
-        modelState = .unloaded
-        selectedModel = ""
-        print("🔄 Model unloaded")
-    }
-    
-    // Load model for transcription
-    func loadModel(_ variant: String) async throws {
-        // Check if already loaded
-        if modelState == .ready && selectedModel == variant {
-            return
-        }
-        
-        // Unload previous model first if switching
-        if modelState == .ready && selectedModel != variant {
-            await unloadModel()
-        }
-
+        activeLoad?.task.cancel()
+        activeLoad = nil
         loadGeneration &+= 1
         let generation = loadGeneration
-        
-        modelState = .loading
-        selectedModel = variant
-        
-        do {
-            try await worker.loadModel(variant, modelsDirectory: modelsDirectory)
-            guard generation == loadGeneration else {
-                if modelState != .ready {
-                    await worker.unload()
-                }
-                return
+        selectedModel = ""
+        modelState = .unloaded
+        await worker.unload(generation: generation)
+        if let modelUnloader { await modelUnloader() }
+    }
+
+    func loadModel(_ variant: String) async throws {
+        try Task.checkCancellation()
+        if modelState == .ready && selectedModel == variant { return }
+
+        let waiter = UUID()
+        let load: WhisperKitSharedLoad
+        if let activeLoad, activeLoad.variant == variant, activeLoad.join(waiter) {
+            load = activeLoad
+        } else {
+            activeLoad?.task.cancel()
+            loadGeneration &+= 1
+            let generation = loadGeneration
+            selectedModel = variant
+            modelState = .loading
+            let task = Task { try await self.performLoad(variant, generation: generation) }
+            load = WhisperKitSharedLoad(
+                variant: variant, generation: generation, task: task, firstWaiter: waiter
+            )
+            activeLoad = load
+        }
+
+        defer { load.leave(waiter) }
+        try await withTaskCancellationHandler {
+            do {
+                try await load.task.value
+            } catch {
+                try Task.checkCancellation()
+                throw error
             }
+            try Task.checkCancellation()
+            guard load.generation == loadGeneration else { throw CancellationError() }
+        } onCancel: {
+            load.leave(waiter)
+        }
+    }
+
+    private func performLoad(_ variant: String, generation: UInt64) async throws {
+        defer {
+            if generation == loadGeneration { activeLoad = nil }
+        }
+        do {
+            try await worker.loadModel(variant, modelsDirectory: modelsDirectory, generation: generation)
+            try Task.checkCancellation()
+            guard generation == loadGeneration else { throw CancellationError() }
             modelState = .ready
         } catch {
-            if generation == loadGeneration {
-                modelState = .error(error.localizedDescription)
+            guard generation == loadGeneration else { throw CancellationError() }
+            if Task.isCancelled || error is CancellationError {
+                selectedModel = ""
+                modelState = .unloaded
+                await worker.unload(generation: generation)
+                throw CancellationError()
             }
+            modelState = .error(error.localizedDescription)
             throw error
         }
     }
-    
+
     // Transcribe audio file
     func transcribe(audioURL: URL) async throws -> String {
         let preparedDecoding = prepareDecoding(settings: AppSettings.shared.pipelineSettingsSnapshot())
@@ -734,7 +813,11 @@ final class WhisperKitService: ObservableObject {
             throw ServiceError.modelNotLoaded
         }
 
-        let results = try await worker.transcribe(audioPath: audioURL.path, decodingOptions: preparedDecoding.options)
+        let generation = loadGeneration
+        let results = try await worker.transcribe(audioPath: audioURL.path,
+            decodingOptions: preparedDecoding.options, generation: generation)
+        try Task.checkCancellation()
+        guard generation == loadGeneration else { throw CancellationError() }
         let segments = results.flatMap(\.segments)
         let text = results.map { $0.text }.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
         return WhisperKitTranscriptionOutput(text: text, segments: segments)

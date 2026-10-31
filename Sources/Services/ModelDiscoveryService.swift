@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 
 struct ModelInfo: Identifiable, Hashable {
     let id: String
@@ -277,4 +278,53 @@ struct GoogleModelsResponse: Codable {
         let displayName: String
         let supportedGenerationMethods: [String]?
     }
+}
+
+/// Owns one Settings discovery request. Transport cancellation is advisory;
+/// identity and configuration checks also reject non-cooperative completions.
+@MainActor
+final class ModelDiscoveryRequestController: ObservableObject {
+    @Published var models: [ModelInfo] = []
+    @Published var isLoading = false
+    private var generation = UUID()
+    private var task: Task<Void, Never>?
+    private var configuration: [String]?
+
+    func load(
+        request: [String],
+        currentRequest: @escaping @MainActor () -> [String],
+        fetch: @escaping @MainActor () async -> [ModelInfo],
+        applySelection: @escaping @MainActor ([ModelInfo]) -> Void
+    ) {
+        cancel()
+        configuration = request
+        let generation = self.generation
+        models = []
+        isLoading = true
+        task = Task { [weak self] in
+            let models = await fetch()
+            guard let self, generation == self.generation, !Task.isCancelled else { return }
+            defer { self.isLoading = false; self.task = nil }
+            guard request == currentRequest() else { return }
+            self.models = models
+            applySelection(models)
+        }
+    }
+
+    func invalidate(for configuration: [String]) {
+        guard configuration != self.configuration else { return }
+        cancel()
+        models = []
+        self.configuration = configuration
+    }
+
+    func cancel() {
+        generation = UUID()
+        task?.cancel()
+        task = nil
+        isLoading = false
+        configuration = nil
+    }
+
+    deinit { task?.cancel() }
 }
